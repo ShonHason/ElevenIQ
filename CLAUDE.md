@@ -18,11 +18,21 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
   rankings, fabricates filters, or generates explanations from general knowledge.
 - Any natural-language explanation must be grounded in backend-calculated metrics.
 
+### Data Sources
+- V1 uses StatsBomb Open Data exclusively. Do not write any Sportmonks or other
+  paid-API ingestion code until a new ADR is approved and the milestone is open.
+- Every row in player_match_stats.parquet and player_season_stats.parquet carries a
+  `source` column (e.g. `"statsbomb"`). This is the canonical provenance tag.
+- **Percentiles, similarity, and rarity are computed within a single source only.**
+  Never mix rows from different sources in a percentile cohort, similarity calculation,
+  or rarity score. Cross-source comparisons require an explicit normalisation strategy
+  and a new ADR before any implementation.
+
 ### Statistical Principles
 - Use per-90 metrics and percentiles for player comparisons, not raw totals.
 - Always preserve numerators, denominators, and minutes alongside derived figures so
   metrics can be recalculated without re-downloading source data.
-- Percentiles are calculated within position groups (CB, FB/WB, DM/CM, AM/Winger, ST —
+- Percentiles are calculated within position groups (GK,CB, FB/WB, DM/CM, AM/Winger, ST —
   configurable), not across all positions.
 - A configurable minimum-minutes threshold (default ~600–900 min) must gate all
   percentile calculations; low-sample players must not appear as elite profiles.
@@ -45,9 +55,16 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
   them because they sound impressive.
 
 ### Code Organisation
-- Strict layering: api/ → services/ → analytics/ → repositories/
-- No large analytical functions inside FastAPI endpoints.
+- Package: src/eleveniq/ (imports: `from eleveniq...`). Current modules:
+  - statsbomb/  - source adapter: download + load raw StatsBomb files
+  - metrics/    - pure metric functions (minutes, progressive, positions, ...)
+  - pipeline/   - build stages (player_match, player_season) + quality checks
+- Future (when built): api/ -> services/ -> analytics/ -> repositories/,
+  all inside src/eleveniq/. No analytics logic inside API endpoints.
+- Data: data/raw/ (downloaded, never edited), data/interim/, data/processed/.
+  data/ is never committed.
 - Typed Python, meaningful naming, configuration over hard-coded values.
+
 
 ### Out of Scope (MVP)
 Transfer prediction, market-value prediction, tactical team-fit, live match analytics,
@@ -66,8 +83,43 @@ future-potential prediction. Do not add these without explicit re-scoping.
   decision goes into docs/decisions/ as a numbered ADR (e.g. 001-data-source.md).
 - **Challenge weak assumptions.** If a design choice is questionable, say so rather than
   implementing it silently.
+- **At the end of each chunk, run /finish-chunk. Never commit outside it.**
+---
 
 ---
 
+## Agents
+The main session plans and writes code. Agents review and report; they
+never fix or commit. Fixes happen in the main session after my approval.
+
+| Agent | Use when |
+|---|---|
+| data-auditor | Evaluating or profiling a data source (new source, league or season) |
+| stats-reviewer | BEFORE implementing a new metric, definition or methodology; AFTER a pipeline run on new data |
+| qa-tester | After code changes: writes tests from the spec (ADRs, docstrings), not from the implementation |
+| code-reviewer | Before every commit, on the git diff |
+
+- Always invoke agents explicitly by name. Do not replace an agent's review
+  with your own.
+- When an agent finds a new kind of bug, add it to that agent's checklist.
+
 ## Commands
-TODO — tooling not yet chosen. Fill in once Makefile / scripts / CI are established.
+Always use the project virtualenv, not the system Python.
+
+```bash
+# Setup (once)
+python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+
+# Run the pipeline (La Liga 2015/16)
+.venv/bin/python -m eleveniq.pipeline.build_player_match
+
+# Fast unit tests (default — no I/O, sub-second)
+.venv/bin/python -m pytest tests/ -q -m "not integration"
+
+# Integration tests (require pipeline output in data/interim/)
+.venv/bin/python -m pytest tests/ -q -m integration
+
+# Tests with coverage
+.venv/bin/python -m pytest tests/ -q -m "not integration" --cov=eleveniq --cov-report=term-missing
+```
+
