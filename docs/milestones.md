@@ -79,6 +79,32 @@ Commands section of CLAUDE.md (Makefile targets / run scripts / test commands).
 Then implement raw → Parquet → validated Polars pipeline for the chosen dataset.
 Schema validation, cleaning, entity normalisation. Tests at each stage.
 
+**Carry-over from Milestone 1 spike:**
+- Run the dismissal check (`check_dismissed_player_minutes`) on La Liga 2015/16
+  and record the result in ADR 002 (was the `to` field reliably set for dismissed
+  players, or did we find mismatches?).
+- Un-skip `tests/test_positions.py::test_no_unknown_positions_in_pipeline_output`
+  once the pipeline has run and `data/interim/player_match_stats.parquet` exists.
+
+**Tech debt (deferred from Milestone 1 code review):**
+- Add timeout to `urllib.request.urlretrieve` in `downloader.py` — currently hangs
+  indefinitely on a slow or stalled connection.
+- Add mid-loop error recovery and per-match retry in `downloader.py` — a single
+  bad match file aborts the entire competition-season download.
+- Extract shared `_DATA_ROOT` constant to `src/eleveniq/config.py` — currently
+  duplicated in `downloader.py` and `loader.py`.
+- Guard `stint.get("to")` against empty string `""` in `minutes.py` and
+  `positions.py` — the current code treats `""` as a truthy to-value and calls
+  `parse_mm_ss("")`, which will raise a `ValueError`.
+- Replace `test_aggregation.py` inline expressions with tests against the actual
+  `build_player_season.py` module once it exists (currently tests Polars logic
+  in isolation with no reference to the real pipeline code).
+- Add a cross-consistency test confirming that `sum(compute_minutes_per_group(...).values())`
+  equals `compute_player_minutes(...)` for the same positions array and match duration.
+- If the real pipeline run finds dismissal events with missing `minute`/`second`,
+  derive the timestamp from the StatsBomb `timestamp` field or neighbouring events
+  in the same period, and mark it as inferred in the quality report.
+
 ---
 
 ## Milestone 4 — Feature Engineering & Player DNA  (outline)
