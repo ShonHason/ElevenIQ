@@ -136,6 +136,15 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
   `passes_completed` raw and untouched.
   Until then, unknown-outcome passes are excluded from the completion denominator
   (`passes_attempted − passes_unknown_outcome`) and `passes_completed` is accurate.
+- `test_incomplete_pass_not_counted_as_key_pass` in `tests/test_aggregation.py`:
+  name contradicts its assertion (`assert result["key_passes"] == 1`). Rename to
+  `test_key_pass_counted_regardless_of_pass_completion` or similar.
+- `test_known_pass_denominator_excludes_unknown`: final arithmetic assertion
+  (`known_attempts == 3`) is redundant — the two direct assertions on lines 810–812
+  already cover it. Remove the derived assertion.
+- `_pass_event` helper: `completed` is silently ignored when `outcome` is explicitly
+  set. Either rename `completed` to `_completed` to signal it is secondary, or add a
+  test asserting `completed=False` has no effect when `outcome` is given.
 
 ---
 
