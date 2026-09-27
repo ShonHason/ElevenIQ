@@ -27,5 +27,11 @@ Rules:
   Do not work around it by duplicating tests.
 - Fast unit tests must not read data/ files. Tests that need pipeline output
   get @pytest.mark.integration and a skipif when the file is missing.
+- Prefer a few tests that could catch a real bug over many small ones. Don't
+  write tests for formatting, types, naming, or constants' spelling.
+- Before adding a test, search tests/ for an existing test of the same
+  behaviour. Never create a class name that already exists in tests/.
+- Focus on the code changed in this chunk, not files already reviewed in
+  earlier commits.
 
 Report: each test case you added and why (one line each), plus any findings.

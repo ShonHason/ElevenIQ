@@ -1025,40 +1025,6 @@ class TestProgressiveCrossOverlap:
 
 
 # ---------------------------------------------------------------------------
-# _primary_raw_position — unit tests
-# ---------------------------------------------------------------------------
-
-from eleveniq.pipeline.build_player_match import _primary_raw_position
-
-
-class TestPrimaryRawPosition:
-    """
-    _primary_raw_position returns the StatsBomb position name with the most
-    playing time.  Tie-break: alphabetically first (same rule as primary_position_group).
-    """
-
-    def test_single_position(self):
-        assert _primary_raw_position({"Center Back": 90.0}) == "Center Back"
-
-    def test_most_minutes_wins(self):
-        raw = {"Center Forward": 70.0, "Left Wing": 20.0}
-        assert _primary_raw_position(raw) == "Center Forward"
-
-    def test_tie_broken_alphabetically(self):
-        # "Center Back" < "Left Back" alphabetically → Center Back wins tie.
-        raw = {"Center Back": 45.0, "Left Back": 45.0}
-        assert _primary_raw_position(raw) == "Center Back"
-
-    def test_empty_returns_empty_string(self):
-        # Docstring: no-op for empty input → returns "".
-        assert _primary_raw_position({}) == ""
-
-    def test_three_positions(self):
-        raw = {"Defensive Midfield": 30.0, "Center Midfield": 55.0, "Left Midfield": 5.0}
-        assert _primary_raw_position(raw) == "Center Midfield"
-
-
-# ---------------------------------------------------------------------------
 # Integration test: parquet goals + own goals == official match-score totals
 # ---------------------------------------------------------------------------
 
@@ -1101,3 +1067,5 @@ def test_goals_plus_own_goals_equal_match_scores():
         f"goals={parquet_goals} + own_goals={own_goals} = {parquet_goals + own_goals}"
         f" ≠ official {official_total}"
     )
+
+

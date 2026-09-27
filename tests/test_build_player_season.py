@@ -1389,3 +1389,151 @@ class TestSeasonTotalsNotMatchAverages:
             f"xg_per_shot must use season totals (ADR 002 §6b); "
             f"expected {1/11:.5f} but got {row['xg_per_shot']}"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestThreeTeamPlayerSeason — player transfers to two new clubs in one season
+# ---------------------------------------------------------------------------
+
+class TestThreeTeamPlayerSeason:
+    """
+    A player transferred twice during the season ends up at three clubs.
+    This is an extreme but valid multi-team scenario.
+
+    Contracts (ADR 002 §6 / build_player_season docstring):
+    - Three separate season rows (one per team) are produced.
+    - multi_team_season is True on all three rows.
+    - is_primary_stint is True on exactly one row (the one with the most minutes).
+    - player_season_minutes_total equals the sum of all three stints on every row.
+    - If two teams have equal minutes the lower team_id wins is_primary_stint.
+    """
+
+    def _three_team_rows(self):
+        return [
+            _match_row(player_id=1, team_id=10, minutes_played=300.0,
+                       minutes_dm_cm=300.0),
+            _match_row(player_id=1, team_id=20, minutes_played=500.0,
+                       minutes_dm_cm=500.0),
+            _match_row(player_id=1, team_id=30, minutes_played=200.0,
+                       minutes_dm_cm=200.0),
+        ]
+
+    def test_three_rows_produced(self):
+        result = aggregate_player_season(_df(self._three_team_rows()))
+        assert len(result.filter(pl.col("player_id") == 1)) == 3
+
+    def test_all_three_rows_multi_team_true(self):
+        result = aggregate_player_season(_df(self._three_team_rows()))
+        for row in result.filter(pl.col("player_id") == 1).iter_rows(named=True):
+            assert row["multi_team_season"] is True, (
+                f"team_id={row['team_id']}: multi_team_season must be True for a 3-team player"
+            )
+
+    def test_exactly_one_primary_stint(self):
+        result = aggregate_player_season(_df(self._three_team_rows()))
+        primary = result.filter(
+            (pl.col("player_id") == 1) & pl.col("is_primary_stint")
+        )
+        assert len(primary) == 1, (
+            f"Expected exactly 1 is_primary_stint=True row for 3-team player; "
+            f"got {len(primary)}"
+        )
+
+    def test_primary_stint_is_most_minutes_team(self):
+        # team 20 has 500 min — the most — and must be the primary stint.
+        result = aggregate_player_season(_df(self._three_team_rows()))
+        primary = result.filter(
+            (pl.col("player_id") == 1) & pl.col("is_primary_stint")
+        )
+        assert primary["team_id"][0] == 20, (
+            "The team with 500 min (team_id=20) must be is_primary_stint=True, "
+            "not the lower-id team with fewer minutes"
+        )
+
+    def test_player_season_minutes_total_is_sum_of_all_stints(self):
+        # 300 + 500 + 200 = 1000 on every row
+        result = aggregate_player_season(_df(self._three_team_rows()))
+        for row in result.filter(pl.col("player_id") == 1).iter_rows(named=True):
+            assert row["player_season_minutes_total"] == pytest.approx(1000.0), (
+                f"team_id={row['team_id']}: player_season_minutes_total must be "
+                f"sum of all stints (1000) but got {row['player_season_minutes_total']}"
+            )
+
+    def test_three_team_tiebreak_lower_id_wins_when_equal_minutes(self):
+        """
+        When two of the three teams have equal minutes (the most), the lower
+        team_id must be is_primary_stint=True.
+        """
+        rows = [
+            _match_row(player_id=1, team_id=10, minutes_played=500.0,
+                       minutes_dm_cm=500.0),
+            _match_row(player_id=1, team_id=20, minutes_played=500.0,
+                       minutes_dm_cm=500.0),
+            _match_row(player_id=1, team_id=30, minutes_played=200.0,
+                       minutes_dm_cm=200.0),
+        ]
+        result = aggregate_player_season(_df(rows))
+        primary = result.filter(
+            (pl.col("player_id") == 1) & pl.col("is_primary_stint")
+        )
+        assert len(primary) == 1
+        assert primary["team_id"][0] == 10, (
+            "Teams 10 and 20 both have 500 min; team_id=10 must win the tie-break "
+            "(lower team_id is the secondary rule per build_player_season docstring)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestUnknownPositionGroupFlag — UNKNOWN position group is not GK
+# ---------------------------------------------------------------------------
+
+class TestUnknownPositionGroupFlag:
+    """
+    ADR 002 §12: is_gk=True only for rows where position_group='GK'.
+    A player whose season position_group resolves to 'UNKNOWN' (e.g. their
+    position name is not in POSITION_GROUP_MAP) must have is_gk=False.
+
+    This guards against a future accidental broadening of the is_gk condition
+    (e.g., changing `== "GK"` to `!= "Outfield"`) that would misclassify
+    unknown-position players.
+    """
+
+    def test_unknown_position_group_is_gk_false(self):
+        # Build a row where all minutes are in the UNKNOWN group.
+        base = _match_row(player_id=1, minutes_played=90.0)
+        unknown_row = {
+            **base,
+            "minutes_gk": 0.0,
+            "minutes_cb": 0.0,
+            "minutes_fb_wb": 0.0,
+            "minutes_dm_cm": 0.0,
+            "minutes_am_winger": 0.0,
+            "minutes_st": 0.0,
+            "minutes_unknown": 90.0,
+        }
+        result = aggregate_player_season(_df([unknown_row]))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["position_group"] == "UNKNOWN", (
+            "Sanity: player with 90 min in minutes_unknown must resolve to 'UNKNOWN'"
+        )
+        assert row["is_gk"] is False, (
+            "ADR 002 §12: is_gk must be False for position_group='UNKNOWN'; "
+            "UNKNOWN players are not goalkeepers and must not enter GK cohorts"
+        )
+
+    def test_unknown_position_meets_min_minutes_not_affected(self):
+        # An UNKNOWN-position player with enough minutes still passes meets_min_minutes.
+        base = _match_row(player_id=1, minutes_played=900.0)
+        unknown_row = {
+            **base,
+            "minutes_gk": 0.0,
+            "minutes_cb": 0.0,
+            "minutes_fb_wb": 0.0,
+            "minutes_dm_cm": 0.0,
+            "minutes_am_winger": 0.0,
+            "minutes_st": 0.0,
+            "minutes_unknown": 900.0,
+        }
+        result = aggregate_player_season(_df([unknown_row]), min_minutes=900)
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["meets_min_minutes"] is True
