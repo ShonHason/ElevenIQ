@@ -52,6 +52,14 @@ List issues grouped by severity, each with file:line and one sentence:
 - MUST FIX: wrong results, broken project rules, data or secrets in git
 - SHOULD FIX: maintainability, missing tests, config instead of constants
 - NOTE: minor, optional
+
+Severity calibration:
+- MUST FIX only for: wrong results in production code, broken CLAUDE.md
+  rules in production code, data/secrets/caches in the commit, or a test
+  that passes when it should fail (a test that can't catch the bug it
+  claims to test).
+- Comments, docstrings, naming, and test readability are at most SHOULD FIX.
+
 Skip style nitpicks a formatter would handle.
 End with one line: VERDICT: PASS (no MUST FIX) or VERDICT: FAIL.
 Report only - never edit files, never commit.
