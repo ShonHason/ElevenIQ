@@ -223,6 +223,23 @@ split-season players be ranked using (a) their per-stint `minutes_played` only,
 the primary stint meets the minimum threshold on its own? Record the decision
 in ADR 002 §6 or a new ADR.
 
+**Pre-conditions from chunk A reviews — must be done before computing percentiles:**
+
+- `long_passes_attempted` includes passes with outcome "Unknown"; the same
+  denominator-correction rule used for `pass_completion_pct` must be applied
+  here. Add `long_passes_unknown_outcome` as a display-only column so the
+  denominator imbalance can be diagnosed, and update `long_pass_completion_pct`
+  to exclude unknown outcomes before use in DNA.
+- Position-biased metrics (`dispossessed_p90`, `miscontrols_p90`,
+  `switches_p90`) and team-style-biased metrics (`ball_recoveries_p90`,
+  `pressures_p90`) are currently indistinguishable from well-behaved per-90s
+  in the schema. Encode the bias in code (e.g. a metric registry with a
+  `position_biased` / `team_style_biased` flag) so the DNA stage cannot
+  accidentally use them — an ADR text warning is not sufficient.
+- Percentile computation must filter to `meets_min_minutes == True` and
+  `is_gk == False` (for outfield cohorts) in exactly one place; do not
+  scatter this filter across individual queries.
+
 ---
 
 ## Milestone 5 — Similarity Engine  (outline)
