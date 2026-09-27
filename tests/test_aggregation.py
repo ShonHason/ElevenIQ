@@ -281,19 +281,33 @@ def _foul_won_event() -> dict:
     return {"type": {"name": "Foul Won"}}
 
 
-def _pass_event(*, shot_assist=False, goal_assist=False, completed=True) -> dict:
-    """Minimal StatsBomb Pass event."""
+def _pass_event(
+    *,
+    shot_assist=False,
+    goal_assist=False,
+    completed=True,
+    outcome: str | None = None,
+    location: list | None = None,
+    end_location: list | None = None,
+) -> dict:
+    """Minimal StatsBomb Pass event.
+
+    ``outcome`` overrides the ``completed`` flag when provided explicitly, so
+    callers can inject any outcome string (e.g. "Unknown", "Out", "Incomplete").
+    """
     pass_data: dict = {}
     if shot_assist:
         pass_data["shot_assist"] = True
     if goal_assist:
         pass_data["goal_assist"] = True
-    if not completed:
+    if outcome is not None:
+        pass_data["outcome"] = {"name": outcome}
+    elif not completed:
         pass_data["outcome"] = {"name": "Incomplete"}
     return {
         "type": {"name": "Pass"},
-        "location": [60.0, 40.0],
-        "pass": {**pass_data, "end_location": [62.0, 40.0]},
+        "location": location if location is not None else [60.0, 40.0],
+        "pass": {**pass_data, "end_location": end_location if end_location is not None else [62.0, 40.0]},
     }
 
 
@@ -708,6 +722,142 @@ class TestAggregateEventsProgressiveCounts:
         result = _aggregate_events([event])
         assert result["passes_attempted"] == 1
         assert result["progressive_passes"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Unknown-outcome passes — _aggregate_events unit tests
+#
+# Milestone 3 tech-debt note (milestones.md): unknown-outcome passes are
+# excluded from the completion denominator via the separate column
+# passes_unknown_outcome.  The contract for _aggregate_events is:
+#   outcome="Unknown" → passes_attempted+1, passes_unknown_outcome+1
+#                       passes_completed unchanged (NOT incremented)
+#                       progressive_passes NOT incremented (pass not confirmed complete)
+# ---------------------------------------------------------------------------
+
+class TestAggregateEventsUnknownOutcomePasses:
+    """
+    Verify that Pass events with outcome.name == "Unknown" are counted in
+    passes_unknown_outcome, increment passes_attempted, but do NOT increment
+    passes_completed or progressive_passes.
+
+    This directly tests the contract specified in milestones.md §M3 tech-debt:
+    'unknown-outcome passes are excluded from the completion denominator
+    (passes_attempted − passes_unknown_outcome) and passes_completed is accurate.'
+    """
+
+    def test_unknown_outcome_increments_passes_attempted(self):
+        # A pass with outcome="Unknown" is still a pass attempt.
+        result = _aggregate_events([_pass_event(outcome="Unknown")])
+        assert result["passes_attempted"] == 1
+
+    def test_unknown_outcome_increments_passes_unknown_outcome(self):
+        # outcome="Unknown" must land in the dedicated counter, not silently dropped.
+        result = _aggregate_events([_pass_event(outcome="Unknown")])
+        assert result["passes_unknown_outcome"] == 1
+
+    def test_unknown_outcome_does_not_increment_passes_completed(self):
+        # passes_completed = raw completed count only (outcome is None in StatsBomb).
+        # An "Unknown" outcome must NOT be treated as completed.
+        result = _aggregate_events([_pass_event(outcome="Unknown")])
+        assert result["passes_completed"] == 0
+
+    def test_unknown_outcome_not_counted_as_progressive(self):
+        # Progressive passes require outcome=None (completed).  outcome="Unknown"
+        # must return False from is_progressive_pass regardless of geometry.
+        # Use a geometry that would qualify as progressive if the pass were completed:
+        # start=(60,40) → end=(90,40): 30-yard reduction, start_x≥48 → progressive
+        # if and only if outcome is None.
+        result = _aggregate_events([
+            _pass_event(outcome="Unknown", location=[60.0, 40.0], end_location=[90.0, 40.0])
+        ])
+        assert result["progressive_passes"] == 0
+
+    def test_multiple_unknown_outcomes_accumulate(self):
+        # Two passes with outcome="Unknown" → passes_unknown_outcome=2.
+        result = _aggregate_events([
+            _pass_event(outcome="Unknown"),
+            _pass_event(outcome="Unknown"),
+        ])
+        assert result["passes_unknown_outcome"] == 2
+        assert result["passes_completed"] == 0
+        assert result["passes_attempted"] == 2
+
+    def test_mixed_completed_unknown_incomplete(self):
+        # Mix of completed (outcome=None), unknown, and incomplete passes.
+        # Completed: passes_completed+1, passes_attempted+1
+        # Unknown:   passes_unknown_outcome+1, passes_attempted+1
+        # Incomplete: passes_attempted+1 (no bucket incremented for incomplete here)
+        result = _aggregate_events([
+            _pass_event(completed=True),          # outcome=None → completed
+            _pass_event(outcome="Unknown"),        # unknown
+            _pass_event(completed=False),          # outcome="Incomplete" → not completed
+        ])
+        assert result["passes_attempted"] == 3
+        assert result["passes_completed"] == 1
+        assert result["passes_unknown_outcome"] == 1
+
+    def test_known_pass_denominator_excludes_unknown(self):
+        # 5 attempted: 3 completed (outcome=None), 2 unknown-outcome attempts.
+        # known-outcome attempts = 5 - 2 = 3.
+        result = _aggregate_events([
+            _pass_event(completed=True),
+            _pass_event(completed=True),
+            _pass_event(completed=True),
+            _pass_event(outcome="Unknown"),
+            _pass_event(outcome="Unknown"),
+        ])
+        assert result["passes_attempted"] == 5
+        assert result["passes_unknown_outcome"] == 2
+        assert result["passes_completed"] == 3
+        known_attempts = result["passes_attempted"] - result["passes_unknown_outcome"]
+        assert known_attempts == 3
+
+    def test_unknown_outcome_pass_with_goal_assist_still_increments_assists_and_key_passes(self):
+        # An "Unknown" outcome pass that carries a goal_assist flag:
+        # key_passes and assists should still be incremented because the flags are
+        # recorded on the pass regardless of outcome (current pipeline behaviour,
+        # documented in the key_passes tech-debt note in milestones.md §M3).
+        result = _aggregate_events([_pass_event(outcome="Unknown", goal_assist=True)])
+        assert result["key_passes"] == 1
+        assert result["assists"] == 1
+        # But it must not count as completed or progressive.
+        assert result["passes_completed"] == 0
+        assert result["passes_unknown_outcome"] == 1
+
+    def test_other_known_incomplete_outcomes_not_counted_as_unknown(self):
+        # Outcomes such as "Out", "Pass Offside", "Injury Clearance" are
+        # *known* incomplete outcomes — they must NOT land in passes_unknown_outcome.
+        # The implementation uses string-equality "Unknown"; this test guards against
+        # accidental broadening (e.g. 'elif outcome_name is not None' would break this).
+        for outcome_name in ("Out", "Pass Offside", "Injury Clearance", "Incomplete"):
+            result = _aggregate_events([_pass_event(outcome=outcome_name)])
+            assert result["passes_unknown_outcome"] == 0, (
+                f"outcome={outcome_name!r} must not be counted as unknown-outcome"
+            )
+            assert result["passes_attempted"] == 1
+            assert result["passes_completed"] == 0
+
+    def test_zero_unknown_outcomes_when_all_completed(self):
+        # Baseline: three completed passes → passes_unknown_outcome stays at 0.
+        result = _aggregate_events([
+            _pass_event(completed=True),
+            _pass_event(completed=True),
+            _pass_event(completed=True),
+        ])
+        assert result["passes_unknown_outcome"] == 0
+        assert result["passes_completed"] == 3
+        assert result["passes_attempted"] == 3
+
+    def test_unknown_outcome_with_shot_assist_increments_key_passes(self):
+        # Symmetry check with the goal_assist test already in the class:
+        # shot_assist flag on an "Unknown" outcome pass should still count as a key pass
+        # (flag-based; not gated on outcome).
+        result = _aggregate_events([_pass_event(outcome="Unknown", shot_assist=True)])
+        assert result["key_passes"] == 1
+        assert result["assists"] == 0          # shot_assist only → no assist
+        assert result["passes_completed"] == 0
+        assert result["passes_unknown_outcome"] == 1
 
 
 # ---------------------------------------------------------------------------

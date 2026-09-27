@@ -124,6 +124,18 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
   the final row after the fallback pass instead.
 - `_FIXTURE_ROOT_9998` in `tests/test_build_player_match.py` is an alias for
   `_FIXTURE_ROOT`; use the existing constant directly.
+- Investigate the 2,465 passes with `outcome="Unknown"` in La Liga 2015/16 (observed
+  in the La Liga 2015/16 pipeline run, commit `10751a0`):
+  (1) profile their characteristics (length, pass type, pitch zone) — are they
+  random noise or concentrated in a specific pattern?
+  (2) design an inference rule (e.g. `pass.recipient` present + next `Ball Receipt`
+  event by a teammate in the same sequence → treat as completed);
+  (3) measure the rule's accuracy on passes WITH known outcomes (must reach ≥95%
+  before applying);
+  (4) if accuracy ≥95%, add `passes_completed_inferred` column — keep
+  `passes_completed` raw and untouched.
+  Until then, unknown-outcome passes are excluded from the completion denominator
+  (`passes_attempted − passes_unknown_outcome`) and `passes_completed` is accurate.
 
 ---
 
