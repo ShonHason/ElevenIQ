@@ -861,6 +861,170 @@ class TestAggregateEventsUnknownOutcomePasses:
 
 
 # ---------------------------------------------------------------------------
+# crosses — _aggregate_events unit tests
+# ---------------------------------------------------------------------------
+
+class TestAggregateEventsCrosses:
+    """
+    crosses_attempted: every Pass with pass.cross=True, regardless of outcome.
+    crosses_completed: Pass with pass.cross=True AND outcome is None.
+    """
+
+    def test_completed_cross_counts_both(self):
+        event = _pass_event(completed=True)
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["crosses_attempted"] == 1
+        assert result["crosses_completed"] == 1
+
+    def test_incomplete_cross_counts_attempted_only(self):
+        event = _pass_event(completed=False)
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["crosses_attempted"] == 1
+        assert result["crosses_completed"] == 0
+
+    def test_unknown_outcome_cross_counts_attempted_only(self):
+        event = _pass_event(outcome="Unknown")
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["crosses_attempted"] == 1
+        assert result["crosses_completed"] == 0
+
+    def test_pass_without_cross_flag_not_counted(self):
+        result = _aggregate_events([_pass_event(completed=True)])
+        assert result["crosses_attempted"] == 0
+        assert result["crosses_completed"] == 0
+
+    def test_multiple_crosses_accumulated(self):
+        c1 = _pass_event(completed=True)
+        c1["pass"]["cross"] = True
+        c2 = _pass_event(completed=False)
+        c2["pass"]["cross"] = True
+        c3 = _pass_event(completed=True)  # no cross flag
+        result = _aggregate_events([c1, c2, c3])
+        assert result["crosses_attempted"] == 2
+        assert result["crosses_completed"] == 1
+
+    def test_cross_with_goal_assist_both_counted(self):
+        # A completed cross that is also a goal_assist: crosses_completed AND
+        # key_passes both increment.
+        event = _pass_event(goal_assist=True)
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["crosses_attempted"] == 1
+        assert result["crosses_completed"] == 1
+        assert result["key_passes"] == 1
+        assert result["assists"] == 1
+
+    def test_empty_events_crosses_zero(self):
+        result = _aggregate_events([])
+        assert result["crosses_attempted"] == 0
+        assert result["crosses_completed"] == 0
+
+    def test_cross_false_explicit_not_counted(self):
+        # ADR 002 §15: pass.cross == True is required.  An explicit cross=False
+        # on the pass_data must not increment crosses_attempted or crosses_completed.
+        # StatsBomb omits the cross field when it is False; some encodings may set
+        # it explicitly to False.  pass_data.get("cross") returns False → falsy →
+        # the guard must not count it.
+        event = _pass_event(completed=True)
+        event["pass"]["cross"] = False
+        result = _aggregate_events([event])
+        assert result["crosses_attempted"] == 0
+        assert result["crosses_completed"] == 0
+
+    def test_cross_increments_passes_attempted(self):
+        # A cross is still a pass: passes_attempted must increment alongside
+        # crosses_attempted.
+        event = _pass_event(completed=True)
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["passes_attempted"] == 1
+        assert result["crosses_attempted"] == 1
+
+    def test_completed_cross_increments_passes_completed(self):
+        # A completed cross (outcome=None) must also be counted as a completed pass.
+        event = _pass_event(completed=True)
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["passes_completed"] == 1
+        assert result["crosses_completed"] == 1
+
+    def test_other_outcome_cross_not_in_passes_completed(self):
+        # A cross with an explicit non-None outcome ("Incomplete") must NOT be
+        # counted in passes_completed.
+        event = _pass_event(completed=False)
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["passes_completed"] == 0
+        assert result["crosses_attempted"] == 1
+
+
+# ---------------------------------------------------------------------------
+# ADR 002 §16 — Progressive-cross intentional overlap
+# ---------------------------------------------------------------------------
+
+class TestProgressiveCrossOverlap:
+    """
+    ADR 002 §16: A completed cross that satisfies the progressive-pass geometry
+    (start_x >= 48, 10-yard distance reduction, or enters the penalty area from
+    outside) is counted simultaneously in BOTH progressive_passes AND
+    crosses_attempted / crosses_completed.
+
+    This is intentional: a cross is a pass, and if it is also progressive it is
+    both.  No adjustment or de-duplication (decision deferred to Milestone 4).
+    """
+
+    def test_progressive_cross_increments_both_progressive_passes_and_crosses_attempted(self):
+        # start=(60,40) → end=(90,40): 30-yard distance reduction, start_x=60>=48,
+        # outcome=None → qualifies as progressive pass AND cross (cross=True flag).
+        event = _pass_event(completed=True, location=[60.0, 40.0], end_location=[90.0, 40.0])
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["progressive_passes"] == 1, (
+            "ADR 002 §16: a progressive cross must increment progressive_passes"
+        )
+        assert result["crosses_attempted"] == 1, (
+            "ADR 002 §16: a progressive cross must also increment crosses_attempted"
+        )
+        assert result["crosses_completed"] == 1, (
+            "ADR 002 §16: a completed progressive cross must increment crosses_completed"
+        )
+
+    def test_progressive_cross_also_increments_passes_attempted_and_completed(self):
+        # A cross is still a pass — all four counters must fire.
+        event = _pass_event(completed=True, location=[60.0, 40.0], end_location=[90.0, 40.0])
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["passes_attempted"] == 1
+        assert result["passes_completed"] == 1
+
+    def test_non_progressive_cross_does_not_increment_progressive_passes(self):
+        # A cross that starts in the defensive 40% (start_x < 48) is NOT progressive.
+        # It must increment crosses_attempted but NOT progressive_passes.
+        event = _pass_event(completed=True, location=[30.0, 40.0], end_location=[60.0, 40.0])
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["crosses_attempted"] == 1
+        assert result["progressive_passes"] == 0, (
+            "A cross from the defensive 40 percent (start_x<48) must not count as progressive"
+        )
+
+    def test_incomplete_progressive_cross_not_progressive(self):
+        # An incomplete cross from the attacking half cannot be progressive
+        # (progressive pass requires outcome=None — ADR 002 §1).
+        event = _pass_event(completed=False, location=[60.0, 40.0], end_location=[90.0, 40.0])
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["crosses_attempted"] == 1
+        assert result["crosses_completed"] == 0
+        assert result["progressive_passes"] == 0, (
+            "An incomplete cross must not count as progressive (ADR 002 §1 + §16)"
+        )
+
+
+# ---------------------------------------------------------------------------
 # _primary_raw_position — unit tests
 # ---------------------------------------------------------------------------
 

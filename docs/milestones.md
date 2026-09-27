@@ -145,12 +145,58 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
 - `_pass_event` helper: `completed` is silently ignored when `outcome` is explicitly
   set. Either rename `completed` to `_completed` to signal it is secondary, or add a
   test asserting `completed=False` has no effect when `outcome` is given.
+- Measure how much `compute_match_duration` undercounts the real final whistle
+  (ADR 002 §3 estimates 15–60 seconds per match; it records the last event timestamp,
+  not the whistle). Quantify whether the cumulative undercount across a season moves
+  any player across the 900-minute `meets_min_minutes` threshold, and record the
+  result in ADR 002 §3.
+- `cross_completion_pct` denominator (`crosses_attempted`) is not cleaned of
+  unknown-outcome crosses, unlike `pass_completion_pct` (ADR 002 §14). Effect is
+  likely small but asymmetric. Before finalising DNA metrics in M4, count
+  unknown-outcome crosses in La Liga 2015/16; if non-zero, apply the same
+  exclusion rule as passes.
+- `_season_position_group` alphabetical tie-break means GK loses to AM-Winger on
+  an exact equal-minutes tie → `is_gk = False` for a goalkeeper. Document the
+  known edge case in a test comment; no change needed until GK scouting is in scope.
+- Move `DISMISSAL_TOLERANCE_MINUTES` (quality_report.py) and the `_PROJECT_ROOT /
+  parents[3]` anchor (build_player_match.py and build_player_season.py) into
+  `src/eleveniq/config.py` so all project-wide constants have a single source of
+  truth.
+- Add a `logger.info(...)` line at the end of `aggregate_player_season()` reporting
+  how many rows were produced and how many multi-team stints were found, so callers
+  that invoke the pure function directly have observability. (`build_player_season()`
+  already logs this; the pure function does not yet.)
+- **Set-piece crosses audit:** using `pass.type.name` (corner kick, free-kick delivery),
+  count how many `crosses_attempted` events in La Liga 2015/16 come from set pieces
+  vs open play. Decide whether `crosses_attempted_p90` and `cross_completion_pct`
+  should be split into open-play and set-piece variants, or kept combined with a note.
+  Record the decision in ADR 002 §15. Part of the M4 metric coverage audit.
+- **UNKNOWN position group exclusion:** players whose season `position_group` is
+  `UNKNOWN` must be excluded from DNA / similarity / Gem Finder cohorts, same as GK
+  (ADR 002 §12). Currently only `is_gk` is used as a cohort gate; add `is_unknown`
+  flag or extend the exclusion logic before M4 percentile computation reads the Parquet.
 
 ---
 
 ## Milestone 4 — Feature Engineering & Player DNA  (outline)
 Per-90 calculation, position-group percentiles, DNA dimension aggregation.
 Validate methodology against the questions in brief.md §20 before moving on.
+
+**Note for DNA feature selection (from La Liga 2015/16 data):**
+Crosses account for 0.7–9.1% of progressive passes by position group (CB 0.7%,
+DM-CM 2.4%, FB-WB 5.9%, ST 7.0%, AM-Winger 9.1%). Progressive passes are not
+dominated by crosses; they measure different aspects of play. Crosses are stored
+separately (`crosses_attempted`, `crosses_p90`, `cross_completion_pct`) and
+should be treated as an independent style metric in DNA profiles.
+
+**Open question to resolve before implementing percentiles:**
+Multi-team season ranking: `player_season_stats.parquet` stores one row per
+(player, team, season) with `is_primary_stint` and
+`player_season_minutes_total`. Before computing percentiles, decide: should
+split-season players be ranked using (a) their per-stint `minutes_played` only,
+(b) their `player_season_minutes_total`, or (c) excluded from rankings unless
+the primary stint meets the minimum threshold on its own? Record the decision
+in ADR 002 §6 or a new ADR.
 
 ---
 

@@ -12,6 +12,7 @@ from eleveniq.metrics.positions import (
     UNKNOWN_POSITION_GROUP,
     GK_GROUP,
     OUTFIELD_GROUPS,
+    POSITION_GROUP_COLUMNS,
 )
 
 
@@ -86,6 +87,98 @@ class TestGroupConstants:
         known = OUTFIELD_GROUPS | {GK_GROUP}
         for position, group in POSITION_GROUP_MAP.items():
             assert group in known, f"Position '{position}' maps to unknown group '{group}'"
+
+
+# ---------------------------------------------------------------------------
+# POSITION_GROUP_COLUMNS — canonical group→column mapping (new constant)
+# ---------------------------------------------------------------------------
+
+class TestPositionGroupColumns:
+    """
+    POSITION_GROUP_COLUMNS maps each canonical position group to the column name
+    used in player_match_stats.parquet.  The docstring states it is stored in
+    alphabetical order so pipeline code can rely on insertion order for the
+    lexicographic tie-break rule (AM-Winger first).
+    """
+
+    _EXPECTED_GROUPS = frozenset({
+        "AM-Winger", "CB", "DM-CM", "FB-WB", "GK", "ST", "UNKNOWN",
+    })
+
+    def test_all_canonical_groups_present_as_keys(self):
+        # Every group used elsewhere in the pipeline must have an entry.
+        assert set(POSITION_GROUP_COLUMNS.keys()) == self._EXPECTED_GROUPS
+
+    def test_no_extra_keys(self):
+        # The map must not silently include groups that do not exist in the taxonomy.
+        assert set(POSITION_GROUP_COLUMNS.keys()) <= self._EXPECTED_GROUPS
+
+    def test_column_name_format(self):
+        # Each value must be "minutes_" followed by the lower-cased, hyphen-stripped
+        # group name.  Spot-check every entry.
+        expected = {
+            "AM-Winger": "minutes_am_winger",
+            "CB":        "minutes_cb",
+            "DM-CM":     "minutes_dm_cm",
+            "FB-WB":     "minutes_fb_wb",
+            "GK":        "minutes_gk",
+            "ST":        "minutes_st",
+            "UNKNOWN":   "minutes_unknown",
+        }
+        assert dict(POSITION_GROUP_COLUMNS) == expected
+
+    def test_keys_in_alphabetical_order(self):
+        # Docstring contract: "Alphabetical order so pipeline code can rely on
+        # insertion order for tie-breaks (AM-Winger sorts first)."
+        keys = list(POSITION_GROUP_COLUMNS.keys())
+        assert keys == sorted(keys), (
+            f"POSITION_GROUP_COLUMNS keys are not in alphabetical order: {keys}"
+        )
+
+    def test_am_winger_is_first_key(self):
+        # AM-Winger must be the first key so that when all group minutes are equal
+        # the lexicographic tie-break resolves to AM-Winger (the alphabetically
+        # smallest group name).  See ADR 002 §4 and milestones.md tech debt.
+        first_key = next(iter(POSITION_GROUP_COLUMNS))
+        assert first_key == "AM-Winger", (
+            "AM-Winger must be the first key in POSITION_GROUP_COLUMNS "
+            "(alphabetical tie-break contract, ADR 002 §4)"
+        )
+
+    def test_all_values_are_strings(self):
+        for group, col in POSITION_GROUP_COLUMNS.items():
+            assert isinstance(col, str), f"Column name for {group!r} must be a str, got {type(col)}"
+
+    def test_all_values_start_with_minutes_prefix(self):
+        for group, col in POSITION_GROUP_COLUMNS.items():
+            assert col.startswith("minutes_"), (
+                f"Column name for {group!r} must start with 'minutes_' but got {col!r}"
+            )
+
+    def test_column_names_are_unique(self):
+        # Each group must map to a distinct column name — duplicates would corrupt
+        # the schema and cause silent merging of different groups' minutes.
+        values = list(POSITION_GROUP_COLUMNS.values())
+        assert len(values) == len(set(values)), (
+            "POSITION_GROUP_COLUMNS has duplicate column names: " +
+            str([v for v in values if values.count(v) > 1])
+        )
+
+    def test_gk_not_in_outfield_columns(self):
+        # OUTFIELD_GROUPS excludes GK (ADR 002 §4); the column minutes_gk must
+        # still exist so GK season minutes are stored, but the group key 'GK' is
+        # not in OUTFIELD_GROUPS.
+        assert "GK" not in OUTFIELD_GROUPS
+        assert "GK" in POSITION_GROUP_COLUMNS, "GK must have a column entry"
+
+    def test_exact_count_is_seven(self):
+        # The taxonomy has exactly 7 groups: AM-Winger, CB, DM-CM, FB-WB, GK, ST, UNKNOWN.
+        # A silent addition or removal of a group without updating the column map
+        # would cause _group_minutes_to_columns to raise or silently drop minutes.
+        assert len(POSITION_GROUP_COLUMNS) == 7, (
+            f"Expected exactly 7 entries in POSITION_GROUP_COLUMNS but found "
+            f"{len(POSITION_GROUP_COLUMNS)}: {sorted(POSITION_GROUP_COLUMNS)}"
+        )
 
 
 # ---------------------------------------------------------------------------

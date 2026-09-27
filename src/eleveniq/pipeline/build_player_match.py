@@ -21,6 +21,7 @@ import polars as pl
 
 from eleveniq.metrics.minutes import compute_match_duration
 from eleveniq.metrics.positions import (
+    POSITION_GROUP_COLUMNS,
     compute_minutes_per_group,
     compute_minutes_per_raw_position,
     primary_position_group,
@@ -77,7 +78,30 @@ _SCHEMA: dict[str, type] = {
     "assists": pl.Int32,
     "started": pl.Boolean,
     "started_inferred": pl.Boolean,
+    "minutes_gk": pl.Float64,
+    "minutes_cb": pl.Float64,
+    "minutes_fb_wb": pl.Float64,
+    "minutes_dm_cm": pl.Float64,
+    "minutes_am_winger": pl.Float64,
+    "minutes_st": pl.Float64,
+    "minutes_unknown": pl.Float64,
+    "crosses_attempted": pl.Int32,
+    "crosses_completed": pl.Int32,
 }
+
+
+def _group_minutes_to_columns(group_minutes: dict[str, float]) -> dict[str, float]:
+    """
+    Translate a {group: minutes} dict into {column_name: minutes} using
+    POSITION_GROUP_COLUMNS.  Raises ValueError for any group key not in the
+    canonical map so that a new group in positions.py is never silently dropped.
+    """
+    unknown = set(group_minutes) - set(POSITION_GROUP_COLUMNS)
+    if unknown:
+        raise ValueError(
+            f"Unknown position group(s) from compute_minutes_per_group: {sorted(unknown)}"
+        )
+    return {col: group_minutes.get(group, 0.0) for group, col in POSITION_GROUP_COLUMNS.items()}
 
 
 def _primary_raw_position(
@@ -102,6 +126,8 @@ def _aggregate_events(player_events: list[dict]) -> dict:
     progressive_passes = 0
     key_passes = 0
     assists = 0
+    crosses_attempted = 0
+    crosses_completed = 0
     carries = 0
     progressive_carries = 0
     tackles_attempted = 0
@@ -142,6 +168,11 @@ def _aggregate_events(player_events: list[dict]) -> dict:
                 key_passes += 1
             if pass_data.get("goal_assist"):
                 assists += 1
+
+            if pass_data.get("cross"):
+                crosses_attempted += 1
+                if outcome_name is None:
+                    crosses_completed += 1
 
         elif event_type == "Shot":
             shots += 1
@@ -222,6 +253,8 @@ def _aggregate_events(player_events: list[dict]) -> dict:
         "fouls_committed": fouls_committed,
         "fouls_won": fouls_won,
         "assists": assists,
+        "crosses_attempted": crosses_attempted,
+        "crosses_completed": crosses_completed,
     }
 
 
@@ -349,6 +382,7 @@ def _process_match(
                     "position_group": position_group,
                     "started": started,
                     "started_inferred": False,
+                    **_group_minutes_to_columns(group_minutes),
                     **_aggregate_events(player_events.get(player_id, [])),
                 },
                 positions,

@@ -73,6 +73,19 @@ UNKNOWN_POSITION_GROUP: str = "UNKNOWN"
 GK_GROUP: str = "GK"
 OUTFIELD_GROUPS: frozenset[str] = frozenset({"CB", "FB-WB", "DM-CM", "AM-Winger", "ST"})
 
+# Canonical mapping: position group → minute column name in player_match_stats.parquet.
+# Alphabetical order so pipeline code can rely on insertion order for tie-breaks
+# (AM-Winger sorts first, matching primary_position_group's lexicographic tie-break rule).
+POSITION_GROUP_COLUMNS: dict[str, str] = {
+    "AM-Winger": "minutes_am_winger",
+    "CB":        "minutes_cb",
+    "DM-CM":     "minutes_dm_cm",
+    "FB-WB":     "minutes_fb_wb",
+    "GK":        "minutes_gk",
+    "ST":        "minutes_st",
+    "UNKNOWN":   "minutes_unknown",
+}
+
 
 def assign_position_group(position_name: str) -> str:
     """Return the ElevenIQ position group for a StatsBomb position name."""

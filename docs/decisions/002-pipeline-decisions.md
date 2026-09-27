@@ -625,3 +625,135 @@ is `False` (or absent).
 
 **Implementation:** `build_player_match._aggregate_events` guards the `blocks`
 counter with `not block_data.get("offensive") and not block_data.get("save_block")`.
+
+---
+
+## 14. Pass Completion Denominator and Unknown-Outcome Passes
+
+### Formula
+
+```
+pass_completion_pct = passes_completed / (passes_attempted − passes_unknown_outcome)
+```
+
+Unknown-outcome passes are **excluded from the denominator** because their completion
+status cannot be determined from the StatsBomb event data.  A pass with
+`outcome.name == "Unknown"` is neither confirmed completed nor confirmed incomplete.
+Including it in the denominator would inflate the completion percentage for players
+whose data happens to contain more unknown outcomes.
+
+`null` is returned when the adjusted denominator is zero (i.e. all recorded passes
+have unknown outcome).
+
+### Volume — La Liga 2015/16
+
+| Category | Count | Share |
+|----------|-------|-------|
+| Total passes | 365,288 | 100% |
+| Unknown-outcome passes | 2,465 | 0.7% |
+
+At 0.7%, unknown-outcome passes are a minor but non-zero fraction.  Their
+characteristics (length, pass type, pitch zone) are tracked as tech debt in
+`docs/milestones.md` — the current exclusion approach is correct until an
+inference rule can be validated (see §5 and milestones.md tech debt).
+
+---
+
+## 15. Cross Metrics Definition
+
+### "Cross completed" definition
+
+A cross is **completed** when:
+- The pass event has `pass.cross == True` (StatsBomb flag), **AND**
+- The pass outcome is `None` — i.e. the pass reached a teammate.
+
+In StatsBomb encoding, a completed pass has no `pass.outcome` field (Python `None`);
+any non-`None` string means the cross did not reach a teammate (blocked, out of play,
+incomplete, etc.).
+
+**Implementation:** `build_player_match._aggregate_events` checks
+`pass_data.get("cross")` and `outcome_name is None` for the cross-completed counter.
+
+### Why `crosses_attempted` has a per-90 column but `crosses_completed` does not
+
+`crosses_attempted` is in `_COUNT_COLS` and therefore gets a `crosses_attempted_p90`
+column.  `crosses_completed` is in `_DISPLAY_ONLY_COLS` and has no per-90 sibling.
+
+**Rationale:** the meaningful rate metric for crossing is `cross_completion_pct`
+(completed / attempted), not `crosses_completed_p90`.  A player who attempts 3
+crosses per 90 and completes 2 (67%) carries different information than a player who
+attempts 10 per 90 and completes 3 (30%).  Storing a `crosses_completed_p90` column
+alongside `cross_completion_pct` would be redundant and invite misuse (e.g. ranking
+by `crosses_completed_p90` without accounting for volume).
+
+`crosses_completed` is retained as a season total so the completion percentage can be
+recalculated from raw counts without re-running the pipeline (CLAUDE.md requirement).
+
+### Verified — La Liga 2015/16
+
+| Metric | Value |
+|--------|-------|
+| `crosses_attempted` total | 9,606 |
+| `crosses_completed` total | 2,651 |
+| Average `cross_completion_pct` (outfield, 900+ min) | ~27% |
+
+---
+
+## 16. Cross Metrics and Progressive Passes — Intentional Overlap
+
+A completed cross that satisfies the progressive-pass geometry (start_x ≥ 48,
+10-yard distance reduction, or enters the penalty area from outside) is counted
+simultaneously in both `progressive_passes` **and** `crosses_attempted` /
+`crosses_completed`.  This is intentional: a cross is a pass, and if it is also
+progressive it is both.
+
+**Implementation:** `build_player_match._aggregate_events` calls
+`is_progressive_pass(...)` before the cross-detection branch, so a progressive
+cross increments both counters in the same event loop iteration.
+
+**Measured overlap — La Liga 2015/16 (by position group):**
+
+| Group | % of progressive passes that are also crosses |
+|-------|-----------------------------------------------|
+| CB | 0.7% |
+| DM-CM | 2.4% |
+| FB-WB | 5.9% |
+| ST | 7.0% |
+| AM-Winger | 9.1% |
+
+Progressive passes are not dominated by crosses at any position.  Crosses and
+progressive passes measure different aspects of play and are stored separately.
+
+**Decision:** No adjustment or de-duplication.  Whether to treat the overlap
+differently in DNA feature selection (e.g. subtract crosses from progressive
+passes to produce a "non-cross progression" metric) is deferred to Milestone 4.
+It must be decided explicitly at that point; the current metrics are correct as
+defined.
+
+---
+
+## 17. `meets_min_minutes` — Per-Stint Minutes (Default Until M4)
+
+`meets_min_minutes` in `player_season_stats.parquet` is computed from
+`minutes_played`, which is the per-stint total (one team's contribution to the
+season).  For a player who transfers mid-season, each stint is evaluated
+independently:
+
+- Player at Club A: 500 min → `meets_min_minutes = False` (< 900)
+- Player at Club B: 450 min → `meets_min_minutes = False` (< 900)
+- Combined via `player_season_minutes_total`: 950 min
+
+Under the current rule, both stints fail the gate even though the player has
+meaningful combined-season data.
+
+**This is the default behaviour**, chosen because:
+
+1. The alternative (evaluate against `player_season_minutes_total`) would
+   promote stints with very few minutes to eligible status if the player's
+   other stint is long.
+2. The correct answer depends on how percentile ranking handles split-season
+   players (Milestone 4 open question — see `docs/milestones.md`).
+
+**When to revisit:** Milestone 4, before computing percentiles.  The decision
+must be recorded in this ADR (extend §6 or add a new section) before any
+percentile computation reads `meets_min_minutes`.
