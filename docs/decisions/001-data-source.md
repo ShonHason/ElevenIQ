@@ -1,7 +1,7 @@
 # ADR 001 — Data Source Selection
 
 ## Status
-PROPOSED
+ACCEPTED — V1 built entirely on StatsBomb Open Data (2026-09-26)
 
 ## Context
 ElevenIQ needs per-player, per-season statistics covering at least 10 leagues (with meaningful representation outside the Big Five) to power its Player DNA profiles, similarity engine, and Gem Finder. The minimum acceptance criteria are: minutes played, position, team, competition, and season for every record; at least 15 per-player metrics spanning at least 5 of the 7 DNA dimensions (Passing, Progression, Creativity/Creation, Ball Carrying, Defending, Goal Threat, Ball Security); and a license that explicitly permits use in a publicly hosted portfolio project with data stored in a local PostgreSQL database. Scraping and UNCLEAR licenses are disqualifying.
@@ -512,25 +512,67 @@ Sportmonks uses a key-value architecture: the `PlayerStatistic` entity carries a
 ---
 
 ## Decision
-PENDING — awaiting sample profiling (Milestone 1 Step 2)
+ACCEPTED — V1 built entirely on StatsBomb Open Data.
 
-Based on Phase A/B research, the viable candidates for the shortlist entering sample profiling are:
+StatsBomb Open Data is the sole data source for ElevenIQ V1.  A paid provider
+(Sportmonks) is the planned V2 extension, not part of V1.
 
-1. **StatsBomb Open Data** (https://github.com/statsbomb/open-data) — richest event data with xG and carry metrics; BUT only Big Five with 1–3 seasons each in the open set; license must be read directly from LICENSE.pdf to confirm portfolio use; would NOT alone meet ≥10 leagues requirement. Conditional shortlist pending license confirmation.
+**Rationale:**
+- Richest freely available event-level football data; the only open source covering
+  all seven DNA dimensions from first principles.
+- StatsBomb xG is a well-regarded proprietary model available at no cost in this
+  dataset; no other free source offers per-shot xG.
+- License is permissive enough for a public non-commercial portfolio project.
+- Ingestion pipeline is working: La Liga 2015/16 (380 matches, 10,550 player-match
+  rows) validated end-to-end in Milestone 3.
+- League coverage (Big Five + MLS + international tournaments) is sufficient for
+  an MVP demonstration; the ≥10-leagues target is deferred to V2 via a paid API.
 
-2. **Sportmonks Football API** (https://www.sportmonks.com/football-api/) — only paid option with a clearly documented permissive storage/redistribution clause; covers all brief §8 leagues on Growth/Pro plans; has xG as add-on; missing progressive passes, carries, pressures. Minimum viable cost: €99/mo (Growth) + €29/mo (xG add-on) = €128/mo. Conditional shortlist if budget is acceptable.
-
-3. No free, open-licensed, season-aggregate dataset covering ≥10 leagues with ≥15 per-player DNA metrics was found in this phase. This is the key gap identified.
-
-The highest-risk finding: there is no single free dataset meeting all hard requirements simultaneously. The closest match would be StatsBomb open data (event-level, Big Five only, non-commercial) combined with another source for secondary leagues. Phase B sampling should test whether StatsBomb's open competitions can be aggregated to season level with sufficient metric coverage, and whether the license is acceptable for this project.
+**V2 extension (future):** A paid provider (likely Sportmonks; see Paid API
+comparison table above) will be added as a second source to extend league
+coverage.  Percentiles, similarity, and rarity are computed within a single
+source only — cross-source comparisons are out of scope until a normalisation
+strategy is designed and validated.
 
 ---
 
 ## Known limitations
-Fill after decision — to be populated after sample profiling confirms actual metric availability, missing-value rates, and player count by league.
+
+- Only Big Five domestic leagues plus select competitions are in the open set; no
+  Danish Superliga, Dutch Eredivisie, Primeira Liga, or other development/scouting
+  leagues in V1.  The ≥10-leagues brief requirement is not met by V1 alone.
+- Most leagues have 1–3 seasons of open data; only La Liga has deep multi-season
+  coverage (1973/74 through 2020/21). [UNVERIFIED — full/partial season list not
+  yet checked against the open-data repo]
+- Pirlo: no records in open data (Serie A 1986/87 predates his career at
+  Brescia/Inter; no other Serie A seasons in the open set cover his career).
+  [UNVERIFIED — no player-level query run against parquet]
+- Gerrard: only Premier League 2003/04 and 2015/16 available; the bulk of his
+  career (1997–2015) is absent. [UNVERIFIED — PL season list and player presence
+  not checked against parquet]
+- Xavi: La Liga coverage spans 1973/74–2020/21 which includes his career, but
+  only select seasons are in the open set; full coverage not guaranteed.
+  [UNVERIFIED — which La Liga seasons are actually in the open-data repo not
+  confirmed; player presence not checked against parquet]
 
 ## Compromises accepted
-Fill after decision.
+
+- The brief's ≥10 leagues criterion is not met in V1.  Accepted because the
+  project's primary purpose is to demonstrate methodology, not to scout across
+  every league.  League breadth is a V2 concern.
+- StatsBomb's non-commercial license sits in a grey area for a portfolio project
+  that is publicly shared to attract employers.  Accepted: StatsBomb explicitly
+  encourages publishing work using their data on social media; a non-monetised
+  portfolio demonstration is consistent with that intent.
+- A single source means no cross-league-strength adjustment is possible in V1.
+  Accepted: the ADR 002 rule (percentiles/similarity/rarity within a single source
+  only) documents and enforces this boundary.
 
 ## Historical/retired player coverage
-Fill after sample profiling. Documented status from Phase A: Pirlo and Xavi are absent from all confirmed free sources (either wrong era for datasets covering 2015+ only, or no Serie A/La Liga coverage). Gerrard is potentially present in StatsBomb's 2015/16 Premier League data. This represents a structural limitation of all publicly available free datasets discovered: they are either modern (post-2015, missing pre-2015 careers) or event-level only (requiring significant self-aggregation).
+
+Pirlo: absent from open data (wrong era; no Serie A season in open data covers his
+career). [UNVERIFIED]  Xavi: probably present in La Liga data for his Barça years
+(1998–2015), but which seasons are actually in the open set has not been confirmed.
+[UNVERIFIED]  Gerrard: partially present (PL 2003/04 and 2015/16). [UNVERIFIED]
+Full Historical Legends Mode is a V2 stretch feature dependent on finding
+event-level data that covers the relevant seasons.

@@ -1,0 +1,109 @@
+[
+  {
+    "team_id": 101,
+    "team_name": "Team A",
+    "lineup": [
+      {
+        "player_id": 1001,
+        "player_name": "Alice",
+        "positions": [
+          {
+            "position": "Center Back",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Starting XI",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      },
+      {
+        "player_id": 1002,
+        "player_name": "Bob",
+        "positions": [
+          {
+            "position": "Center Midfield",
+            "from": "00:00",
+            "to": "60:00",
+            "from_period": 1,
+            "to_period": 2,
+            "start_reason": "Starting XI",
+            "end_reason": "Substitution - Off (Tactical)"
+          }
+        ]
+      },
+      {
+        "player_id": 1003,
+        "player_name": "Charlie",
+        "positions": [
+          {
+            "position": "Center Forward",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Starting XI",
+            "end_reason": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "team_id": 102,
+    "team_name": "Team B",
+    "lineup": [
+      {
+        "player_id": 2001,
+        "player_name": "Dave",
+        "positions": [
+          {
+            "position": "Center Back",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Starting XI",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      },
+      {
+        "player_id": 2002,
+        "player_name": "Eve",
+        "positions": [
+          {
+            "position": "Center Midfield",
+            "from": "60:00",
+            "to": null,
+            "from_period": 2,
+            "to_period": null,
+            "start_reason": "Substitution - On (Tactical)",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      },
+      {
+        "player_id": 2003,
+        "player_name": "Frank",
+        "positions": []
+      },
+      {
+        "player_id": 2004,
+        "player_name": "Grace",
+        "positions": [
+          {
+            "position": "Left Back",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Tactical Shift",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      }
+    ]
+  }
+]

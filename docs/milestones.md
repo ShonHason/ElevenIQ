@@ -105,6 +105,26 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
   derive the timestamp from the StatsBomb `timestamp` field or neighbouring events
   in the same period, and mark it as inferred in the quality report.
 
+**Tech debt (deferred from Milestone 3 code and stats review):**
+- `key_passes` is not gated by pass completion (`build_player_match.py`): a pass
+  with `shot_assist=True` or `goal_assist=True` is counted as a key pass even if
+  the pass has a non-None outcome (i.e. was incomplete). Zero occurrences in La Liga
+  2015/16 StatsBomb data, but a latent defect if a future source records assist flags
+  on incomplete passes. Documented as current behaviour in `test_aggregation.py`.
+- Enforce the minimum-minutes gate in `build_player_season.py` — 2,055 player-match
+  rows have `0 < minutes_played < 45`, producing extreme per-90 values (e.g. xg_p90
+  up to 9.93). ADR 002 §5 documents that this gate belongs at the percentile stage;
+  `build_player_season.py` must not omit it.
+- `_iter_stint_contributions` in `positions.py` is the single source of truth for
+  minute/position consistency but has no docstring example for the dismissal-clamping
+  case. Add a brief inline example showing `dismissal_minute` clamping a stint.
+- `started_inferred` fallback mutates row dicts in-place after they are stored in
+  `team_entries`. Correct but fragile: if row dicts are ever replaced with dataclasses
+  or copied before the second pass, the mutation is silently lost. Consider building
+  the final row after the fallback pass instead.
+- `_FIXTURE_ROOT_9998` in `tests/test_build_player_match.py` is an alias for
+  `_FIXTURE_ROOT`; use the existing constant directly.
+
 ---
 
 ## Milestone 4 — Feature Engineering & Player DNA  (outline)
@@ -149,6 +169,30 @@ Explainability UI for similarity and gem findings.
 ---
 
 ## Future / Stretch Features
+
+### V2: Paid Provider Integration
+Add a second data source (likely Sportmonks Football API) to extend league coverage
+beyond the Big Five and expand historical depth.
+
+**Motivation:** StatsBomb Open Data covers only Big Five domestic leagues with 1–3
+seasons each in the open set.  The brief's ≥10-leagues criterion and development/
+scouting league coverage require a paid API.
+
+**Key constraints before implementation:**
+- Canonical Parquet schema must remain the contract between ingestion and analytics.
+  Add a `source` column (already in `player_match_stats.parquet` since M3) to tag
+  every row with its origin (`"statsbomb"`, `"sportmonks"`, …).
+- Percentiles, similarity, and rarity must be computed within a single source only
+  until a cross-source normalisation strategy is designed and validated.  This rule
+  is recorded in CLAUDE.md and ADR 002.
+- A new ADR is required before writing any Sportmonks ingestion code, documenting
+  which Sportmonks metrics map to which StatsBomb-derived columns and how gaps are
+  handled.
+
+**Candidate:** Sportmonks Growth plan (€99/mo) + xG add-on (€29/mo).  See ADR 001
+Paid API comparison table for metric-by-metric coverage analysis.
+
+---
 
 ### Historical Legends Mode
 Allow a retired player's past full league season (e.g. Pirlo 2011/12 Serie A) to be used

@@ -1,0 +1,53 @@
+[
+  {
+    "team_id": 201,
+    "team_name": "Team C",
+    "lineup": [
+      {
+        "player_id": 3001,
+        "player_name": "Hernandez",
+        "positions": [
+          {
+            "position": "Center Back",
+            "from": "00:00",
+            "to": "45:00",
+            "from_period": 1,
+            "to_period": 1,
+            "start_reason": "Starting XI",
+            "end_reason": "Half Time"
+          },
+          {
+            "position": "Center Back",
+            "from": "45:00",
+            "to": "84:41",
+            "from_period": 2,
+            "to_period": 2,
+            "start_reason": "Second Half",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "team_id": 202,
+    "team_name": "Team D",
+    "lineup": [
+      {
+        "player_id": 4001,
+        "player_name": "Ramirez",
+        "positions": [
+          {
+            "position": "Center Midfield",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Starting XI",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      }
+    ]
+  }
+]

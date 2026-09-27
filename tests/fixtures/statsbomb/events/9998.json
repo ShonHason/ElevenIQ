@@ -1,0 +1,18 @@
+[
+  {
+    "id": "f1",
+    "type": {"name": "Bad Behaviour"},
+    "player": {"id": 3001},
+    "minute": 17,
+    "second": 59,
+    "period": 1,
+    "bad_behaviour": {"card": {"name": "Red Card"}}
+  },
+  {
+    "id": "f2",
+    "type": {"name": "Half End"},
+    "minute": 90,
+    "second": 0,
+    "period": 2
+  }
+]

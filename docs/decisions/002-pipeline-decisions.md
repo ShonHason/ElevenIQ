@@ -143,25 +143,81 @@ seconds in edge cases (systematic but negligible per match).
 
 ### Red card / dismissal handling
 
-StatsBomb should set `positions[].to` to the dismissal minute for sent-off
-players. If `to` remains `None`, `compute_player_minutes` would use `match_duration`
-(~92 min) instead of the card minute, overcounting minutes and corrupting per-90
-stats.
+StatsBomb records dismissal cards (Red Card, Second Yellow) in **two distinct
+event types**:
 
-The `dismissal_minute` parameter guards against this. When building player-match
-stats, `build_player_match.py` must:
+| Source | Path |
+|--------|------|
+| `Bad Behaviour` | `event.bad_behaviour.card.name` |
+| `Foul Committed` | `event.foul_committed.card.name` |
 
-1. Call `find_dismissal_minute(events, player_id)` from
-   `src/pipeline/quality_report.py` to detect any dismissal for this player.
-2. Pass the result as `dismissal_minute` to `compute_player_minutes`.
-3. The quality report then cross-checks: if computed minutes still significantly
-   exceed the card minute (tolerance: 1 minute), it is listed as a mismatch.
+The two sources have **zero overlap** — each dismissal appears in exactly one
+type.  In La Liga 2015/16 there were 18 Bad Behaviour dismissals and 91 Foul
+Committed dismissals (109 total).  An implementation that checks only Bad
+Behaviour misses 83 % of all dismissals.
+
+`find_dismissal_minute(events, player_id)` checks both sources in a single
+chronological pass.  The first matching dismissal found is returned.
+
+#### Two StatsBomb lineup data-quality errors requiring the dismissal fix
+
+Beyond the `to=None` (open-ended stint) case described in Milestone 1, a
+second pattern was found during the La Liga 2015/16 pipeline run: **StatsBomb
+sometimes records explicit `to` timestamps that run past the card minute**.
+This happens when the lineup positions were not corrected after an early
+dismissal.  The stints effectively describe the end-of-match formation rather
+than the dismissed player's actual time on pitch.
+
+Confirmed examples (both Bad Behaviour source):
+
+| Player | Match | Card min | Uncorrected total | Root cause |
+|--------|-------|----------|-------------------|------------|
+| Mikel San José Domínguez | 3825686 | 17:59 (Red Card) | 84.7 min | Stints continue through 45:00, 84:41, "Final Whistle" |
+| Gustavo Daniel Cabral Cáceres | 3825635 | 56:10 (Second Yellow) | 81.5 min | Stints continue through 66:43, 81:27, "Final Whistle" |
+
+**Fix applied (Milestone 3):** `_iter_stint_contributions` now clamps ALL
+stint end-times at `min(end, dismissal_minute)` when `dismissal_minute` is
+provided — not only `to=None` stints.  Without a dismissal, explicit `to`
+values are left as-is (see note below).
+
+```python
+# _iter_stint_contributions — key line after the fix
+end = min(raw_end, effective_end) if dismissal_minute is not None else raw_end
+```
+
+`compute_player_minutes` in `minutes.py` applies the identical logic to keep
+the cross-consistency invariant: `sum(compute_minutes_per_group(...)) ==
+compute_player_minutes(...)`.
+
+**Why not clamp against match_duration?** `compute_match_duration` returns the
+timestamp of the last recorded event, which may be a few seconds before the
+real final whistle.  Clamping explicit `to` values against it could silently
+truncate a legitimate substitution recorded 1–2 seconds after the last event.
+The clamp is therefore applied **only when a dismissal_minute is known**.
+
+#### Bench dismissals
+
+Three players in La Liga 2015/16 received Bad Behaviour red cards while on the
+bench (empty `positions` arrays).  They are correctly excluded from
+`player_match_stats.parquet` as 0-minute entries.  Their card events are real;
+they represent genuine bench incidents (violent conduct, dissent).
+
+#### Verified result — La Liga 2015/16
+
+After both fixes:
+
+| Metric | Value |
+|--------|-------|
+| Dismissals detected (both sources) | 109 |
+| Bench-only (0 min, excluded from parquet) | 3 |
+| In-parquet dismissed players | 106 |
+| Players with `minutes_fixed > card_min + 1 min` | **0** |
 
 See `src/eleveniq/pipeline/quality_report.py` for `find_dismissal_minute`,
 `check_dismissal_event_quality`, `check_dismissed_player_minutes`, and
 `DISMISSAL_TOLERANCE_MINUTES`.
 
-The dismissal check is tested in `tests/test_minutes.py::TestDismissalMinute` and
+Dismissal logic is tested in `tests/test_minutes.py::TestDismissalMinute` and
 `tests/test_quality_report.py`.
 
 ---
@@ -179,7 +235,7 @@ The dismissal check is tested in `tests/test_minutes.py::TestDismissalMinute` an
 | `GK` | Goalkeeper |
 | `CB` | Center Back, Left/Right Center Back |
 | `FB-WB` | Left/Right Back, Left/Right Wing Back |
-| `DM-CM` | Defensive Midfield, Left/Right Defensive Midfield, Center Midfield, Left/Right Center Midfield |
+| `DM-CM` | Defensive Midfield, **Center Defensive Midfield**, Left/Right Defensive Midfield, Center Midfield, Left/Right Center Midfield |
 | `AM-Winger` | Attacking Midfield, Center Attacking Midfield, Left/Right Midfield, Left/Right Wing, **Left/Right Attacking Midfield** |
 | `ST` | Center Forward, Left/Right Center Forward, Secondary Striker |
 
@@ -294,6 +350,56 @@ Yellow cards, red cards, and second yellows are **never** included in Player DNA
 or similarity calculations. They may be stored as display-only fields in the
 player profile, but must not enter any distance or ranking computation.
 
+### 6e. `started` and `started_inferred` columns
+
+`player_match_stats.parquet` includes two boolean columns:
+
+| Column | Meaning |
+|--------|---------|
+| `started` | Player was in the starting XI |
+| `started_inferred` | `started` was set via the fallback rule (not from an explicit "Starting XI" entry) |
+
+`build_player_season.py` must sum `started` to produce the `starts` column used
+by the display layer (appearances vs. starts breakdown).
+
+#### Two-step rule (implemented in `_process_match`)
+
+**Step 1 — primary:**  `started = True` if the player has any stint with
+`start_reason == "Starting XI"` in the StatsBomb lineup.
+
+**Step 2 — team-level fallback** (applied only when step 1 gives < 11 starters
+for a team):  a player who was not already marked started is also counted as
+started if **any** of their position stints has `from == "00:00"` and
+`from_period == 1` (or `from_period` absent, defaulted to 1).  These players
+receive `started_inferred = True`.
+
+**After fallback:** if a team still does not have exactly 11 starters, or has
+more than 11, no further guessing is applied.  Both cases are recorded in the
+quality report under `issue = "starter_count_mismatch"`.  Fallback applications
+are recorded under `issue = "started_inferred_fallback"`.
+
+#### StatsBomb data-quality finding — match 3825596
+
+During the La Liga 2015/16 pipeline run, three Sporting Gijón starters were
+found with `start_reason = "Tactical Shift"` instead of `"Starting XI"` in the
+StatsBomb lineup data:
+
+| Player | Position group | Minutes |
+|--------|---------------|---------|
+| Alen Halilović | AM-Winger | 66.27 |
+| Alberto García Cabrera | GK | 95.15 |
+| Alejandro Menéndez Díez | AM-Winger | 95.15 |
+
+All three have `from = "00:00"` in period 1, confirming they started the match.
+The fallback rule correctly marks them `started = True`, `started_inferred = True`.
+
+**Double-counting check (match 3825596):**  StatsBomb records duplicate lineup
+entries for these players with `to = "00:00"`, immediately followed by their
+real stint.  Duration of the first entry = `max(0, 0:00 − 0:00) = 0` minutes —
+the entry contributes **zero minutes**.  The team total (1044.38 min) is below
+the maximum of 11 × 95.15 = 1046.65 min, consistent with three substitutions
+and no double-counting.
+
 ---
 
 ## 7. Source Folder Layout vs. Brief's Proposed Structure
@@ -333,11 +439,131 @@ Analytics functions in `src/eleveniq/metrics/` will be imported from the relevan
 
 ---
 
-## 8. Open Issues
+## 8. Key Passes Definition
 
-1. **Goal kick exclusion** — progressive passes include goal kicks (the function
-   has no outcome knowledge). A `pass_type` column in `player_match_stats` would
-   allow downstream filtering without re-running the pipeline.
+A pass is counted as a key pass if it carries `shot_assist = true` **or**
+`goal_assist = true` in the StatsBomb event.
+
+| Flag | Meaning |
+|------|---------|
+| `pass.shot_assist` | The pass directly created a shot (whether or not a goal resulted) |
+| `pass.goal_assist` | The pass directly preceded a goal (the final ball before the goal-scorer received it) |
+
+**Verified: La Liga 2015/16**
+
+| Category | Count |
+|----------|-------|
+| `shot_assist` only | 5,763 |
+| `goal_assist` only | 722 |
+| Both flags | 0 |
+| **Total key passes** | **6,485** |
+
+The two flags never co-occur in this dataset (verified). The original pipeline
+counted only `shot_assist`, missing 722 `goal_assist`-only passes (11.1 % of
+all key passes). This was corrected in Milestone 3.
+
+**Rejected concern (stats review, Milestone 3):** combining `shot_assist` and
+`goal_assist` into one counter conflates different event qualities
+(`shot_assist` = created a shot; `goal_assist` = preceded a goal).  Decision:
+the conflation risk is accepted.  The two flags never co-occur, so each pass is
+counted exactly once.  A separate `assists` column (see below) lets downstream
+consumers split the two signals if needed.
+
+**`assists` column:** a separate `assists` column counts only `goal_assist`
+passes (display-only; not used in DNA or similarity calculations in V1).
+In La Liga 2015/16: `assists` total = 722.
+
+**Implementation:** `build_player_match._aggregate_events` increments
+`key_passes` when `pass_data.get("shot_assist") or pass_data.get("goal_assist")`,
+and separately increments `assists` when `pass_data.get("goal_assist")`.
+
+---
+
+## 9. Goals Column and Own-Goal Encoding
+
+**Verified: La Liga 2015/16**
+
+| Source | Count |
+|--------|-------|
+| `home_score + away_score` from `matches.json` | 1,043 |
+| `Shot outcome=Goal` events — our `goals` column | 1,014 |
+| Difference | **29** |
+
+The 29-goal gap is fully explained by **own goals**.  StatsBomb encodes each
+own goal as two separate events:
+
+| Event type | `player` field | Purpose |
+|-----------|---------------|---------|
+| `Own Goal For` | **empty** (no attribution) | Credits the goal to the scoring team |
+| `Own Goal Against` | the player who put it in their own net | Attribution |
+
+58 own-goal events / 2 = **29 own goals**.  `1,014 + 29 = 1,043`. ✓
+
+**Current pipeline behaviour:** `_aggregate_events` counts `Shot outcome=Goal`
+events only.  Own goals are not captured in any column.  The `goals` column in
+`player_match_stats.parquet` therefore counts only goals a player scored into
+the *opponent's* net.
+
+**Implications for downstream use:**
+- Season-level goal totals summed from the parquet will be 29 short of the
+  official total.  This is expected and documented.
+- Own goals must never be added to the attacking player's `goals` count (they
+  are not attacking actions).
+- Own goals should not appear in DNA or similarity calculations (per §6d).
+- A future `own_goals_against` column (counting `Own Goal Against` events per
+  player-match) would allow display of own-goal history on the player profile,
+  but is out of scope for Milestone 3.
+
+**Tech debt (Milestone 3):** Add `own_goals_against` column to
+`build_player_match.py` by counting `type.name == "Own Goal Against"` events
+per player.  The `Own Goal For` event has no player attribution and is ignored.
+
+---
+
+## 10. Data Source Provenance and Single-Source Rule
+
+### `source` column
+
+Every row in `player_match_stats.parquet` (and the forthcoming
+`player_season_stats.parquet`) carries a `source` column recording the ingestion
+origin of that row.  Current value: `"statsbomb"`.  Future values (e.g.
+`"sportmonks"`) will be added when a new ingestion pipeline is implemented.
+
+The `source` column is added at the row-level in `_process_match` and declared in
+`_SCHEMA` as `pl.Utf8`.  It is a provenance tag, not a metric, and must never enter
+percentile cohorts, similarity distances, or rarity scores.
+
+### Single-source rule
+
+**Percentiles, similarity, and rarity are computed within a single source only.**
+
+Mixing rows from `"statsbomb"` and a future paid source in a single cohort or
+distance calculation is forbidden until all of the following are true:
+
+1. A metric-by-metric mapping document confirms that both sources define the same
+   metrics in the same way (e.g. "pass attempt" = one event per attempt in both).
+2. A normalisation strategy (e.g. z-score shift, scaling factor) has been validated
+   against a population of players who appear in both sources in the same season.
+3. The strategy is recorded in a new ADR and the milestone is explicitly opened.
+
+Before those conditions are met, every pipeline query that computes percentiles,
+similarity, or rarity must include `WHERE source = '<value>'` (SQL) or the Polars
+equivalent `filter(pl.col("source") == ...)`.
+
+**Why:** StatsBomb event-level metrics and Sportmonks season-aggregate metrics are
+not guaranteed to be numerically equivalent even when named identically (e.g.
+StatsBomb "pass" = one event per attempt; Sportmonks "passes" = seasonal count from
+a different data vendor).  Mixing them without validation would produce nonsensical
+percentile ranks.
+
+---
+
+## 11. Open Issues
+
+1. **Goal kick exclusion** — **RESOLVED.** Verified across all 6,141 goal kicks in
+   La Liga 2015/16: every goal kick starts inside the defensive-40% zone (start_x < 48.0),
+   so condition 2 of `is_progressive_pass` eliminates all of them. Zero goal kicks are
+   counted as progressive. No `pass_type` filter is needed for accuracy.
 
 2. **Penalty-area OR clause may over-count short passes** — a 1-yard shuffle
    inside the box ending at `(103, 40)` is counted as progressive. By design,
@@ -353,3 +579,49 @@ Analytics functions in `src/eleveniq/metrics/` will be imported from the relevan
 5. **Lexicographic tie-break in `primary_position_group`** — `AM-Winger` always
    wins a tie against `DM-CM`. Documented and accepted; in practice equal-minute
    splits across groups are rare.
+
+---
+
+## 12. V1 Scope — Outfield Players Only for DNA / Similarity / Gem Finder
+
+Player DNA profiles, similarity search, and Gem Finder are **outfield players
+only** in V1.  GK profiles display basic stats (minutes, goals-conceded from
+the team record, clean sheets) but do not participate in the DNA radar, the
+similarity engine, or Gem Finder rankings.
+
+**Rationale:** GK progressive carries are not a meaningful metric (ADR 002 §2
+applies no start-zone exclusion to carries; a GK carrying the ball from their
+six-yard box registers as a progressive carry — verified: La Liga 2015/16 GKs
+average 3.23 progressive carries/match, identical to strikers).  Combining GK
+rows with outfield rows in a percentile cohort or similarity distance would
+corrupt both groups.  A dedicated GK model is deferred to V2.
+
+**Implementation:** analytics functions that build percentile cohorts,
+similarity matrices, or rarity scores must filter `position_group != 'GK'`
+before computing.
+
+---
+
+## 13. Blocks Definition — Defensive Blocks Only
+
+The `blocks` column counts **defensive blocks** only: `type.name == "Block"`
+events where `block.offensive` is `False` (or absent) **and** `block.save_block`
+is `False` (or absent).
+
+| Sub-field | Meaning | Action |
+|-----------|---------|--------|
+| `block.offensive = true` | Attacking player deflects a clearance | **Excluded** — not a defensive action |
+| `block.save_block = true` | Goalkeeper save recorded as a block | **Excluded** — covered by GK save metrics |
+| Neither flag set | Outfield player blocks a shot or cross | **Counted** |
+
+**Verified: La Liga 2015/16 (first 20 matches sample)**
+
+| Category | Count |
+|----------|-------|
+| Total block events | 738 |
+| `block.offensive = true` | 19 |
+| `block.save_block = true` | 4 |
+| **Defensive blocks counted** | **715** |
+
+**Implementation:** `build_player_match._aggregate_events` guards the `blocks`
+counter with `not block_data.get("offensive") and not block_data.get("save_block")`.

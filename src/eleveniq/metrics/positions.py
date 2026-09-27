@@ -30,6 +30,7 @@ Use compute_minutes_per_group() to build the per-match contribution, then
 primary_position_group() to resolve the season-level assignment.
 """
 from __future__ import annotations
+from collections.abc import Iterator
 from eleveniq.metrics.minutes import parse_mm_ss
 
 POSITION_GROUP_MAP: dict[str, str] = {
@@ -46,6 +47,7 @@ POSITION_GROUP_MAP: dict[str, str] = {
     "Right Wing Back": "FB-WB",
     # Defensive / central midfield
     "Defensive Midfield": "DM-CM",
+    "Center Defensive Midfield": "DM-CM",
     "Left Defensive Midfield": "DM-CM",
     "Right Defensive Midfield": "DM-CM",
     "Center Midfield": "DM-CM",
@@ -77,6 +79,52 @@ def assign_position_group(position_name: str) -> str:
     return POSITION_GROUP_MAP.get(position_name, UNKNOWN_POSITION_GROUP)
 
 
+def _iter_stint_contributions(
+    positions: list[dict],
+    match_duration: float,
+    dismissal_minute: float | None,
+) -> Iterator[tuple[str, float]]:
+    """
+    Yield (raw_position_name, duration_minutes) for every non-zero stint.
+
+    This is the single shared function underlying both compute_minutes_per_group
+    and compute_minutes_per_raw_position, ensuring they can never diverge.
+
+    Dismissal clamping
+    ------------------
+    When dismissal_minute is provided, ALL stint end-times are clamped to
+    min(end, dismissal_minute) — including stints with explicit `to` values.
+    StatsBomb sometimes sets explicit `to` timestamps that run past the card
+    minute (a known data-quality issue where the lineup was not corrected after
+    an early dismissal).  Without this clamp those stints would overcount minutes.
+
+    When dismissal_minute is None, explicit `to` values are used as-is.
+    match_duration is derived from the last event timestamp and can be a few
+    seconds earlier than the real final whistle, so clamping against it would
+    risk truncating a legitimate substitution timestamp.
+    """
+    effective_end = dismissal_minute if dismissal_minute is not None else match_duration
+    for stint in positions:
+        start = parse_mm_ss(stint["from"])
+        if stint.get("to"):
+            raw_end = parse_mm_ss(stint["to"])
+            # Clamp only when a dismissal minute was supplied (see docstring).
+            end = min(raw_end, effective_end) if dismissal_minute is not None else raw_end
+        else:
+            end = effective_end
+        duration = max(0.0, end - start)
+        if duration == 0.0:
+            continue
+        pos = stint.get("position")
+        if pos is None:
+            position_name = ""
+        elif isinstance(pos, dict):
+            position_name = pos.get("name", "")
+        else:
+            position_name = str(pos)
+        yield position_name, duration
+
+
 def compute_minutes_per_group(
     positions: list[dict],
     match_duration: float,
@@ -96,23 +144,31 @@ def compute_minutes_per_group(
     """
     if not positions:
         return {}
-    effective_end = dismissal_minute if dismissal_minute is not None else match_duration
     result: dict[str, float] = {}
-    for stint in positions:
-        start = parse_mm_ss(stint["from"])
-        end = parse_mm_ss(stint["to"]) if stint.get("to") else effective_end
-        duration = max(0.0, end - start)
-        if duration == 0.0:
-            continue
-        pos = stint.get("position")
-        if pos is None:
-            position_name = ""
-        elif isinstance(pos, dict):
-            position_name = pos.get("name", "")
-        else:
-            position_name = str(pos)
-        group = assign_position_group(position_name)
+    for pos_name, duration in _iter_stint_contributions(positions, match_duration, dismissal_minute):
+        group = assign_position_group(pos_name)
         result[group] = result.get(group, 0.0) + duration
+    return result
+
+
+def compute_minutes_per_raw_position(
+    positions: list[dict],
+    match_duration: float,
+    *,
+    dismissal_minute: float | None = None,
+) -> dict[str, float]:
+    """
+    Return a mapping of StatsBomb position name → minutes for one match.
+
+    Uses the same shared stint logic as compute_minutes_per_group, so
+    sum(compute_minutes_per_raw_position(...).values()) always equals
+    sum(compute_minutes_per_group(...).values()) for the same inputs.
+    """
+    if not positions:
+        return {}
+    result: dict[str, float] = {}
+    for pos_name, duration in _iter_stint_contributions(positions, match_duration, dismissal_minute):
+        result[pos_name] = result.get(pos_name, 0.0) + duration
     return result
 
 

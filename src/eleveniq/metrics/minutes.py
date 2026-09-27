@@ -73,6 +73,12 @@ def compute_player_minutes(
     - An empty positions list means the player never took the field → 0 minutes.
     - Negative stint durations are clamped to 0 (data-quality guard).
 
+    Pipeline usage note: the pipeline derives minutes_played as
+    sum(compute_minutes_per_group(...).values()), NOT by calling this function
+    directly. The two are kept numerically consistent by the shared
+    _iter_stint_contributions generator; TestMinutesConsistency in
+    tests/test_positions.py is the automated guard.
+
     Args:
         positions:        player's positions array from the StatsBomb lineup.
         match_duration:   output of compute_match_duration() for this match.
@@ -86,6 +92,13 @@ def compute_player_minutes(
     total = 0.0
     for stint in positions:
         start = parse_mm_ss(stint["from"])
-        end = parse_mm_ss(stint["to"]) if stint.get("to") else effective_end
+        if stint.get("to"):
+            raw_end = parse_mm_ss(stint["to"])
+            # Mirror the clamping in _iter_stint_contributions: clamp explicit
+            # to-values at the dismissal minute, but leave them as-is for normal
+            # matches (match_duration may lag the real whistle by a few seconds).
+            end = min(raw_end, effective_end) if dismissal_minute is not None else raw_end
+        else:
+            end = effective_end
         total += max(0.0, end - start)
     return total

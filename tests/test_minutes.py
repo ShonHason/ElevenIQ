@@ -22,6 +22,18 @@ class TestParseMmSs:
     def test_60_minute_mark(self):
         assert parse_mm_ss("60:00") == pytest.approx(60.0)
 
+    def test_zero_with_milliseconds(self):
+        # "00:00.000" must parse to 0.0 without crashing (milliseconds stripped).
+        assert parse_mm_ss("00:00.000") == pytest.approx(0.0)
+
+    def test_large_stoppage_value(self):
+        # e.g. match with 7 minutes of stoppage: "97:12"
+        assert parse_mm_ss("97:12") == pytest.approx(97 + 12 / 60)
+
+    def test_45_00_exactly(self):
+        # Half-time boundary
+        assert parse_mm_ss("45:00") == pytest.approx(45.0)
+
 
 class TestComputeMatchDuration:
     def _make_event(self, minute: int, second: int, period: int = 1) -> dict:
@@ -58,6 +70,22 @@ class TestComputeMatchDuration:
     def test_stoppage_captured(self):
         events = [self._make_event(95, 45, 2)]
         assert compute_match_duration(events) == pytest.approx(95 + 45 / 60)
+
+    def test_extra_time_periods_3_and_4_included(self):
+        # Periods 3 and 4 are extra time (≤ 4) — they MUST be included in duration.
+        # Period 5 (penalty shootout) is the only excluded period.
+        events = [
+            self._make_event(90, 0, 2),   # end of normal time
+            self._make_event(105, 0, 3),  # first half of extra time
+            self._make_event(120, 30, 4), # second half of extra time
+        ]
+        assert compute_match_duration(events) == pytest.approx(120 + 30 / 60)
+
+    def test_period_missing_defaults_to_1_and_is_included(self):
+        # Events without a period field default to period=1 (via .get("period", 1)).
+        # get() returns 1, which is ≤ 4, so the event is included.
+        event = {"minute": 88, "second": 15}  # no "period" key
+        assert compute_match_duration([event]) == pytest.approx(88 + 15 / 60)
 
 
 class TestComputePlayerMinutes:
@@ -141,3 +169,22 @@ class TestDismissalMinute:
         minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=55.0)
         # effective_end=55, start=60 → duration=max(0, 55-60)=0
         assert minutes == pytest.approx(0.0)
+
+    def test_explicit_to_after_dismissal_clamped(self):
+        # StatsBomb left explicit to="66:43" even though card was at 56:10.
+        # The first stint must be clamped at the card minute; the second at 0.
+        stints = [self._stint("00:00", "66:43"), self._stint("66:43", None)]
+        minutes = compute_player_minutes(stints, match_duration=95.0, dismissal_minute=56.17)
+        assert minutes == pytest.approx(56.17)
+
+    def test_explicit_to_before_dismissal_unchanged(self):
+        # Substituted off at 45:00, card fired at 60:00 — 45 min should stand.
+        stints = [self._stint("00:00", "45:00")]
+        minutes = compute_player_minutes(stints, match_duration=90.0, dismissal_minute=60.0)
+        assert minutes == pytest.approx(45.0)
+
+    def test_explicit_to_no_dismissal_not_clamped(self):
+        # Without dismissal_minute, explicit to-values are used as-is.
+        stints = [self._stint("00:00", "90:05")]
+        minutes = compute_player_minutes(stints, match_duration=90.0)
+        assert minutes == pytest.approx(90 + 5 / 60)

@@ -1,0 +1,83 @@
+[
+  {
+    "id": "e1",
+    "type": {"name": "Pass"},
+    "player": {"id": 1002},
+    "minute": 44,
+    "second": 0,
+    "period": 1,
+    "location": [50.0, 40.0],
+    "pass": {"end_location": [100.0, 40.0], "goal_assist": true}
+  },
+  {
+    "id": "e2",
+    "type": {"name": "Shot"},
+    "player": {"id": 1001},
+    "minute": 44,
+    "second": 30,
+    "period": 1,
+    "location": [105.0, 40.0],
+    "shot": {"outcome": {"name": "Goal"}, "statsbomb_xg": 0.5}
+  },
+  {
+    "id": "e3",
+    "type": {"name": "Bad Behaviour"},
+    "player": {"id": 1003},
+    "minute": 30,
+    "second": 0,
+    "period": 1,
+    "bad_behaviour": {"card": {"name": "Red Card"}}
+  },
+  {
+    "id": "e4",
+    "type": {"name": "Own Goal Against"},
+    "player": {"id": 2001},
+    "minute": 44,
+    "second": 0,
+    "period": 1
+  },
+  {
+    "id": "e5",
+    "type": {"name": "Block"},
+    "player": {"id": 2001},
+    "minute": 60,
+    "second": 0,
+    "period": 2,
+    "block": {}
+  },
+  {
+    "id": "e6",
+    "type": {"name": "Block"},
+    "player": {"id": 1001},
+    "minute": 50,
+    "second": 0,
+    "period": 2,
+    "block": {"offensive": true}
+  },
+  {
+    "id": "e7",
+    "type": {"name": "Block"},
+    "player": {"id": 2001},
+    "minute": 70,
+    "second": 0,
+    "period": 2,
+    "block": {"save_block": true}
+  },
+  {
+    "id": "e8",
+    "type": {"name": "Carry"},
+    "player": {"id": 1001},
+    "minute": 20,
+    "second": 0,
+    "period": 1,
+    "location": [40.0, 40.0],
+    "carry": {"end_location": [65.0, 40.0]}
+  },
+  {
+    "id": "e9",
+    "type": {"name": "Half End"},
+    "minute": 90,
+    "second": 0,
+    "period": 2
+  }
+]

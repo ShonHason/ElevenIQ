@@ -6,22 +6,32 @@ Red card / dismissal check
 For every red card and second-yellow event in a match, compare the dismissed
 player's computed minutes_played against the card minute.  A significant
 mismatch (computed >> card minute) indicates that StatsBomb left the player's
-lineup positions[].to as null on dismissal, causing compute_player_minutes()
-to credit the full match duration instead of the actual time on pitch.
+lineup positions[].to as null on dismissal, or that the explicit to values
+were not corrected after the dismissal, causing compute_player_minutes()
+to credit more time on pitch than the player actually played.
+
+StatsBomb records dismissal cards in TWO distinct event types:
+
+  1. ``Bad Behaviour``   — event.bad_behaviour.card.name
+  2. ``Foul Committed``  — event.foul_committed.card.name
+
+The two sources have zero overlap (each dismissal appears in exactly one
+type).  ``find_dismissal_minute`` checks both sources in a single pass so
+whichever fires first (chronologically) is returned.
 
 When a mismatch is detected the quality report lists it and the build-match
 stage must re-run with dismissal_minute supplied to compute_player_minutes().
 
 Missing timestamp handling
 --------------------------
-If a Bad Behaviour event is missing the `minute` or `second` field,
+If a dismissal event is missing the `minute` or `second` field,
 find_dismissal_minute() returns None rather than defaulting to 0 (which would
 silently create a fake dismissal at the start of the match).  Call
 check_dismissal_event_quality() to detect and surface missing-timestamp issues
 separately from the mismatch check.
 
 The constants and helpers here are shared between the quality report and the
-build-match pipeline (imported by build_player_match.py when implemented).
+build-match pipeline (imported by build_player_match.py).
 """
 from __future__ import annotations
 
@@ -38,29 +48,34 @@ def find_dismissal_minute(events: list[dict], player_id: int) -> float | None:
     `player_id`, or None if the player was not dismissed or the event has
     missing timestamp fields.
 
-    StatsBomb encodes dismissals as events with:
-        type.name        = "Bad Behaviour"
-        bad_behaviour.card.name = "Red Card" | "Second Yellow"
-        player.id        = <player_id>
-        minute + second  = match-absolute time of the card
+    Checks both ``Bad Behaviour`` events (bad_behaviour.card.name) and
+    ``Foul Committed`` events (foul_committed.card.name).  The two sources
+    never overlap in practice; the first dismissal found in chronological
+    event order is returned.
 
-    Returns None in two cases:
+    Returns None in two distinct cases:
     - No dismissal event exists for this player.
-    - A dismissal event exists but lacks `minute` or `second` fields.
-      In that case, call check_dismissal_event_quality() to surface the issue.
-
-    Only the first dismissal event found is returned.
+    - A dismissal event exists but lacks ``minute`` or ``second`` fields
+      (bad data, not a clean absence).  These two cases are indistinguishable
+      from this return value alone.  Call check_dismissal_event_quality() to
+      tell them apart: a non-None result means the second case applies and the
+      dismissal fix cannot be applied.
     """
     for event in events:
-        if event.get("type", {}).get("name") != "Bad Behaviour":
+        if (event.get("player") or {}).get("id") != player_id:
             continue
-        if event.get("player", {}).get("id") != player_id:
+        etype = event.get("type", {}).get("name")
+        if etype == "Bad Behaviour":
+            card_name = (event.get("bad_behaviour") or {}).get("card", {}).get("name", "")
+        elif etype == "Foul Committed":
+            card_name = (event.get("foul_committed") or {}).get("card", {}).get("name", "")
+        else:
             continue
-        card_name = event.get("bad_behaviour", {}).get("card", {}).get("name", "")
-        if card_name in DISMISSAL_CARDS:
-            if "minute" not in event or "second" not in event:
-                return None
-            return event["minute"] + event["second"] / 60
+        if card_name not in DISMISSAL_CARDS:
+            continue
+        if "minute" not in event or "second" not in event:
+            return None
+        return event["minute"] + event["second"] / 60
     return None
 
 
@@ -68,6 +83,8 @@ def check_dismissal_event_quality(events: list[dict], player_id: int) -> dict | 
     """
     Return a data-quality issue dict if a dismissal event is missing
     minute or second fields, or None if no issue found.
+
+    Checks both ``Bad Behaviour`` and ``Foul Committed`` sources.
 
     This is the companion to find_dismissal_minute(): when that function
     returns None because of a missing timestamp (not because there was no
@@ -80,20 +97,25 @@ def check_dismissal_event_quality(events: list[dict], player_id: int) -> dict | 
         missing_fields list[str]  subset of ["minute", "second"]
     """
     for event in events:
-        if event.get("type", {}).get("name") != "Bad Behaviour":
+        if (event.get("player") or {}).get("id") != player_id:
             continue
-        if event.get("player", {}).get("id") != player_id:
+        etype = event.get("type", {}).get("name")
+        if etype == "Bad Behaviour":
+            card_name = (event.get("bad_behaviour") or {}).get("card", {}).get("name", "")
+        elif etype == "Foul Committed":
+            card_name = (event.get("foul_committed") or {}).get("card", {}).get("name", "")
+        else:
             continue
-        card_name = event.get("bad_behaviour", {}).get("card", {}).get("name", "")
-        if card_name in DISMISSAL_CARDS:
-            missing = [k for k in ("minute", "second") if k not in event]
-            if missing:
-                return {
-                    "issue": "dismissal_missing_timestamp",
-                    "player_id": player_id,
-                    "card_name": card_name,
-                    "missing_fields": missing,
-                }
+        if card_name not in DISMISSAL_CARDS:
+            continue
+        missing = [k for k in ("minute", "second") if k not in event]
+        if missing:
+            return {
+                "issue": "dismissal_missing_timestamp",
+                "player_id": player_id,
+                "card_name": card_name,
+                "missing_fields": missing,
+            }
     return None
 
 
@@ -108,9 +130,9 @@ def check_dismissed_player_minutes(
     Return a mismatch report if a dismissed player's computed minutes
     significantly exceed their card minute, or None if no problem found.
 
-    A non-None return means StatsBomb did not set positions[].to for this
-    player on dismissal. The pipeline should re-compute their minutes using
-    the returned `dismissal_minute` value.
+    A non-None return means the pipeline credited too much playing time.
+    The pipeline should re-compute their minutes using the returned
+    `dismissal_minute` value.
 
     Returns None (no mismatch reported) if find_dismissal_minute() returns
     None — either no dismissal occurred or the event has missing timestamps
