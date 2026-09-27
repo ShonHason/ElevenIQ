@@ -10,3 +10,7 @@ pipeline or analytics modules.
 # threshold are kept in player_season_stats.parquet but flagged with
 # meets_min_minutes=False.  See ADR 002 §5.
 MIN_MINUTES_THRESHOLD: int = 900
+
+LONG_PASS_THRESHOLD_YDS: int = 30
+
+MIN_AERIAL_CONTESTS: int = 10

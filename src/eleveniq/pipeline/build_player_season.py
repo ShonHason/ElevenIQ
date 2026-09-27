@@ -31,7 +31,7 @@ from pathlib import Path
 
 import polars as pl
 
-from eleveniq.config import MIN_MINUTES_THRESHOLD
+from eleveniq.config import MIN_MINUTES_THRESHOLD, MIN_AERIAL_CONTESTS
 from eleveniq.metrics.positions import POSITION_GROUP_COLUMNS
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,15 @@ _COUNT_COLS: list[str] = [
     "fouls_committed", "fouls_won",
     "assists",
     "crosses_attempted",
+    "dispossessed",
+    "miscontrols",
+    "pressures",
+    "ball_recoveries",
+    "dribbled_past",
+    "aerials_won",
+    "aerials_lost",
+    "long_passes_attempted",
+    "switches",
 ]
 
 # Columns that are summed directly but do NOT get per-90 values.
@@ -67,6 +76,9 @@ _DISPLAY_ONLY_COLS: list[str] = [
     "shots_missing_xg",
     "passes_unknown_outcome",
     "crosses_completed",
+    "long_passes_completed",
+    "passes_missing_length",
+    "ball_recoveries_failed",
 ]
 
 
@@ -178,6 +190,16 @@ def aggregate_player_season(
         .then(pl.col("crosses_completed").cast(pl.Float64) / pl.col("crosses_attempted").cast(pl.Float64))
         .otherwise(None)
         .alias("cross_completion_pct"),
+
+        pl.when((pl.col("aerials_won") + pl.col("aerials_lost")) >= MIN_AERIAL_CONTESTS)
+        .then(pl.col("aerials_won").cast(pl.Float64) / (pl.col("aerials_won") + pl.col("aerials_lost")).cast(pl.Float64))
+        .otherwise(None)
+        .alias("aerial_win_pct"),
+
+        pl.when(pl.col("long_passes_attempted") > 0)
+        .then(pl.col("long_passes_completed").cast(pl.Float64) / pl.col("long_passes_attempted").cast(pl.Float64))
+        .otherwise(None)
+        .alias("long_pass_completion_pct"),
     ])
 
     # ------------------------------------------------------------------

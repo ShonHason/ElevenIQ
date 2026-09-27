@@ -175,6 +175,31 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
   `UNKNOWN` must be excluded from DNA / similarity / Gem Finder cohorts, same as GK
   (ADR 002 §12). Currently only `is_gk` is used as a cohort gate; add `is_unknown`
   flag or extend the exclusion logic before M4 percentile computation reads the Parquet.
+- **`_season_position_group` default for all-zero minute rows:** when every per-group
+  minute column is 0, the function returns `"AM-Winger"` (alphabetically first group)
+  instead of `"UNKNOWN"`. In practice `build_player_match.py` excludes 0-minute rows
+  before writing the Parquet, so real data cannot trigger this. Fix the initialiser to
+  `pl.lit("UNKNOWN")` before M4 so the function is correct by construction.
+- **`test_config.py`: remove type/naming tests:** `test_is_integer_type`,
+  `test_is_positive`, and `test_attribute_name_is_exported` violate the qa-tester rule
+  "don't write tests for formatting, types, naming, or constants' spelling". Remove
+  them; `test_default_value_is_900` and `test_module_is_importable` are sufficient.
+- **Untested branches in `build_player_match.py` (coverage gap, not exercised by unit tests):**
+  - **L423** `cause = None` — `else` branch of `if overcounted:` in the dismissal-quality
+    block. Reached when a dismissed player's minutes were *not* overcounted (dismissal
+    recorded correctly in the source data). Needs a unit test for `_process_match` with
+    a dismissed player whose lineup `to` field is correctly set.
+  - **L441** `dismissal_report.append({**quality_issue})` — `check_dismissal_event_quality`
+    returned a non-None result for a non-dismissed player, meaning a dismissal event
+    exists in the feed but has missing `minute`/`second` timestamp fields. Needs a
+    fixture with such an event.
+  - **L501–502** `elif starter_count > 11: dismissal_report.append(...)` — branch for a
+    team with more than 11 players counted as starters. Does not occur in La Liga
+    2015/16. Needs a synthetic fixture with 12+ starter-flagged lineup entries.
+  - **L550–552** `except Exception: logger.error(...); errors.append(...)` — per-match
+    error handler in `build_competition_season`. Needs a test that injects a bad match
+    file (or patches `_process_match` to raise) and asserts the failed match id is
+    returned in `failed_ids` while other matches still succeed.
 
 ---
 

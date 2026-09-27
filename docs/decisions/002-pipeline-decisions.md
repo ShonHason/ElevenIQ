@@ -757,3 +757,160 @@ meaningful combined-season data.
 **When to revisit:** Milestone 4, before computing percentiles.  The decision
 must be recorded in this ADR (extend §6 or add a new section) before any
 percentile computation reads `meets_min_minutes`.
+
+---
+
+## 18. Cross Metric — Corner Exclusion
+
+`crosses_attempted` is gated on `pass.cross == True` (StatsBomb flag).  Of 3,841
+corner kicks in La Liga 2015/16, only **1** carries this flag.  Corners are therefore
+de-facto excluded from `crosses_attempted` without any explicit pass-type filter.
+
+**Tech debt — set-piece delivery metric.**  A corner that lands inside the penalty
+area (x ≥ 102, 18 ≤ y ≤ 62) is a meaningfully different event from a wasted
+corner.  La Liga 2015/16: 3,094 of 3,841 corners (80.6%) end inside the box.
+A `corners_in_box` metric is recorded as tech debt in `docs/milestones.md`; it
+requires an explicit set-piece delivery model and is not part of the current
+player-DNA feature set.
+
+---
+
+## 19. Long-Pass Threshold
+
+A long pass is a pass with `pass.length >= LONG_PASS_THRESHOLD_YDS` (30 yards,
+from `config.py`) **and** `pass.type.name NOT IN {"Corner", "Goal Kick", "Free Kick"}`.
+
+**Why the set-piece exclusion?**  76.6% of corner kicks and a large fraction of goal
+kicks exceed 30 yards.  Including them inflates `long_passes_attempted` for wide
+players and GKs relative to central players, biasing the metric as a measure of
+distribution range.
+
+**Data — La Liga 2015/16:**
+
+| Metric | Value |
+|--------|-------|
+| `long_passes_attempted` (open play + throw-in) | 65,185 |
+| `long_passes_completed` | 37,586 |
+| Completion rate | 57.7% |
+| Share of all passes | 17.8% |
+
+The 30-yard threshold is a conventional round number near the 78th percentile of
+open-play pass lengths.  No external definition is cited; the data-observed share
+is the documented justification.  If a different threshold is required for a future
+data source, change `LONG_PASS_THRESHOLD_YDS` in `config.py`; no pipeline logic
+needs to change.
+
+---
+
+## 20. Aerial Duel Metrics
+
+**`aerials_won`** — count of events where the sub-event payload contains
+`aerial_won=True`.  The flag appears on the winner's own event, not on a separate
+duel type.  Relevant event types: Pass, Clearance, Shot, Miscontrol.
+
+**`aerials_lost`** — count of Duel events with `duel.type.name == "Aerial Lost"`.
+
+**Symmetry contract:** `aerials_won.sum() == aerials_lost.sum()` for any complete
+competition-season (one winner and one loser per aerial contest).  Enforced by an
+integration test.  La Liga 2015/16: 16,526 each.
+
+**`aerial_win_pct`** = aerials_won / (aerials_won + aerials_lost).
+Null when denominator < `MIN_AERIAL_CONTESTS` (10, from `config.py`).
+
+`MIN_AERIAL_CONTESTS = 10` is a **starting value** and must be validated at the DNA
+milestone by checking: (a) how many outfield 900+ min players fall below the
+threshold by position group, and (b) how noisy `aerial_win_pct` is near the
+threshold.  If too many eligible players are nulled out, the floor should be
+lowered and the revised value recorded here.
+
+---
+
+## 21. Ball Recovery Success
+
+A ball recovery is **successful** when `recovery_failure` is absent from the sub-event
+payload.  This includes two cases:
+
+1. The `ball_recovery` key is entirely absent from the event (93.0% of cases).
+2. The `ball_recovery` dict is present but contains only `offensive: True` and no
+   `recovery_failure` key — attacking players pressing high (116 events in La Liga
+   2015/16, 0.3% of recoveries).
+
+`recovery_failure == True` means the player attempted a recovery but did not retain
+possession (2,587 events, 6.7%).  `recovery_failure == False` **never appears** in
+StatsBomb open data; StatsBomb encodes success by field absence, not an explicit
+boolean.
+
+**Implementation guard:** `br = event.get("ball_recovery") or {}; not br.get("recovery_failure")`
+evaluates `not <falsy>` = True for both absence cases and `not True` = False only for
+the failure case, correctly handling all three scenarios.
+
+**`ball_recoveries_failed`** — display-only column storing the count of failed
+recoveries (`recovery_failure == True`, 2,587 events in La Liga 2015/16, 6.7%).
+This preserves the denominator alongside `ball_recoveries` so a ball-recovery success
+rate can be computed without re-running the pipeline.  No per-90 column is added;
+failed recovery rate is a derived ratio, not a raw count metric.
+
+---
+
+## 22. Dispossessed and Miscontrol — Per-90 Position Bias
+
+`dispossessed_p90` and `miscontrols_p90` are arithmetically valid per-90 metrics
+but are **position-volume-biased**: strikers and forwards receive more high-pressure
+touches and will show higher values regardless of technical quality.
+
+The touch-normalised rate — `miscontrols / (ball_receipts + carries + passes_attempted)`
+— is a better quality indicator and is deferred to Milestone 4 when touch-count
+columns are available.
+
+**Decision:** `_p90` columns are stored as-is for use within position groups, where
+volume bias is partially controlled.  Do **not** use `dispossessed_p90` or
+`miscontrols_p90` in cross-position DNA similarity or all-position percentile
+ranking without touch normalisation.
+
+---
+
+## 23. Switches
+
+**Definition:** A pass where StatsBomb's own `pass.switch` flag is `True`.
+StatsBomb sets this flag; its exact geometric or tactical criterion is not published
+in the open-data documentation.  Based on the football meaning, it captures cross-field
+passes that change the attacking flank.
+
+**La Liga 2015/16:** 11,615 switches.
+
+**Overlap with `long_passes_attempted`:** Intentional.  A switch is typically a long
+pass, so a single event can increment both `switches` and `long_passes_attempted`.
+The test `test_long_switch_pass_increments_both_counters` explicitly asserts this
+behaviour.  The two metrics capture different aspects of the same pass: `switches` is
+about the tactical action; `long_passes_attempted` is about the physical distance.
+
+**Scope:** `switches_p90` is stored for use within position groups.  Do **not** use it
+as a proxy for pass length; use `long_passes_attempted_p90` for that purpose.
+
+---
+
+## Stats-Review Decisions — Chunk A
+
+The following concerns raised by the stats-reviewer for Chunk A were reviewed and
+rejected.
+
+**Concern #2 — aerial symmetry: only 4 event types checked vs. 9 in the spike.**
+The spike searched for `aerial_won=True` across 9 event types as a discovery pass.
+The per-type breakdown showed zero counts for Ball Receipt*, Dribble, Goalkeeper,
+Block, and Interception in La Liga 2015/16.  Only Pass, Clearance, Shot, and Miscontrol
+carry non-zero `aerial_won=True` counts.  The integration test (`aerials_won == 16,526 ==
+aerials_lost`) verifies the symmetry contract on the actual data.
+**Decision:** The 4-type restriction in `aerials.py` is correct and the symmetry
+contract is verified.  No change required.
+
+**Concern #4 — `MIN_AERIAL_CONTESTS = 10` is too low.**
+The stats-reviewer correctly notes that the 95% CI around a 0.7 win rate at n=10 is
+approximately ±0.28 — wide enough to affect percentile ranking.  This threshold is
+deliberately conservative at the pipeline stage: the goal is to preserve data for
+players who participate in aerial duels at all, not to guarantee ranking precision.
+Percentile ranking precision is enforced separately at the DNA milestone by the
+`meets_min_minutes` flag (≥ 900 min) and by minimum-sample validation performed at
+that stage.  The threshold value will be revisited and recorded here after Milestone 4
+validation.
+**Decision:** `MIN_AERIAL_CONTESTS = 10` stands for now.  Validation deferred to the
+DNA milestone.

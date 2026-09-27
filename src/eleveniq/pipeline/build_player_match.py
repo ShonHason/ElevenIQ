@@ -26,9 +26,11 @@ from eleveniq.metrics.positions import (
     compute_minutes_per_raw_position,
     primary_position_group,
 )
+from eleveniq.metrics.aerials import has_aerial_won, is_aerial_lost
 from eleveniq.metrics.progressive import is_progressive_pass, is_progressive_carry
 from eleveniq.metrics.shots import is_shot_on_target
 from eleveniq.metrics.tackles import is_tackle_won
+from eleveniq.config import LONG_PASS_THRESHOLD_YDS
 from eleveniq.pipeline.quality_report import (
     DISMISSAL_TOLERANCE_MINUTES,
     check_dismissal_event_quality,
@@ -87,7 +89,21 @@ _SCHEMA: dict[str, type] = {
     "minutes_unknown": pl.Float64,
     "crosses_attempted": pl.Int32,
     "crosses_completed": pl.Int32,
+    "dispossessed": pl.Int32,
+    "miscontrols": pl.Int32,
+    "pressures": pl.Int32,
+    "ball_recoveries": pl.Int32,
+    "ball_recoveries_failed": pl.Int32,
+    "dribbled_past": pl.Int32,
+    "aerials_won": pl.Int32,
+    "aerials_lost": pl.Int32,
+    "long_passes_attempted": pl.Int32,
+    "long_passes_completed": pl.Int32,
+    "passes_missing_length": pl.Int32,
+    "switches": pl.Int32,
 }
+
+_SET_PIECE_TYPES: frozenset[str] = frozenset({"Corner", "Goal Kick", "Free Kick"})
 
 
 def _group_minutes_to_columns(group_minutes: dict[str, float]) -> dict[str, float]:
@@ -139,9 +155,24 @@ def _aggregate_events(player_events: list[dict]) -> dict:
     blocks = 0
     fouls_committed = 0
     fouls_won = 0
+    dispossessed = 0
+    miscontrols = 0
+    pressures = 0
+    ball_recoveries = 0
+    ball_recoveries_failed = 0
+    dribbled_past = 0
+    aerials_won = 0
+    aerials_lost = 0
+    long_passes_attempted = 0
+    long_passes_completed = 0
+    passes_missing_length = 0
+    switches = 0
 
     for event in player_events:
         event_type = event.get("type", {}).get("name", "")
+
+        if has_aerial_won(event):
+            aerials_won += 1
 
         if event_type == "Pass":
             passes_attempted += 1
@@ -174,6 +205,19 @@ def _aggregate_events(player_events: list[dict]) -> dict:
                 if outcome_name is None:
                     crosses_completed += 1
 
+            pass_length = pass_data.get("length")
+            if pass_length is None:
+                passes_missing_length += 1
+            else:
+                pass_type_name = (pass_data.get("type") or {}).get("name")
+                if pass_length >= LONG_PASS_THRESHOLD_YDS and pass_type_name not in _SET_PIECE_TYPES:
+                    long_passes_attempted += 1
+                    if outcome_name is None:
+                        long_passes_completed += 1
+
+            if pass_data.get("switch"):
+                switches += 1
+
         elif event_type == "Shot":
             shots += 1
             shot_data = event.get("shot") or {}
@@ -201,11 +245,33 @@ def _aggregate_events(player_events: list[dict]) -> dict:
 
         elif event_type == "Duel":
             duel_data = event.get("duel") or {}
-            if (duel_data.get("type") or {}).get("name") == "Tackle":
+            duel_type_name = (duel_data.get("type") or {}).get("name")
+            if duel_type_name == "Tackle":
                 tackles_attempted += 1
                 duel_outcome = (duel_data.get("outcome") or {}).get("name")
                 if is_tackle_won(duel_outcome):
                     tackles_won_count += 1
+            elif is_aerial_lost(event):
+                aerials_lost += 1
+
+        elif event_type == "Dispossessed":
+            dispossessed += 1
+
+        elif event_type == "Miscontrol":
+            miscontrols += 1
+
+        elif event_type == "Pressure":
+            pressures += 1
+
+        elif event_type == "Dribbled Past":
+            dribbled_past += 1
+
+        elif event_type == "Ball Recovery":
+            br = event.get("ball_recovery") or {}
+            if br.get("recovery_failure"):
+                ball_recoveries_failed += 1
+            else:
+                ball_recoveries += 1
 
         elif event_type == "Dribble":
             dribbles_attempted += 1
@@ -255,6 +321,18 @@ def _aggregate_events(player_events: list[dict]) -> dict:
         "assists": assists,
         "crosses_attempted": crosses_attempted,
         "crosses_completed": crosses_completed,
+        "dispossessed": dispossessed,
+        "miscontrols": miscontrols,
+        "pressures": pressures,
+        "ball_recoveries": ball_recoveries,
+        "ball_recoveries_failed": ball_recoveries_failed,
+        "dribbled_past": dribbled_past,
+        "aerials_won": aerials_won,
+        "aerials_lost": aerials_lost,
+        "long_passes_attempted": long_passes_attempted,
+        "long_passes_completed": long_passes_completed,
+        "passes_missing_length": passes_missing_length,
+        "switches": switches,
     }
 
 

@@ -25,3 +25,8 @@ testpaths = ["tests"]
 markers = [
     "integration: requires pipeline output in data/interim/ (slow, loads event JSON files)",
 ]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__ == .__main__.:",
+]

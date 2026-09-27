@@ -60,6 +60,18 @@ def _match_row(
     assists: int = 0,
     crosses_attempted: int = 0,
     crosses_completed: int = 0,
+    dispossessed: int = 0,
+    miscontrols: int = 0,
+    pressures: int = 0,
+    ball_recoveries: int = 0,
+    ball_recoveries_failed: int = 0,
+    dribbled_past: int = 0,
+    aerials_won: int = 0,
+    aerials_lost: int = 0,
+    long_passes_attempted: int = 0,
+    long_passes_completed: int = 0,
+    passes_missing_length: int = 0,
+    switches: int = 0,
     started: bool = True,
     started_inferred: bool = False,
     minutes_gk: float = 0.0,
@@ -113,6 +125,13 @@ def _match_row(
         interceptions=interceptions, clearances=clearances, blocks=blocks,
         fouls_committed=fouls_committed, fouls_won=fouls_won, assists=assists,
         crosses_attempted=crosses_attempted, crosses_completed=crosses_completed,
+        dispossessed=dispossessed, miscontrols=miscontrols, pressures=pressures,
+        ball_recoveries=ball_recoveries, ball_recoveries_failed=ball_recoveries_failed,
+        dribbled_past=dribbled_past,
+        aerials_won=aerials_won, aerials_lost=aerials_lost,
+        long_passes_attempted=long_passes_attempted,
+        long_passes_completed=long_passes_completed,
+        passes_missing_length=passes_missing_length, switches=switches,
         started=started, started_inferred=started_inferred,
         minutes_gk=minutes_gk, minutes_cb=minutes_cb,
         minutes_fb_wb=minutes_fb_wb, minutes_dm_cm=minutes_dm_cm,
@@ -540,6 +559,191 @@ class TestCrossMetrics:
 
 
 # ---------------------------------------------------------------------------
+# TestChunkASeasonMetrics — aerials, long passes, and ratio columns (ADR §19–20)
+# ---------------------------------------------------------------------------
+
+class TestChunkASeasonMetrics:
+    def test_aerial_win_pct_computed(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           aerials_won=7, aerials_lost=3)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerial_win_pct"] == pytest.approx(0.7)
+
+    def test_aerial_win_pct_null_when_denom_below_threshold(self):
+        # 5+4=9 < MIN_AERIAL_CONTESTS (10)
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           aerials_won=5, aerials_lost=4)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerial_win_pct"] is None
+
+    def test_aerial_win_pct_null_when_no_aerials(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           aerials_won=0, aerials_lost=0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerial_win_pct"] is None
+
+    def test_aerial_win_pct_exact_threshold(self):
+        # 6+4=10 == MIN_AERIAL_CONTESTS — should be non-null
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           aerials_won=6, aerials_lost=4)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerial_win_pct"] == pytest.approx(0.6)
+
+    def test_long_pass_completion_pct_computed(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           long_passes_attempted=5, long_passes_completed=3)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["long_pass_completion_pct"] == pytest.approx(0.6)
+
+    def test_long_pass_completion_pct_null_when_no_long_passes(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           long_passes_attempted=0, long_passes_completed=0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["long_pass_completion_pct"] is None
+
+    def test_chunk_a_columns_present(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        for col in (
+            "dispossessed", "miscontrols", "pressures", "ball_recoveries",
+            "dribbled_past", "aerials_won", "aerials_lost",
+            "long_passes_attempted", "long_passes_completed",
+            "passes_missing_length", "switches",
+            "aerial_win_pct", "long_pass_completion_pct",
+            "dispossessed_p90", "miscontrols_p90", "pressures_p90",
+            "ball_recoveries_p90", "dribbled_past_p90",
+            "aerials_won_p90", "aerials_lost_p90",
+            "long_passes_attempted_p90", "switches_p90",
+        ):
+            assert col in result.columns, f"Missing column: {col!r}"
+
+    def test_long_passes_completed_has_no_p90_column(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        assert "long_passes_completed_p90" not in result.columns
+
+    def test_passes_missing_length_has_no_p90_column(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        assert "passes_missing_length_p90" not in result.columns
+
+    def test_aerials_summed_across_matches(self):
+        rows = [
+            _match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                       aerials_won=4, aerials_lost=3),
+            _match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                       aerials_won=3, aerials_lost=4),
+        ]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerials_won"] == 7
+        assert row["aerials_lost"] == 7
+        assert row["aerial_win_pct"] == pytest.approx(0.5)
+
+    def test_aerial_win_pct_zero_wins_above_threshold(self):
+        # 0 won + 10 lost = 10 == MIN_AERIAL_CONTESTS → pct should be 0.0, not null.
+        # This distinguishes "no aerial contests" (null) from "lost every duel" (0.0).
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           aerials_won=0, aerials_lost=10)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerial_win_pct"] == pytest.approx(0.0), (
+            "A player with 0 wins / 10 lost must have aerial_win_pct=0.0 "
+            "(not null) — denominator meets MIN_AERIAL_CONTESTS"
+        )
+
+    def test_pressures_p90_arithmetic(self):
+        # 18 pressures over 90 minutes = 18.0 p90.
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           pressures=18)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["pressures_p90"] == pytest.approx(18.0)
+
+    def test_aerials_won_p90_arithmetic(self):
+        # 4 aerials_won over 45 minutes = 8.0 p90.
+        rows = [_match_row(player_id=1, minutes_played=45.0, minutes_dm_cm=45.0,
+                           aerials_won=4)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerials_won_p90"] == pytest.approx(8.0)
+
+    def test_long_passes_attempted_p90_arithmetic(self):
+        # 9 long passes attempted over 30 minutes = 27.0 p90.
+        rows = [_match_row(player_id=1, minutes_played=30.0, minutes_dm_cm=30.0,
+                           long_passes_attempted=9, long_passes_completed=5)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["long_passes_attempted_p90"] == pytest.approx(27.0)
+
+    def test_long_pass_completion_pct_zero_completions_not_null(self):
+        # 5 attempts, 0 completions → pct = 0.0, not null.
+        # Tests the boundary between null (0 attempts) and 0.0 (attempts > 0, no completions).
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           long_passes_attempted=5, long_passes_completed=0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["long_pass_completion_pct"] == pytest.approx(0.0), (
+            "5 long passes attempted with 0 completions must be 0.0, not null"
+        )
+
+    def test_chunk_a_p90_zero_minutes_all_null(self):
+        # All new chunk-A _p90 columns must be null when minutes_played == 0.
+        base = _match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                          pressures=5, aerials_won=3, aerials_lost=2,
+                          ball_recoveries=4, switches=2)
+        zero = {**base, "minutes_played": 0.0, "minutes_dm_cm": 0.0}
+        result = aggregate_player_season(_df([zero]))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        for col in ("pressures_p90", "aerials_won_p90", "aerials_lost_p90",
+                    "ball_recoveries_p90", "dribbled_past_p90",
+                    "dispossessed_p90", "miscontrols_p90",
+                    "long_passes_attempted_p90", "switches_p90"):
+            assert row[col] is None, f"Expected {col}=null for 0 minutes but got {row[col]}"
+
+    def test_aerials_won_p90_zero_not_null_distinguishes_from_aerial_win_pct(self):
+        # aerials_won is in _COUNT_COLS → its per-90 is: 0 / 90 * 90 = 0.0 (not null).
+        # aerial_win_pct is a ratio column → null when denominator < MIN_AERIAL_CONTESTS.
+        # The two columns must behave differently when aerials_won=0 and aerials_lost=0.
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                           aerials_won=0, aerials_lost=0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["aerials_won_p90"] == pytest.approx(0.0), (
+            "aerials_won=0 with 90 min must produce aerials_won_p90=0.0 (count-col rule), "
+            "not null — null is reserved for the aerial_win_pct ratio column"
+        )
+        assert row["aerial_win_pct"] is None, (
+            "aerial_win_pct must be null when denominator (0) < MIN_AERIAL_CONTESTS"
+        )
+
+    def test_ball_recoveries_failed_summed_across_matches(self):
+        # ball_recoveries_failed is a display-only column (ADR §21): it must be
+        # summed across matches like any count column, even though it has no _p90.
+        rows = [
+            _match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                       ball_recoveries=8, ball_recoveries_failed=2),
+            _match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                       ball_recoveries=5, ball_recoveries_failed=1),
+        ]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["ball_recoveries"] == 13
+        assert row["ball_recoveries_failed"] == 3, (
+            "ball_recoveries_failed must be summed across matches "
+            "(display-only denominator, ADR §21)"
+        )
+        # The combined total equals the total recovery attempts (success + failure).
+        assert row["ball_recoveries"] + row["ball_recoveries_failed"] == 16
+
+
+# ---------------------------------------------------------------------------
 # TestBuildPlayerSeasonIOWrapper — build_player_season() reads / writes parquet
 # ---------------------------------------------------------------------------
 
@@ -652,6 +856,30 @@ class TestIntegration:
         assert season_df["crosses_attempted"].sum() == match_df["crosses_attempted"].sum()
         assert season_df["crosses_attempted"].sum() == 9606
         assert season_df["crosses_completed"].sum() == 2651
+
+    def test_chunk_a_metrics_reconcile(self, frames):
+        """La Liga 2015/16 season totals must match raw event counts from verify_chunk_a_metrics.py."""
+        # Reference values derived from spikes/verify_chunk_a_metrics.py.
+        match_df, season_df = frames
+        assert season_df["dispossessed"].sum() == 9_379
+        assert season_df["miscontrols"].sum() == 10_422
+        assert season_df["pressures"].sum() == 114_081
+        assert season_df["ball_recoveries"].sum() == 35_927
+        assert season_df["ball_recoveries_failed"].sum() == 2_587
+        assert season_df["dribbled_past"].sum() == 8_846
+        assert season_df["aerials_won"].sum() == 16_526
+        assert season_df["aerials_lost"].sum() == 16_526
+        assert season_df["long_passes_attempted"].sum() == 65_185
+        assert season_df["long_passes_completed"].sum() == 37_586
+        assert season_df["passes_missing_length"].sum() == 0
+        assert season_df["switches"].sum() == 11_615
+        # Season totals must equal match-level totals for every count column.
+        for col in ("dispossessed", "pressures", "ball_recoveries",
+                    "ball_recoveries_failed", "aerials_won", "aerials_lost",
+                    "long_passes_attempted", "switches"):
+            assert season_df[col].sum() == match_df[col].sum(), (
+                f"{col}: season sum != match sum"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -931,6 +1159,22 @@ class TestDisplayOnlyColsNoPer90:
             "shots_missing_xg is in _DISPLAY_ONLY_COLS; "
             "it must not have a per-90 companion column"
         )
+
+    def test_ball_recoveries_failed_has_no_p90_column(self):
+        # ADR 002 §21: ball_recoveries_failed is a display-only denominator;
+        # ball_recovery success rate is a derived ratio, not a raw per-90 metric.
+        rows = [_match_row(player_id=1, minutes_dm_cm=90.0,
+                           ball_recoveries=5, ball_recoveries_failed=2)]
+        result = aggregate_player_season(_df(rows))
+        assert "ball_recoveries_failed" in result.columns, (
+            "ball_recoveries_failed must appear in season output"
+        )
+        assert "ball_recoveries_failed_p90" not in result.columns, (
+            "ball_recoveries_failed is in _DISPLAY_ONLY_COLS; "
+            "it must not have a per-90 companion column"
+        )
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["ball_recoveries_failed"] == 2
 
     def test_display_only_cols_list_does_not_overlap_count_cols(self):
         # _DISPLAY_ONLY_COLS and _COUNT_COLS must be disjoint — a column in both

@@ -314,6 +314,10 @@ def test_build_competition_season_schema_has_new_columns(tmp_path):
         "minutes_gk", "minutes_cb", "minutes_fb_wb",
         "minutes_dm_cm", "minutes_am_winger", "minutes_st", "minutes_unknown",
         "crosses_attempted", "crosses_completed",
+        "dispossessed", "miscontrols", "pressures", "ball_recoveries",
+        "dribbled_past", "aerials_won", "aerials_lost",
+        "long_passes_attempted", "long_passes_completed", "passes_missing_length",
+        "switches",
     ):
         assert col in df.columns, (
             f"Expected new column {col!r} in build_competition_season output"
@@ -575,6 +579,53 @@ class TestPrimaryRawPosition:
             "Right Back": 10.0,
         }
         assert _primary_raw_position(positions) == "Center Back"
+
+
+# ---------------------------------------------------------------------------
+# build_competition_season error handler
+# ---------------------------------------------------------------------------
+
+def test_build_competition_season_bad_match_isolated_in_failed_ids(tmp_path, monkeypatch):
+    """
+    Milestones tech-debt (L550–552): the except-Exception block must append the
+    failed match_id to failed_ids and continue processing remaining matches.
+
+    Strategy:
+    - Patch load_matches to return both match 9999 (good) and match 9998 (bad).
+    - Patch _process_match to raise for match 9998 only.
+    The call must return a non-empty DataFrame (from 9999) and failed_ids=[9998].
+    """
+    import eleveniq.pipeline.build_player_match as _bpm
+
+    original_process = _bpm._process_match
+
+    def _patched_process(match_id, competition_id, season_id, *, data_root=None):
+        if match_id == 9998:
+            raise ValueError("synthetic failure for match 9998")
+        return original_process(match_id, competition_id, season_id, data_root=data_root)
+
+    def _patched_load_matches(competition_id, season_id, data_root=None):
+        # Return both the good fixture match and the synthetic bad match.
+        return [{"match_id": 9999}, {"match_id": 9998}]
+
+    monkeypatch.setattr(_bpm, "_process_match", _patched_process)
+    monkeypatch.setattr(_bpm, "load_matches", _patched_load_matches)
+
+    out = tmp_path / "out.parquet"
+    df, _, failed = build_competition_season(
+        99, 1, data_root=_FIXTURE_ROOT, output_path=out
+    )
+
+    assert 9998 in failed, (
+        "match_id 9998 raised an exception; it must appear in failed_ids"
+    )
+    assert 9999 not in failed, (
+        "match_id 9999 succeeded; it must NOT appear in failed_ids"
+    )
+    assert len(df) > 0, (
+        "The successful match (9999) must still produce rows "
+        "despite the failure on match 9998"
+    )
 
 
 # ---------------------------------------------------------------------------

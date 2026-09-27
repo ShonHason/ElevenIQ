@@ -1025,6 +1025,373 @@ class TestProgressiveCrossOverlap:
 
 
 # ---------------------------------------------------------------------------
+# Chunk A — Ball Security, Defending, Passing (new metrics)
+# ---------------------------------------------------------------------------
+
+def _dispossessed_event() -> dict:
+    return {"type": {"name": "Dispossessed"}}
+
+
+def _miscontrol_event(*, aerial_won: bool = False) -> dict:
+    mc: dict = {}
+    if aerial_won:
+        mc["aerial_won"] = True
+    return {"type": {"name": "Miscontrol"}, "miscontrol": mc}
+
+
+def _pressure_event() -> dict:
+    return {"type": {"name": "Pressure"}}
+
+
+def _ball_recovery_event(*, recovery_failure: bool | None = None, offensive: bool = False) -> dict:
+    br: dict = {}
+    if offensive:
+        br["offensive"] = True
+    if recovery_failure is True:
+        br["recovery_failure"] = True
+    # br is {} (empty dict) for the default call — the "present but empty sub-dict" case.
+    return {"type": {"name": "Ball Recovery"}, "ball_recovery": br}
+
+
+def _ball_recovery_event_no_subdict() -> dict:
+    """Ball Recovery with no ball_recovery sub-dict at all (most common case)."""
+    return {"type": {"name": "Ball Recovery"}}
+
+
+def _dribbled_past_event() -> dict:
+    return {"type": {"name": "Dribbled Past"}}
+
+
+def _aerial_won_pass_event() -> dict:
+    return {"type": {"name": "Pass"}, "pass": {"aerial_won": True, "end_location": [62.0, 40.0]}}
+
+
+def _aerial_won_clearance_event() -> dict:
+    return {"type": {"name": "Clearance"}, "clearance": {"aerial_won": True}}
+
+
+def _aerial_won_shot_event() -> dict:
+    return {"type": {"name": "Shot"}, "shot": {"aerial_won": True, "statsbomb_xg": 0.1, "outcome": {"name": "Off T"}}}
+
+
+def _aerial_lost_duel_event() -> dict:
+    return {"type": {"name": "Duel"}, "duel": {"type": {"name": "Aerial Lost"}}}
+
+
+def _long_pass_event(*, length: float, outcome: str | None = None, pass_type: str | None = None) -> dict:
+    pass_data: dict = {"length": length, "end_location": [90.0, 40.0]}
+    if outcome is not None:
+        pass_data["outcome"] = {"name": outcome}
+    if pass_type is not None:
+        pass_data["type"] = {"name": pass_type}
+    return {"type": {"name": "Pass"}, "location": [60.0, 40.0], "pass": pass_data}
+
+
+def _switch_pass_event(*, switch: bool = True) -> dict:
+    pass_data: dict = {"switch": switch, "length": 35.0, "end_location": [90.0, 70.0]}
+    return {"type": {"name": "Pass"}, "location": [60.0, 10.0], "pass": pass_data}
+
+
+def _no_length_pass_event() -> dict:
+    return {"type": {"name": "Pass"}, "location": [60.0, 40.0], "pass": {"end_location": [62.0, 40.0]}}
+
+
+class TestAggregateEventsChunkA:
+    """Unit tests for Chunk A metrics per ADR 002 §18–22."""
+
+    # -- Ball Security --------------------------------------------------------
+
+    def test_dispossessed_increments(self):
+        r = _aggregate_events([_dispossessed_event()])
+        assert r["dispossessed"] == 1
+
+    def test_miscontrol_increments(self):
+        r = _aggregate_events([_miscontrol_event()])
+        assert r["miscontrols"] == 1
+
+    def test_miscontrol_with_aerial_won_increments_both(self):
+        r = _aggregate_events([_miscontrol_event(aerial_won=True)])
+        assert r["miscontrols"] == 1
+        assert r["aerials_won"] == 1
+
+    # -- Defending ------------------------------------------------------------
+
+    def test_pressure_increments(self):
+        r = _aggregate_events([_pressure_event()])
+        assert r["pressures"] == 1
+
+    def test_ball_recovery_absent_subdict_is_success(self):
+        r = _aggregate_events([_ball_recovery_event_no_subdict()])
+        assert r["ball_recoveries"] == 1
+        assert r["ball_recoveries_failed"] == 0
+
+    def test_ball_recovery_empty_subdict_is_success(self):
+        # ADR §21 case 2: sub-dict present but contains no recovery_failure key.
+        r = _aggregate_events([_ball_recovery_event()])
+        assert r["ball_recoveries"] == 1
+        assert r["ball_recoveries_failed"] == 0
+
+    def test_ball_recovery_offensive_subdict_is_success(self):
+        r = _aggregate_events([_ball_recovery_event(offensive=True)])
+        assert r["ball_recoveries"] == 1
+        assert r["ball_recoveries_failed"] == 0
+
+    def test_ball_recovery_failure_not_counted_as_success(self):
+        r = _aggregate_events([_ball_recovery_event(recovery_failure=True)])
+        assert r["ball_recoveries"] == 0
+        assert r["ball_recoveries_failed"] == 1
+
+    def test_dribbled_past_increments(self):
+        r = _aggregate_events([_dribbled_past_event()])
+        assert r["dribbled_past"] == 1
+
+    def test_pass_aerial_won_true_increments_aerials_won(self):
+        r = _aggregate_events([_aerial_won_pass_event()])
+        assert r["aerials_won"] == 1
+        assert r["aerials_lost"] == 0
+
+    def test_clearance_aerial_won_true_increments_aerials_won(self):
+        r = _aggregate_events([_aerial_won_clearance_event()])
+        assert r["aerials_won"] == 1
+        assert r["aerials_lost"] == 0
+
+    def test_shot_aerial_won_true_increments_aerials_won(self):
+        r = _aggregate_events([_aerial_won_shot_event()])
+        assert r["aerials_won"] == 1
+        assert r["aerials_lost"] == 0
+
+    def test_aerial_won_false_not_counted(self):
+        event = {"type": {"name": "Pass"}, "pass": {"aerial_won": False, "end_location": [62.0, 40.0]}}
+        r = _aggregate_events([event])
+        assert r["aerials_won"] == 0
+
+    def test_duel_aerial_lost_increments_aerials_lost(self):
+        r = _aggregate_events([_aerial_lost_duel_event()])
+        assert r["aerials_lost"] == 1
+        assert r["aerials_won"] == 0
+
+    def test_tackle_duel_not_counted_as_aerial_lost(self):
+        r = _aggregate_events([_duel_event(duel_type="Tackle", outcome="Won")])
+        assert r["aerials_lost"] == 0
+
+    def test_aerial_won_does_not_increment_aerials_lost(self):
+        r = _aggregate_events([_aerial_won_pass_event()])
+        assert r["aerials_lost"] == 0
+
+    def test_multiple_aerial_events_accumulated(self):
+        events = [
+            _aerial_won_pass_event(),
+            _aerial_won_clearance_event(),
+            _aerial_lost_duel_event(),
+        ]
+        r = _aggregate_events(events)
+        assert r["aerials_won"] == 2
+        assert r["aerials_lost"] == 1
+
+    # -- Passing --------------------------------------------------------------
+
+    def test_long_pass_open_play_attempted_and_completed(self):
+        r = _aggregate_events([_long_pass_event(length=30.0)])
+        assert r["long_passes_attempted"] == 1
+        assert r["long_passes_completed"] == 1
+
+    def test_long_pass_incomplete_counts_attempted_only(self):
+        r = _aggregate_events([_long_pass_event(length=35.0, outcome="Incomplete")])
+        assert r["long_passes_attempted"] == 1
+        assert r["long_passes_completed"] == 0
+
+    def test_short_pass_not_counted_as_long(self):
+        r = _aggregate_events([_long_pass_event(length=29.9)])
+        assert r["long_passes_attempted"] == 0
+        assert r["long_passes_completed"] == 0
+
+    def test_corner_long_pass_excluded(self):
+        r = _aggregate_events([_long_pass_event(length=40.0, pass_type="Corner")])
+        assert r["long_passes_attempted"] == 0
+
+    def test_goal_kick_long_pass_excluded(self):
+        r = _aggregate_events([_long_pass_event(length=40.0, pass_type="Goal Kick")])
+        assert r["long_passes_attempted"] == 0
+
+    def test_free_kick_long_pass_excluded(self):
+        r = _aggregate_events([_long_pass_event(length=40.0, pass_type="Free Kick")])
+        assert r["long_passes_attempted"] == 0
+
+    def test_switch_true_increments_switches(self):
+        r = _aggregate_events([_switch_pass_event(switch=True)])
+        assert r["switches"] == 1
+
+    def test_switch_false_not_counted(self):
+        r = _aggregate_events([_switch_pass_event(switch=False)])
+        assert r["switches"] == 0
+
+    def test_switch_absent_not_counted(self):
+        r = _aggregate_events([_long_pass_event(length=35.0)])
+        assert r["switches"] == 0
+
+    def test_pass_no_length_increments_missing_not_long(self):
+        r = _aggregate_events([_no_length_pass_event()])
+        assert r["passes_missing_length"] == 1
+        assert r["long_passes_attempted"] == 0
+
+    def test_long_switch_pass_increments_both_counters(self):
+        # A pass that is both >= 30 yards AND has switch=True must increment both
+        # long_passes_attempted and switches.  This is not a mutual-exclusion case.
+        event = _switch_pass_event(switch=True)
+        # _switch_pass_event uses length=35.0, which is >= LONG_PASS_THRESHOLD_YDS
+        r = _aggregate_events([event])
+        assert r["long_passes_attempted"] == 1, (
+            "A 35-yard switch pass must count as a long pass attempted"
+        )
+        assert r["switches"] == 1, (
+            "A switch=True pass must count as a switch regardless of length"
+        )
+
+    def test_ball_recovery_failure_false_treated_as_success(self):
+        # ADR 002 §21: recovery_failure=False never appears in StatsBomb open data,
+        # but the implementation guard 'not br.get("recovery_failure")' evaluates
+        # False as falsy → not False = True → ball_recoveries increments.
+        # Explicitly test the boundary: False value must be treated as success.
+        event = {"type": {"name": "Ball Recovery"}, "ball_recovery": {"recovery_failure": False}}
+        r = _aggregate_events([event])
+        assert r["ball_recoveries"] == 1, (
+            "ADR §21: recovery_failure=False must be treated as success "
+            "(success encoded by absence of True, not presence of False)"
+        )
+
+    def test_long_pass_set_piece_excluded_even_below_threshold(self):
+        # A short Corner kick (length=20) must not appear in long_passes_attempted
+        # (excluded by both length check and set-piece exclusion).
+        # Verifies the set-piece path doesn't accidentally count short set-pieces.
+        r = _aggregate_events([_long_pass_event(length=20.0, pass_type="Corner")])
+        assert r["long_passes_attempted"] == 0
+
+    def test_throw_in_long_pass_counts_as_open_play(self):
+        # ADR 002 §19: only Corner, Goal Kick, Free Kick are excluded.
+        # A Throw-in is not in _SET_PIECE_TYPES and must be counted if >= threshold.
+        event = _long_pass_event(length=35.0, pass_type="Throw-in")
+        r = _aggregate_events([event])
+        assert r["long_passes_attempted"] == 1, (
+            "ADR §19: Throw-in is not in the set-piece exclusion list; "
+            "a 35-yard throw-in must count as a long pass"
+        )
+
+    def test_multiple_new_metric_events_accumulate_independently(self):
+        # Regression: new metrics added via elif must not prevent each other
+        # from accumulating.  If any elif accidentally absorbs a prior branch,
+        # the totals will be wrong.
+        events = [
+            _dispossessed_event(),
+            _miscontrol_event(),
+            _pressure_event(),
+            _ball_recovery_event_no_subdict(),
+            _ball_recovery_event(recovery_failure=True),
+            _dribbled_past_event(),
+        ]
+        r = _aggregate_events(events)
+        assert r["dispossessed"] == 1
+        assert r["miscontrols"] == 1
+        assert r["pressures"] == 1
+        assert r["ball_recoveries"] == 1
+        assert r["ball_recoveries_failed"] == 1
+        assert r["dribbled_past"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TestAggregateEventsChunkAInvariants — spec-derived invariants not covered above
+# ---------------------------------------------------------------------------
+
+class TestAggregateEventsChunkAInvariants:
+    """
+    Spec-derived invariants from ADR 002 §18–23 that protect against subtle
+    regressions not covered by the positive-case tests in TestAggregateEventsChunkA.
+    """
+
+    def test_empty_events_new_fields_all_zero(self):
+        # _aggregate_events([]) must initialise every new Chunk-A field to 0,
+        # not raise KeyError when callers read them.
+        result = _aggregate_events([])
+        for field in (
+            "dispossessed", "miscontrols", "pressures",
+            "ball_recoveries", "ball_recoveries_failed", "dribbled_past",
+            "aerials_won", "aerials_lost",
+            "long_passes_attempted", "long_passes_completed",
+            "passes_missing_length", "switches",
+        ):
+            assert field in result, f"Field {field!r} missing from _aggregate_events output"
+            assert result[field] == 0, f"Expected {field}=0 for empty events but got {result[field]}"
+
+    def test_long_passes_completed_never_exceeds_attempted(self):
+        # Invariant: completed ⊆ attempted.  Test with multiple mixed events.
+        events = [
+            _long_pass_event(length=35.0),                       # completed
+            _long_pass_event(length=35.0, outcome="Incomplete"),  # attempted only
+            _long_pass_event(length=35.0),                       # completed
+        ]
+        result = _aggregate_events(events)
+        assert result["long_passes_completed"] <= result["long_passes_attempted"], (
+            "long_passes_completed must never exceed long_passes_attempted"
+        )
+        assert result["long_passes_attempted"] == 3
+        assert result["long_passes_completed"] == 2
+
+    def test_switch_on_incomplete_pass_still_counted(self):
+        # ADR 002 §23: pass.switch=True increments switches regardless of
+        # whether the pass was completed or not.  The flag is a tactical
+        # annotation, not a quality measure.
+        event = _switch_pass_event(switch=True)
+        event["pass"]["outcome"] = {"name": "Incomplete"}
+        result = _aggregate_events([event])
+        assert result["switches"] == 1, (
+            "ADR §23: switch=True on an incomplete pass must still increment switches"
+        )
+
+    def test_ball_recovery_each_event_goes_to_exactly_one_bucket(self):
+        # Each Ball Recovery event increments EITHER ball_recoveries OR
+        # ball_recoveries_failed — never both, never neither.
+        events = [
+            _ball_recovery_event_no_subdict(),           # success (no sub-dict)
+            _ball_recovery_event(),                      # success (empty sub-dict)
+            _ball_recovery_event(offensive=True),        # success (offensive)
+            _ball_recovery_event(recovery_failure=True), # failure
+        ]
+        result = _aggregate_events(events)
+        total_events = 4
+        assert result["ball_recoveries"] + result["ball_recoveries_failed"] == total_events, (
+            "Every Ball Recovery event must land in exactly one bucket "
+            "(ball_recoveries or ball_recoveries_failed)"
+        )
+        assert result["ball_recoveries"] == 3
+        assert result["ball_recoveries_failed"] == 1
+
+    def test_corner_cross_long_excluded_from_long_passes(self):
+        # ADR §18/§19: corner kicks are excluded from long_passes_attempted by the
+        # set-piece type filter, even when cross=True and length >= threshold.
+        # This matters because a corner into the box often has cross=True in practice.
+        event = _long_pass_event(length=40.0, pass_type="Corner")
+        event["pass"]["cross"] = True
+        result = _aggregate_events([event])
+        assert result["long_passes_attempted"] == 0, (
+            "ADR §19: a Corner kick must not count as long_passes_attempted "
+            "even when pass.cross=True"
+        )
+
+    def test_passes_missing_length_and_long_attempts_mutually_exclusive_per_pass(self):
+        # A pass with length=None must land in passes_missing_length, never
+        # long_passes_attempted.  These two counters are mutually exclusive for
+        # every individual pass.
+        result = _aggregate_events([_no_length_pass_event()])
+        # Exactly one of the two counters must have incremented.
+        assert result["passes_missing_length"] == 1
+        assert result["long_passes_attempted"] == 0
+        total = result["passes_missing_length"] + result["long_passes_attempted"]
+        assert total == 1, (
+            "A null-length pass must increment exactly one of "
+            "passes_missing_length or long_passes_attempted"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Integration test: parquet goals + own goals == official match-score totals
 # ---------------------------------------------------------------------------
 
