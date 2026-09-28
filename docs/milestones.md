@@ -201,6 +201,8 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
     file (or patches `_process_match` to raise) and asserts the failed match id is
     returned in `failed_ids` while other matches still succeed.
 
+**Multi-league expansion (all 2015/16 leagues, chunks C1–C3):** see [docs/plans/003-multi-league.md](plans/003-multi-league.md).
+
 ---
 
 ## Milestone 4 — Feature Engineering & Player DNA  (outline)
@@ -222,6 +224,15 @@ split-season players be ranked using (a) their per-stint `minutes_played` only,
 (b) their `player_season_minutes_total`, or (c) excluded from rankings unless
 the primary stint meets the minimum threshold on its own? Record the decision
 in ADR 002 §6 or a new ADR.
+
+**Pre-condition from Plan 003 C1 audit (cross-league event rates) — stats-reviewer must decide before computing global percentiles:**
+
+- Event-type rates differ materially between the 2015/16 leagues (`spikes/profile_2015_16_leagues.py`):
+  - Interceptions per 1,000 events: La Liga 9.55 vs 5.73–6.79 in the other four.
+  - 50/50s per 1,000 events: 0.31–0.43 (La Liga, Premier League) vs 1.39–1.57 (Serie A, Ligue 1, Bundesliga).
+  - Pressures per 1,000 events: 88–107.
+
+  Whether this reflects playing style or differences in how StatsBomb collected the data is unknown. League-local percentiles are unaffected. Global percentiles on defensive metrics (interceptions, 50/50s, pressures, ball recoveries) may be distorted. The stats-reviewer must decide whether these metrics get global percentiles at all, a caveat, or league-local only.
 
 **Pre-conditions from chunk B reviews — must be done before computing percentiles:**
 
