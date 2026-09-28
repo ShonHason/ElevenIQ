@@ -1,6 +1,10 @@
 # Plan 003: Multi-league expansion (all 2015/16 leagues)
 
-Status: approved, not started. Executed in three chunks (C1–C3). Each chunk ends with `/finish-chunk`.
+Status: C1, C2 committed; C3 implemented (awaiting `/finish-chunk`). Executed in three chunks (C1–C3). Each chunk ends with `/finish-chunk`.
+
+C3 deviation: `multi_competition_season` keys the season on `season_id`, not `season_name`
+(not a parquet column); the build raises `CoverageCheckError` unless StatsBomb `season_id` ↔ `season_name` is one-to-one
+(ADR 003 §7).
 
 ## Context
 The pipeline currently covers only La Liga 2015/16 (comp 11 / season 27). StatsBomb Open Data

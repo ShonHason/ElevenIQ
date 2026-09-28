@@ -1,7 +1,7 @@
 # ADR 003 — Competition-Season Coverage and Percentile-Pool Eligibility
 
 **Date:** 2026-09-28
-**Status:** Draft (Plan 003, chunk C1)
+**Status:** Draft (Plan 003; C1, with §5 implementation and §7 added in C3)
 **Context:** The pipeline is expanding from La Liga 2015/16 to all 2015/16 domestic leagues in StatsBomb Open Data (see `docs/plans/003-multi-league.md`). Some of these competition-seasons are not fully covered in the open set. A partial season is a biased sample: only one team is seen every week, and every opponent is seen once or twice. Its players must not define or distort percentile pools.
 
 ---
@@ -31,10 +31,12 @@ A competition-season is **FULL** when both of the following hold:
 Otherwise it is **PARTIAL**.
 
 Notes:
-- `n_teams` is the number of distinct teams in `matches/{comp}/{season}.json`.
-- A partial file could hide teams entirely. Where that is possible, `n_teams` must be checked
-  against the known league size, which is recorded in config next to the competition-season
-  entry. For 2015/16 the known sizes are 20, and 18 for the Bundesliga.
+- `n_teams` is the known league size, `expected_teams`, recorded in config next to the
+  competition-season entry (2015/16: 20, and 18 for the Bundesliga). It is **not** the number
+  of teams seen in the file, because a partial file could hide teams entirely.
+- The file is checked against it. Condition 2 means all `expected_teams` teams appear in
+  `matches/{comp}/{season}.json`. More distinct teams in the file than `expected_teams` is a
+  config error and fails the build. `expected_teams` must be ≥ 2.
 - The 95% threshold allows a handful of missing fixtures. Each team then loses at most about
   one match in 38, which does not bias a season profile materially. Anything below the
   threshold is treated as a selective sample.
@@ -104,9 +106,39 @@ Consequences:
   player-season rows and can be looked up. Whether and how a non-pool row is ranked *against*
   a pool (e.g. showing a percentile relative to the FULL pools) is an M4 decision.
 - **Config is the single source of truth.** Coverage class is recorded in config, not
-  recomputed at pipeline time. A data-quality check asserts that the configured class agrees
-  with the §2 rule applied to the downloaded `matches.json`. A mismatch fails the build rather
-  than silently changing pool membership.
+  recomputed at pipeline time. A data-quality check compares the configured class with the §2
+  rule applied to the downloaded `matches.json` and raises `CoverageCheckError` on a mismatch,
+  failing the build rather than silently changing pool membership.
+
+### Implementation (plan 003 C3)
+- `CompetitionSeason.source` is a **required** config field (no default), so an entry can
+  never silently inherit StatsBomb provenance. The tag value is one constant,
+  `config.SOURCE_STATSBOMB`, used both where rows are written and where checks filter.
+  `validate_competition_seasons` rejects duplicate `(competition_id, season_id, source)` keys,
+  which would fan out the join, and `expected_teams < 2`.
+- `aggregate_player_season` left-joins the configured classes on
+  `(competition_id, season_id, source)`. A row whose key is not configured raises
+  `ValueError`. There is no default and no `fill_null`. Because config keys are unique, the
+  left join cannot add rows.
+- `build_player_season` runs three checks (`eleveniq.pipeline.coverage`) before writing,
+  and each one fails the build:
+  1. **Configured class vs §2 rule.** `classify_coverage` uses n = `expected_teams` from
+     config, not the teams seen in the file. FULL requires
+     available / (n·(n−1)) ≥ `FULL_COVERAGE_THRESHOLD` and all n teams present. More teams
+     in the file than `expected_teams` raises. Fewer means PARTIAL, so a file that hides
+     teams cannot pass as FULL.
+  2. **Processed vs available matches.** The *set* of `match_id`s per competition-season
+     in `player_match_stats` must equal the set in `matches.json`. The error lists missing
+     and extra ids, so a pool is never built on dropped or mislabelled matches (a count
+     comparison would miss one of each). 2015/16: 380 / 377 / 34 / 380 / 380, sets equal.
+  3. **Season key.** Across the configured competition-seasons, StatsBomb `season_id` ↔
+     `season_name` must be one-to-one (`competitions.json`). Unconfigured competitions are
+     ignored, so an unrelated StatsBomb entry cannot block the build. A configured
+     competition-season missing from `competitions.json` fails. See §7.
+- Limitation: for a competition-season configured PARTIAL, a wrong `expected_teams` that
+  is still ≥ the teams seen is not detected, because the derived class stays PARTIAL.
+- 2015/16 result: 2,279 pool rows (La Liga 546, PL 561, Serie A 584, Ligue 1 588) and
+  349 Bundesliga rows with `in_percentile_pool = False`.
 
 ---
 
@@ -118,3 +150,37 @@ Consequences:
   check validates it.
 - If StatsBomb later publishes the full 2015/16 Bundesliga, only the config entry changes. The
   §2 check confirms the reclassification.
+
+---
+
+## 7. The `multi_competition_season` flag
+
+- **Type / location:** a boolean column on `player_season_stats.parquet`.
+- **Derivation:** `True` iff the player's rows cover more than one distinct
+  `competition_id` within the same `(player_id, season_id, source)`. Rows stay separate,
+  one per player, team, competition and season.
+- **Season key.** Plan 003 §6 proposed keying on `season_name`, which is not a parquet
+  column. StatsBomb `season_id` is shared across competitions (27 = "2015/2016" in comps
+  2, 7, 9, 11, 12 and 16), and `season_id` ↔ `season_name` is one-to-one across all of
+  `competitions.json`. The key is therefore `season_id`. The build raises `CoverageCheckError`
+  unless the mapping is one-to-one for the configured competition-seasons (§5 check 3).
+- **Calendar-year vs split-year seasons.** A calendar-year season (e.g. "2016") and a
+  split-year one ("2015/2016") never share a key, so moves between those formats are not
+  detected. This matters for a future Danish or Dutch source (new ADR required).
+- **PARTIAL competitions count.** The flag describes the player's season, not pool
+  eligibility. Two caveats apply:
+  - *Observed-only minutes.* In a PARTIAL competition, minutes cover observed matches
+    only (Bundesliga 2015/16: Leverkusen's matches). A sum across competitions is not the
+    player's true season total.
+  - *Lower bound.* `False` means "not seen in another ingested league competition". It
+    does not mean the player stayed at one club. Moves to or from non-ingested leagues and
+    cups are invisible.
+- **Within-competition columns are unchanged.** `multi_team_season`, `is_primary_stint`
+  and `player_season_minutes_total` stay per competition (ADR 002 §29).
+- **Data-quality check.** A `team_id` must appear in only one competition per
+  `(season_id, source)`; the build fails otherwise. Every configured competition is a
+  league (§2). Once cups are ingested, this check must be scoped to leagues.
+- **2015/16 result:** 47 player_ids, each in exactly 2 competitions (94 rows). 9 of them
+  involve the PARTIAL Bundesliga. None is also `multi_team_season`.
+- How these players are ranked or combined is deferred to M4 (§1; ADR 002 §29 lists the
+  known double-count and minutes-gate cases).

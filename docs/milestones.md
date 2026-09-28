@@ -202,6 +202,13 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
 - `_process_match` returns its quality entries as `dismissal_report`, but the list also
   carries fallback, starter-count and Starting XI cross-check entries (Plan 003 C2).
   Rename it (e.g. `quality_report`) along with its docstring and callers.
+- **Plan 003 C3 review leftovers (tests/docs only):**
+  - `tests/test_coverage.py::TestCheckProcessedMatchIds::test_equal_counts_pass` still
+    has its count-era name; rename it to say equal match_id sets.
+  - `check_processed_match_ids` has no test showing that rows from another `source`
+    are ignored by the `SOURCE_STATSBOMB` filter.
+  - ADR 003 §5 check 2 lists "380 / 377 / 34 / 380 / 380" without league labels, in
+    competition_id order rather than config order. Label them.
 
 **Multi-league expansion (all 2015/16 leagues, chunks C1–C3):** see [docs/plans/003-multi-league.md](plans/003-multi-league.md).
 
@@ -235,6 +242,12 @@ in ADR 002 §6 or a new ADR.
   - Pressures per 1,000 events: 88–107.
 
   Whether this reflects playing style or differences in how StatsBomb collected the data is unknown. League-local percentiles are unaffected. Global percentiles on defensive metrics (interceptions, 50/50s, pressures, ball recoveries) may be distorted. The stats-reviewer must decide whether these metrics get global percentiles at all, a caveat, or league-local only.
+
+**Pre-conditions from Plan 003 C3 (multi-league flags) — stats-reviewer must decide before computing percentiles:**
+
+- **A combined minutes gate counts only pool rows.** If M4 gates on a player's minutes summed across leagues (ADR 002 §17, §29), the sum includes only rows with `in_percentile_pool == True`. Minutes from a PARTIAL competition are observed-only, so adding them biases the gate. In 2015/16, Mevlüt Erdinç (Ligue 1 891 + Bundesliga 60) and Timm Klose (PL 890 + Bundesliga 93) cross 900 only through Bundesliga minutes.
+- **Cross-league double counting.** `is_primary_stint` is unique per competition, not per `(player_id, season_id, source)`. A global cohort filtered on `is_primary_stint` + `meets_min_minutes` counts Khazri, Doucouré and Koné twice. Decide how to deduplicate before building any global cohort (ADR 002 §29).
+- **`multi_competition_season` is a lower bound.** When a PARTIAL league is involved, a stint is seen only if the player faced the covered team. Do not use the flag as a gate or dedup key unless it is scoped to pool rows (ADR 003 §7).
 
 **Pre-conditions from chunk B reviews — must be done before computing percentiles:**
 

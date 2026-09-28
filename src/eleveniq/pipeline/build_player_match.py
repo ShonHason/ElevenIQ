@@ -41,6 +41,7 @@ from eleveniq.metrics.xg_assisted import compute_xg_assisted_per_player
 from eleveniq.config import (
     COMPETITION_SEASONS,
     LONG_PASS_THRESHOLD_UNITS,
+    SOURCE_STATSBOMB,
     XG_ASSISTED_MAX_CARRY_UNITS,
     CompetitionSeason,
 )
@@ -539,7 +540,7 @@ def _process_match(
                     "team_name": team_name,
                     "competition_id": competition_id,
                     "season_id": season_id,
-                    "source": "statsbomb",
+                    "source": SOURCE_STATSBOMB,
                     "minutes_played": minutes_played,
                     "position_raw": position_raw,
                     "position_group": position_group,

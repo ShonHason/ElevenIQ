@@ -804,8 +804,8 @@ def test_real_fallback_matches_pass_cross_check(match_id, comp_id, team_name, n_
 
 class TestBuildAll:
     _CS = (
-        CompetitionSeason(99, 1, "Fixture A", 2, "FULL"),
-        CompetitionSeason(99, 2, "Fixture B", 2, "PARTIAL"),
+        CompetitionSeason(99, 1, "Fixture A", 2, "FULL", "statsbomb"),
+        CompetitionSeason(99, 2, "Fixture B", 2, "PARTIAL", "statsbomb"),
     )
 
     @pytest.fixture()
@@ -891,7 +891,7 @@ class TestBuildAll:
         assert sorted(pl.read_parquet(out)["season_id"].to_list()) == [1, 2]
 
     def test_only_must_be_configured(self, tmp_path, calls):
-        stray = (CompetitionSeason(1, 1, "Stray", 2, "FULL"),)
+        stray = (CompetitionSeason(1, 1, "Stray", 2, "FULL", "statsbomb"),)
         with pytest.raises(ValueError, match="unconfigured"):
             build_all(self._CS, only=stray, part_dir=tmp_path, output_path=tmp_path / "c.parquet")
         assert calls == []
@@ -994,8 +994,8 @@ class TestBuildAllResumeAndConcat:
     configured league, and only configured leagues."""
 
     _CS = (
-        CompetitionSeason(98, 1, "Existing", 2, "FULL"),
-        CompetitionSeason(98, 2, "New", 2, "FULL"),
+        CompetitionSeason(98, 1, "Existing", 2, "FULL", "statsbomb"),
+        CompetitionSeason(98, 2, "New", 2, "FULL", "statsbomb"),
     )
 
     @staticmethod

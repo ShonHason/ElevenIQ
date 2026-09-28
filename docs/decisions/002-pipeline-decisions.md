@@ -758,6 +758,9 @@ meaningful combined-season data.
 must be recorded in this ADR (extend §6 or add a new section) before any
 percentile computation reads `meets_min_minutes`.
 
+`player_season_minutes_total` sums a player's stints **within one competition**
+only. Minutes in another league in the same season are not included; see §29.
+
 ---
 
 ## 18. Cross Metric — Corner Exclusion
@@ -1140,3 +1143,142 @@ Reviewer noted that team context (Messi's xGA inflated by being at Barcelona) co
 bias percentiles.
 **Decision:** Position-group percentiles are the primary mitigation.  Team-context
 normalisation is deferred to Milestone 4.  No immediate action required.
+
+---
+
+## 28. Season Rows Keyed by IDs; Canonical Display Names
+
+**Date:** 2026-09-28 (plan 003, C3)
+**File:** `src/eleveniq/pipeline/build_player_season.py`
+
+### Problem
+The season group-by key included `player_name` and `team_name`. StatsBomb spells some
+names differently from match to match, so the first 5-league run split one player's
+season into two rows whenever a spelling changed. Their minutes were divided between
+the rows (distorting the minutes gate), and both rows were wrongly flagged
+`multi_team_season`: the flag covered 123 player_ids but 132 names.
+
+### Decision
+- **Group by ids only:** `player_id, team_id, competition_id, season_id, source`.
+  Names are display attributes attached after aggregation and never affect row identity.
+- **Canonical display name** per `(player_id, source)` and per `(team_id, source)`,
+  chosen across all seasons and competitions, so a player has one name everywhere:
+  1. Normalise: strip leading/trailing whitespace (including tabs), then fix known
+     StatsBomb quoting artifacts: `''` → `'`, then `"` → `'` (`N''Golo Kanté`,
+     `David N"Gog`). Normalisation is used only for choosing and displaying the name.
+  2. The normalised spelling that appears on the most match rows wins. Raw spellings
+     that normalise to the same string pool their counts.
+  3. Ties resolve to the alphabetically first spelling, so the result never depends
+     on row order.
+- **`player_name_variants`**: a sorted list of every *raw* spelling of the player's name,
+  unchanged by normalisation (for search later).
+- **`multi_team_season`** = more than one distinct `team_id` in the player-season.
+  Every report counts `player_id`s, not names.
+- **Data-quality check:** `find_name_variants()` lists every player_id / team_id with
+  more than one raw name. The build logs each one.
+
+### Findings (5-league 2015/16 run)
+- **9 player_ids** had two spellings. Eight were quoting artifacts (`N''Golo Kanté` /
+  `N'Golo Kanté`, `David N"Gog` / `David N'Gog`, …); one was a genuine variant
+  (`Fernando Luiz Rosa` / `Roza`).
+- **2 team_ids** also had two names, a larger source of false splits than the players:
+  - team 140: `Stade Malherbe Caen` (29 matches) / `Caen` (9 matches)
+  - team 147: `Olympique de Marseille` (27 matches) / `Marseille` (11 matches)
+
+  Every player who appeared under both team spellings was split into two rows and wrongly
+  flagged as a multi-team player (24 Caen, 25 Marseille).
+- In total, 25 raw player spellings contain `''` or `"`: the 9 variant ids plus 16 players
+  spelled with `''` in every match (e.g. `Danilo D''Ambrosio`). All now display with a
+  single apostrophe. No team name contains either artifact.
+
+### Before / after
+
+Season totals are unchanged: all 45 summed columns (counts, starts, appearances,
+minutes, xG) are identical before and after. Season totals still equal match totals
+(goals 3,959; shots 38,728; minutes 3,189,152.98; passes 1,512,747).
+
+| Metric | Before | After |
+|---|---|---|
+| Season rows | 2,686 | 2,628 |
+| Multi-team players | 123 player_ids (132 names) | 68 player_ids (68 names) |
+| La Liga rows | 546 | 546 (no La Liga name variants) |
+| Premier League rows | 566 | 561 |
+| Ligue 1 rows | 641 | 588 |
+| Rows ≥ 900 min | 1,363 | 1,366 |
+
+Rows ≥ 900 min per position group:
+
+| Group | Before | After | Cause |
+|---|---|---|---|
+| AM-Winger | 285 | 288 | +3 crossed 900 once merged (Alessandrini, Thauvin, Sarr) |
+| DM-CM | 296 | 299 | +1 crossed (Lucas Silva Borges); +2 moved in from other groups (Barrada from AM-Winger, Adéoti from CB) |
+| CB | 263 | 261 | Adéoti moved to DM-CM; N'Koulou was counted twice |
+| GK | 101 | 100 | Mandanda was counted twice |
+| FB-WB | 255 | 255 | — |
+| ST | 163 | 163 | — |
+
+- **Crossed the 900-minute gate after merging (5):** Romain Alessandrini (794 → 1,274),
+  Florian Thauvin (567 → 978), Bouna Sarr (821 → 1,067), Lucas Silva Borges
+  (650 → 1,082), all Marseille; Hervé Bazile (835 → 1,130), Caen. The "before" figure
+  is the larger of the two split rows.
+- **Counted twice before (both split rows ≥ 900):** Steve Mandanda (GK, 2,340 + 1,030)
+  and Nicolas N'Koulou (CB, 2,122 + 935), both Marseille. Each now counts once.
+- **Position group changed** because merged minutes changed the group with the most
+  minutes: Abdelaziz Barrada (AM-Winger → DM-CM), Jordan Adéoti (CB → DM-CM).
+- None of the 9 player name variants crossed the gate. Total minutes after the merge:
+  Kanté 3,179; M'Vila 3,336; N'Doye 2,874; Fernando 2,848; O'Shea 2,116;
+  M'Bengue 1,969; N'Gog 882; O'Kane 812; M. N'Diaye 162.
+
+### Outer whitespace (decided 2026-09-28)
+One raw name, `Daniel Arnaud N''Di`, carries a trailing tab. **Decision:** strip
+leading/trailing whitespace (including tabs) before choosing the canonical name, so it
+displays as `Daniel Arnaud N'Di`. `player_name_variants` keeps the raw spelling, tab
+included. Internal whitespace is left as is. Any further normalisation rule needs a
+recorded decision here first.
+
+The stats-reviewer impact review is deferred to the C3 `/finish-chunk`.
+
+---
+
+## 29. Within-Competition Season Columns; Cross-League Movers
+
+**Date:** 2026-09-28 (plan 003, C3; stats-reviewer design review)
+**File:** `src/eleveniq/pipeline/build_player_season.py`
+
+### Decision
+`multi_team_season`, `is_primary_stint` and `player_season_minutes_total` are
+**within-competition**. They are keyed on `(player_id, competition_id, season_id, source)`,
+so "player-season" in these columns means player-competition-season. A player who moved
+between leagues in one season has one row per league. Each row has
+`multi_competition_season = True` (ADR 003 §7), and each row is its league's primary stint.
+
+Example (Serie A → Premier League in January): 2 rows, both `multi_team_season = False`,
+both `is_primary_stint = True`, and `player_season_minutes_total` is that league's minutes
+only.
+
+### Why not add a cross-competition primary marker now
+The obvious rule, argmax of minutes, is wrong when a PARTIAL competition is involved,
+because those minutes are only the matches we observed. Kramarić has 33 observed PL
+minutes and 10 observed Bundesliga minutes, but he really played far more for Hoffenheim.
+Choosing a player's "main" league across coverage classes and league strengths is the M4
+cohort question (ADR 003 §1).
+
+### M4 note (must be resolved before any global cohort is built)
+- **`is_primary_stint` is NOT unique per `(player_id, season_id, source)`.** In 2015/16
+  there are 47 counterexamples (every `multi_competition_season` player). A global
+  (cross-league) cohort filtered on `is_primary_stint` + `meets_min_minutes` counts
+  3 players twice, because both of their league rows have ≥ 900 minutes: Wahbi Khazri
+  (PL 1,105 / L1 1,623), Abdoulaye Doucouré (L1 997 / LL 1,207) and Lamine Koné
+  (PL 1,379 / L1 1,606). Any global cohort must deduplicate or decide explicitly.
+- **8 players have ≥ 900 minutes across leagues but no single row ≥ 900:** Mario Lemina,
+  Abdelhamid El Kaoutari, Mario Suárez, Alhassane Bangoura, Mauro Zárate, Timm Klose,
+  Alessandro Diamanti, Mevlüt Erdinç. The last two sums include observed-only
+  Bundesliga minutes. This feeds the M4 minutes-gate decision (§17).
+- The `build_player_season` `__main__` top-5 diagnostic is filtered on
+  `in_percentile_pool` but not deduplicated across leagues.
+
+### Tests
+- Unit: Serie A → PL mover; mixed case with a within-league move then a cross-league move
+  (3 rows: `multi_team_season` only on the two same-league rows,
+  `multi_competition_season` on all three).
+- Integration: exactly one `is_primary_stint` per `(player_id, competition_id, season_id, source)`.

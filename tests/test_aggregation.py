@@ -7,6 +7,7 @@ so they stay fast and isolated from I/O. The aggregation logic itself lives in
 src/pipeline/build_player_season.py; these tests exercise the numeric contracts
 that the pipeline must satisfy.
 """
+import json
 from pathlib import Path
 import polars as pl
 import pytest
@@ -1658,36 +1659,43 @@ _PLAYER_MATCH_PARQUET = (
 )
 
 
+_REF_DIR = Path(__file__).parent / "fixtures" / "reference_totals"
+_REFERENCES = [json.loads(p.read_text()) for p in sorted(_REF_DIR.glob("*.json"))]
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(
     not _PLAYER_MATCH_PARQUET.exists(),
     reason="requires pipeline output",
 )
-def test_goals_plus_own_goals_equal_match_scores():
+@pytest.mark.parametrize(
+    "ref", _REFERENCES, ids=[f"{r['competition_id']}_{r['season_id']}" for r in _REFERENCES]
+)
+def test_goals_plus_own_goals_equal_match_scores(ref):
     """
     The parquet `goals` column counts Shot-outcome=Goal events (regular goals
     only).  StatsBomb encodes own goals as separate 'Own Goal Against' events
-    that are not captured in the parquet yet.  Summing both sources must equal
-    the official match totals from matches.json.
+    that are not captured in the parquet yet.  Summing both must equal the
+    official match totals from matches.json.
 
+    Own goals come from the reference file, counted from raw events by the
+    spikes (plan 003 §3), so this stays independent of the pipeline.
     Reconciliation for La Liga 2015/16: 1,014 (regular) + 29 (own goals) = 1,043.
     See ADR 002 §9 for the full explanation.
     """
-    from eleveniq.statsbomb.loader import load_events, load_matches
+    from eleveniq.statsbomb.loader import load_matches
 
-    df = pl.read_parquet(_PLAYER_MATCH_PARQUET)
-    # La Liga 2015/16 — the only season currently in the parquet
-    matches = load_matches(11, 27)
+    df = pl.read_parquet(_PLAYER_MATCH_PARQUET).filter(
+        (pl.col("competition_id") == ref["competition_id"])
+        & (pl.col("season_id") == ref["season_id"])
+    )
+    matches = load_matches(ref["competition_id"], ref["season_id"])
 
     official_total = sum(m["home_score"] + m["away_score"] for m in matches)
     parquet_goals = df["goals"].sum()
-    own_goals = sum(
-        1
-        for m in matches
-        for e in load_events(m["match_id"])
-        if (e.get("type") or {}).get("name") == "Own Goal Against"
-    )
+    own_goals = ref["base"]["own_goals"]
 
+    assert parquet_goals == ref["base"]["goals"]
     assert parquet_goals + own_goals == official_total, (
         f"goals={parquet_goals} + own_goals={own_goals} = {parquet_goals + own_goals}"
         f" ≠ official {official_total}"

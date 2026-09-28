@@ -1,6 +1,7 @@
 """Tests for eleveniq/pipeline/quality_report.py — red card / dismissal checks."""
 from pathlib import Path
 import pytest
+from eleveniq.config import COMPETITION_SEASONS
 from eleveniq.pipeline.quality_report import (
     find_dismissal_minute,
     check_dismissal_event_quality,
@@ -408,7 +409,10 @@ _PLAYER_MATCH_PARQUET = (
     not _PLAYER_MATCH_PARQUET.exists(),
     reason="requires pipeline output",
 )
-def test_no_dismissed_player_minutes_above_card_minute():
+@pytest.mark.parametrize(
+    "cs", COMPETITION_SEASONS, ids=[cs.label for cs in COMPETITION_SEASONS]
+)
+def test_no_dismissed_player_minutes_above_card_minute(cs):
     """
     For every dismissed player in the parquet, minutes_played must not exceed
     their card minute by more than DISMISSAL_TOLERANCE_MINUTES.
@@ -420,9 +424,11 @@ def test_no_dismissed_player_minutes_above_card_minute():
     from eleveniq.statsbomb.loader import load_events, load_matches
     from eleveniq.pipeline.quality_report import DISMISSAL_TOLERANCE_MINUTES
 
-    df = pl.read_parquet(_PLAYER_MATCH_PARQUET)
-    # La Liga 2015/16 — the only season in the parquet
-    matches = load_matches(11, 27)
+    df = pl.read_parquet(_PLAYER_MATCH_PARQUET).filter(
+        (pl.col("competition_id") == cs.competition_id)
+        & (pl.col("season_id") == cs.season_id)
+    )
+    matches = load_matches(cs.competition_id, cs.season_id)
 
     violations = []
     for m in matches:

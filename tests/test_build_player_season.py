@@ -6,20 +6,36 @@ Integration tests require both parquets to exist after the pipeline has run.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import polars as pl
 import pytest
 
+from eleveniq.config import COMPETITION_SEASONS, CompetitionSeason
+from eleveniq.pipeline.coverage import CoverageCheckError
 from eleveniq.pipeline.build_player_season import (
     aggregate_player_season,
     build_player_season,
+    find_name_variants,
     _COUNT_COLS,
     _DISPLAY_ONLY_COLS,
 )
 
 _MATCH_PARQUET = Path(__file__).resolve().parents[1] / "data" / "interim" / "player_match_stats.parquet"
 _SEASON_PARQUET = Path(__file__).resolve().parents[1] / "data" / "processed" / "player_season_stats.parquet"
+
+# Per-league reference figures from the raw-JSON spikes (plan 003 §3).
+_REF_DIR = Path(__file__).parent / "fixtures" / "reference_totals"
+_REFERENCES = [json.loads(p.read_text()) for p in sorted(_REF_DIR.glob("*.json"))]
+_REF_IDS = [f"{r['competition_id']}_{r['season_id']}" for r in _REFERENCES]
+
+
+def _league(df: pl.DataFrame, ref: dict) -> pl.DataFrame:
+    return df.filter(
+        (pl.col("competition_id") == ref["competition_id"])
+        & (pl.col("season_id") == ref["season_id"])
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -758,16 +774,37 @@ class TestChunkASeasonMetrics:
 # TestBuildPlayerSeasonIOWrapper — build_player_season() reads / writes parquet
 # ---------------------------------------------------------------------------
 
+def _raw_fixture(tmp_path: Path) -> tuple[Path, tuple[CompetitionSeason, ...]]:
+    """Synthetic raw StatsBomb dir for the I/O wrapper: one match (id 1) of a
+    2-team league, i.e. 1 of 2 fixtures -> PARTIAL under ADR 003 §2."""
+    root = tmp_path / "raw"
+    (root / "matches" / "11").mkdir(parents=True)
+    (root / "competitions.json").write_text(json.dumps(
+        [{"competition_id": c, "season_id": 27, "season_name": "2015/2016"} for c in (11, 2)]
+    ))
+    (root / "matches" / "11" / "27.json").write_text(json.dumps([{
+        "match_id": 1,
+        "home_team": {"home_team_id": 1}, "away_team": {"away_team_id": 2},
+    }]))
+    return root, (CompetitionSeason(11, 27, "Fixture", 2, "PARTIAL", "statsbomb"),)
+
+
+def _write_input(path: Path, *rows: dict) -> None:
+    pl.DataFrame([{**r, "match_id": 1} for r in rows]).write_parquet(path)
+
+
 class TestBuildPlayerSeasonIOWrapper:
     """Unit test for the thin I/O wrapper — no real pipeline data required."""
 
     def test_reads_input_and_writes_output(self, tmp_path):
         input_path = tmp_path / "player_match_stats.parquet"
         output_path = tmp_path / "player_season_stats.parquet"
-        pl.DataFrame([_match_row(player_id=99, minutes_played=90.0,
-                                 minutes_dm_cm=90.0)]).write_parquet(input_path)
+        _write_input(input_path, _match_row(player_id=99, minutes_played=90.0,
+                                            minutes_dm_cm=90.0))
+        root, css = _raw_fixture(tmp_path)
 
-        result = build_player_season(input_path=input_path, output_path=output_path)
+        result = build_player_season(input_path=input_path, output_path=output_path,
+                                     competition_seasons=css, data_root=root)
 
         assert output_path.exists(), "build_player_season must write the output parquet"
         on_disk = pl.read_parquet(output_path)
@@ -777,10 +814,12 @@ class TestBuildPlayerSeasonIOWrapper:
     def test_output_columns_match_return_value(self, tmp_path):
         input_path = tmp_path / "player_match_stats.parquet"
         output_path = tmp_path / "player_season_stats.parquet"
-        pl.DataFrame([_match_row(player_id=1, minutes_played=90.0,
-                                 minutes_dm_cm=90.0)]).write_parquet(input_path)
+        _write_input(input_path, _match_row(player_id=1, minutes_played=90.0,
+                                            minutes_dm_cm=90.0))
+        root, css = _raw_fixture(tmp_path)
 
-        result = build_player_season(input_path=input_path, output_path=output_path)
+        result = build_player_season(input_path=input_path, output_path=output_path,
+                                     competition_seasons=css, data_root=root)
         on_disk = pl.read_parquet(output_path)
 
         assert set(on_disk.columns) == set(result.columns)
@@ -788,12 +827,70 @@ class TestBuildPlayerSeasonIOWrapper:
     def test_creates_output_directory_if_missing(self, tmp_path):
         input_path = tmp_path / "player_match_stats.parquet"
         output_path = tmp_path / "subdir" / "nested" / "out.parquet"
-        pl.DataFrame([_match_row(player_id=1, minutes_played=90.0,
-                                 minutes_dm_cm=90.0)]).write_parquet(input_path)
+        _write_input(input_path, _match_row(player_id=1, minutes_played=90.0,
+                                            minutes_dm_cm=90.0))
+        root, css = _raw_fixture(tmp_path)
 
-        build_player_season(input_path=input_path, output_path=output_path)
+        build_player_season(input_path=input_path, output_path=output_path,
+                            competition_seasons=css, data_root=root)
 
         assert output_path.exists()
+
+    def test_coverage_disagreement_fails_before_writing(self, tmp_path):
+        """ADR 003 §5: configured FULL but matches.json gives PARTIAL -> no output."""
+        input_path = tmp_path / "player_match_stats.parquet"
+        output_path = tmp_path / "out.parquet"
+        _write_input(input_path, _match_row(player_id=1, minutes_played=90.0,
+                                            minutes_dm_cm=90.0))
+        root, _ = _raw_fixture(tmp_path)
+        wrong = (CompetitionSeason(11, 27, "Fixture", 2, "FULL", "statsbomb"),)
+
+        with pytest.raises(CoverageCheckError, match="configured FULL"):
+            build_player_season(input_path=input_path, output_path=output_path,
+                                competition_seasons=wrong, data_root=root)
+        assert not output_path.exists()
+
+    def test_missing_processed_match_fails_before_writing(self, tmp_path):
+        """Processed match_ids must equal matches.json; a dropped match fails."""
+        input_path = tmp_path / "player_match_stats.parquet"
+        output_path = tmp_path / "out.parquet"
+        _write_input(input_path, _match_row(player_id=1, minutes_played=90.0,
+                                            minutes_dm_cm=90.0))
+        root, css = _raw_fixture(tmp_path)
+        (root / "matches" / "11" / "27.json").write_text(json.dumps([
+            {"match_id": 1, "home_team": {"home_team_id": 1}, "away_team": {"away_team_id": 2}},
+            {"match_id": 2, "home_team": {"home_team_id": 2}, "away_team": {"away_team_id": 1}},
+        ]))
+        full = (CompetitionSeason(11, 27, "Fixture", 2, "FULL", "statsbomb"),)
+
+        with pytest.raises(CoverageCheckError, match=r"missing match_ids \[2\], extra match_ids \[\]"):
+            build_player_season(input_path=input_path, output_path=output_path,
+                                competition_seasons=full, data_root=root)
+        assert not output_path.exists()
+
+    def test_team_in_two_competitions_fails_before_writing(self, tmp_path):
+        """A team_id in two competitions of one season is a data error for leagues."""
+        input_path = tmp_path / "player_match_stats.parquet"
+        output_path = tmp_path / "out.parquet"
+        root, _ = _raw_fixture(tmp_path)
+        (root / "matches" / "2").mkdir()
+        (root / "matches" / "2" / "27.json").write_text(json.dumps([{
+            "match_id": 1, "home_team": {"home_team_id": 1}, "away_team": {"away_team_id": 2},
+        }]))
+        css = (
+            CompetitionSeason(11, 27, "A", 2, "PARTIAL", "statsbomb"),
+            CompetitionSeason(2, 27, "B", 2, "PARTIAL", "statsbomb"),
+        )
+        _write_input(
+            input_path,
+            _match_row(player_id=1, team_id=10, competition_id=11, minutes_dm_cm=90.0),
+            _match_row(player_id=2, team_id=10, competition_id=2, minutes_dm_cm=90.0),
+        )
+
+        with pytest.raises(ValueError, match="more than one competition"):
+            build_player_season(input_path=input_path, output_path=output_path,
+                                competition_seasons=css, data_root=root)
+        assert not output_path.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -831,10 +928,14 @@ class TestIntegration:
         match_df, season_df = frames
         assert season_df["shots"].sum() == match_df["shots"].sum()
 
-    def test_starts_total(self, frames):
-        """La Liga 2015/16: 380 matches × 2 teams × 11 starters = 8,360 total starts."""
-        _, season_df = frames
-        assert season_df["starts"].sum() == 8360  # 380 matches x 2 teams x 11 starters
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_starts_total(self, frames, ref):
+        """Structural invariant (plan 003 §3): starts == matches × 2 teams × 11."""
+        match_df, season_df = frames
+        m, season = _league(match_df, ref), _league(season_df, ref)
+        assert m["match_id"].n_unique() == ref["base"]["matches"]
+        assert season["starts"].sum() == ref["base"]["starts"]
+        assert season["starts"].sum() == ref["base"]["matches"] * 2 * 11
 
     def test_unique_player_team_season_key(self, frames):
         """(player_id, team_id, competition_id, season_id) must be unique."""
@@ -861,67 +962,70 @@ class TestIntegration:
         bad = primary_counts.filter(pl.col("n_primary") != 1)
         assert len(bad) == 0, f"Player-seasons with ≠1 primary stints: {bad}"
 
-    def test_crosses_reconcile(self, frames):
-        """La Liga 2015/16: 9,606 crosses attempted, 2,651 crosses completed."""
-        match_df, season_df = frames
-        assert season_df["crosses_attempted"].sum() == match_df["crosses_attempted"].sum()
-        assert season_df["crosses_attempted"].sum() == 9606
-        assert season_df["crosses_completed"].sum() == 2651
+    def test_primary_stint_unique_per_competition_season(self, frames):
+        """ADR 002 §29: exactly one is_primary_stint row per
+        (player_id, competition_id, season_id, source). Not unique per
+        (player_id, season_id, source): cross-league movers have one per league."""
+        _, season_df = frames
+        key = ["player_id", "competition_id", "season_id", "source"]
+        counts = season_df.group_by(key).agg(pl.col("is_primary_stint").sum().alias("n"))
+        assert counts.filter(pl.col("n") != 1).height == 0
 
-    def test_chunk_a_metrics_reconcile(self, frames):
-        """La Liga 2015/16 season totals must match raw event counts from verify_chunk_a_metrics.py."""
-        # Reference values derived from spikes/verify_chunk_a_metrics.py.
+    def test_in_percentile_pool_matches_config(self, frames):
+        """ADR 003 §5: constant per competition-season, True iff configured FULL."""
+        _, season_df = frames
+        got = {
+            (r["competition_id"], r["season_id"], r["source"]): r["pool"]
+            for r in season_df.group_by(["competition_id", "season_id", "source"])
+            .agg(pl.col("in_percentile_pool").unique().alias("pool"))
+            .iter_rows(named=True)
+        }
+        expected = {
+            (cs.competition_id, cs.season_id, cs.source): [cs.coverage == "FULL"]
+            for cs in COMPETITION_SEASONS
+        }
+        assert got == expected
+
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_crosses_reconcile(self, frames, ref):
+        """Season crosses equal match-level crosses and the spike reference figures."""
         match_df, season_df = frames
-        assert season_df["dispossessed"].sum() == 9_379
-        assert season_df["miscontrols"].sum() == 10_422
-        assert season_df["pressures"].sum() == 114_081
-        assert season_df["ball_recoveries"].sum() == 35_927
-        assert season_df["ball_recoveries_failed"].sum() == 2_587
-        assert season_df["dribbled_past"].sum() == 8_846
-        assert season_df["aerials_won"].sum() == 16_526
-        assert season_df["aerials_lost"].sum() == 16_526
-        assert season_df["long_passes_attempted"].sum() == 65_096
-        assert season_df["long_passes_completed"].sum() == 37_498
-        assert season_df["passes_missing_length"].sum() == 0
-        assert season_df["switches"].sum() == 11_615
-        # Season totals must equal match-level totals for every count column.
-        for col in ("dispossessed", "pressures", "ball_recoveries",
-                    "ball_recoveries_failed", "aerials_won", "aerials_lost",
-                    "long_passes_attempted", "switches"):
-            assert season_df[col].sum() == match_df[col].sum(), (
+        m, season = _league(match_df, ref), _league(season_df, ref)
+        assert season["crosses_attempted"].sum() == m["crosses_attempted"].sum()
+        assert season["crosses_attempted"].sum() == ref["base"]["crosses_attempted"]
+        assert season["crosses_completed"].sum() == ref["base"]["crosses_completed"]
+
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_chunk_a_metrics_reconcile(self, frames, ref):
+        """Season totals must match raw event counts from spikes/verify_chunk_a_metrics.py
+        (tests/fixtures/reference_totals) and equal match-level totals."""
+        match_df, season_df = frames
+        m, season = _league(match_df, ref), _league(season_df, ref)
+        for col, expected in ref["chunk_a"].items():
+            assert season[col].sum() == expected, f"{col}: {season[col].sum()} != {expected}"
+            assert season[col].sum() == m[col].sum(), f"{col}: season sum != match sum"
+
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_chunk_b_metrics_reconcile(self, frames, ref):
+        """Chunk B totals must match spikes/verify_chunk_b_metrics.py (ADR 002 §§25-27),
+        which applies its own SET_PIECE_TYPES exclusion without importing entries.py,
+        and equal match-level totals."""
+        match_df, season_df = frames
+        m, season = _league(match_df, ref), _league(season_df, ref)
+        for col, expected in ref["chunk_b"].items():
+            assert season[col].sum() == pytest.approx(expected, abs=0.001), col
+            assert season[col].sum() == pytest.approx(m[col].sum(), abs=0.001), (
                 f"{col}: season sum != match sum"
             )
 
-    def test_chunk_b_metrics_reconcile(self, frames):
-        """La Liga 2015/16 Chunk B totals must match expected values (ADR 002 §§25-27).
-
-        Reference values verified by spikes/verify_chunk_b_metrics.py as of the
-        Chunk B commit; see ADR 002 §19 (Kick Off long-pass exclusion), §25
-        (xg_assisted), §26 (xg_assisted_direct), and §27 (entries).
-        """
-        match_df, season_df = frames
-        # Reference values independently verified by spikes/verify_chunk_b_metrics.py,
-        # which applies its own SET_PIECE_TYPES exclusion without importing entries.py.
-        assert abs(season_df["xg_assisted"].sum() - 673.0822) < 0.001
-        assert abs(season_df["xg_assisted_direct"].sum() - 567.4899) < 0.001
-        assert season_df["final_third_entries_pass"].sum() == 22_454
-        assert season_df["final_third_entries_carry"].sum() == 11_902
-        assert season_df["box_entries_pass"].sum() == 6_035
-        assert season_df["box_entries_carry"].sum() == 3_751
-        # Match == season rollup for all six new columns.
-        for col in ("xg_assisted", "xg_assisted_direct",
-                    "final_third_entries_pass", "final_third_entries_carry",
-                    "box_entries_pass", "box_entries_carry"):
-            assert season_df[col].sum() == pytest.approx(match_df[col].sum(), abs=0.001), (
-                f"{col}: season sum != match sum"
-            )
-
-    def test_chunk_b_xg_assisted_shot_side_reconcile(self, frames):
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_chunk_b_xg_assisted_shot_side_reconcile(self, frames, ref):
         """Independent shot-side xGA (from raw StatsBomb JSON) must equal season xg_assisted total."""
         import json as _json
         _, season_df = frames
+        season_df = _league(season_df, ref)
         _raw = Path(__file__).resolve().parents[1] / "data" / "raw" / "statsbomb"
-        matches_path = _raw / "matches" / "11" / "27.json"
+        matches_path = _raw / "matches" / str(ref["competition_id"]) / f"{ref['season_id']}.json"
         if not matches_path.exists():
             pytest.skip("StatsBomb raw data not available for shot-side reconciliation")
         with open(matches_path) as f:
@@ -1009,6 +1113,14 @@ class TestSeasonOutputSchema:
 # TestSourceIsolation — ADR 002 §10 single-source rule
 # ---------------------------------------------------------------------------
 
+# The same competition-season configured under two sources, so cross-source
+# rows pass the in_percentile_pool config join (ADR 003 §5).
+_TWO_SOURCES = (
+    CompetitionSeason(11, 27, "La Liga (statsbomb)", 20, "FULL", "statsbomb"),
+    CompetitionSeason(11, 27, "La Liga (sportmonks)", 20, "FULL", "sportmonks"),
+)
+
+
 class TestSourceIsolation:
     """
     ADR 002 §10: 'source' is part of the group key (_GROUP_KEY).
@@ -1023,7 +1135,7 @@ class TestSourceIsolation:
             _match_row(player_id=1, source="sportmonks", minutes_played=90.0,
                        minutes_dm_cm=90.0, goals=2),
         ]
-        result = aggregate_player_season(_df(rows))
+        result = aggregate_player_season(_df(rows), competition_seasons=_TWO_SOURCES)
         player_rows = result.filter(pl.col("player_id") == 1)
         assert len(player_rows) == 2, (
             "Same player_id with different 'source' values must produce 2 rows, "
@@ -1032,7 +1144,7 @@ class TestSourceIsolation:
 
     def test_source_column_preserved_in_output(self):
         rows = [_match_row(player_id=1, source="statsbomb", minutes_dm_cm=90.0)]
-        result = aggregate_player_season(_df(rows))
+        result = aggregate_player_season(_df(rows), competition_seasons=_TWO_SOURCES)
         assert "source" in result.columns
         assert result.filter(pl.col("player_id") == 1)["source"][0] == "statsbomb"
 
@@ -1044,7 +1156,7 @@ class TestSourceIsolation:
             _match_row(player_id=1, source="sportmonks", minutes_played=90.0,
                        minutes_dm_cm=90.0, goals=3),
         ]
-        result = aggregate_player_season(_df(rows))
+        result = aggregate_player_season(_df(rows), competition_seasons=_TWO_SOURCES)
         player_rows = result.filter(pl.col("player_id") == 1).sort("source")
         # Alphabetically: "sportmonks" < "statsbomb"
         sportmonks_row = player_rows.filter(pl.col("source") == "sportmonks").row(0, named=True)
@@ -1060,7 +1172,7 @@ class TestSourceIsolation:
             _match_row(player_id=1, source="statsbomb", minutes_played=90.0,
                        minutes_dm_cm=90.0, goals=2),
         ]
-        result = aggregate_player_season(_df(rows))
+        result = aggregate_player_season(_df(rows), competition_seasons=_TWO_SOURCES)
         player_rows = result.filter(pl.col("player_id") == 1)
         assert len(player_rows) == 1, (
             "Same player_id and source must produce exactly one season row"
@@ -1080,7 +1192,7 @@ class TestSourceIsolation:
             _match_row(player_id=1, team_id=10, source="sportmonks",
                        minutes_played=900.0, minutes_dm_cm=900.0),
         ]
-        result = aggregate_player_season(_df(rows))
+        result = aggregate_player_season(_df(rows), competition_seasons=_TWO_SOURCES)
         for row in result.filter(pl.col("player_id") == 1).iter_rows(named=True):
             assert row["multi_team_season"] is False, (
                 f"source={row['source']!r}: cross-source rows must not be "
@@ -1100,7 +1212,7 @@ class TestSourceIsolation:
             _match_row(player_id=1, team_id=10, source="sportmonks",
                        minutes_played=800.0, minutes_dm_cm=800.0),
         ]
-        result = aggregate_player_season(_df(rows))
+        result = aggregate_player_season(_df(rows), competition_seasons=_TWO_SOURCES)
         sb = result.filter(
             (pl.col("player_id") == 1) & (pl.col("source") == "statsbomb")
         )
@@ -1939,3 +2051,281 @@ class TestChunkBSeasonColumns:
         result = aggregate_player_season(_df(rows))
         row = result.filter(pl.col("player_id") == 1).row(0, named=True)
         assert row["box_entries_carry"] == 6
+
+
+# ---------------------------------------------------------------------------
+# TestNameVariants — plan 003 C3: season rows keyed by ids, not names
+# ---------------------------------------------------------------------------
+
+class TestNameVariants:
+    """
+    StatsBomb spells some names differently from match to match
+    (e.g. "N'Golo Kanté" / "N''Golo Kanté"). A spelling change must never
+    split one player's (or team's) season into two rows.
+    """
+
+    def test_player_two_spellings_one_row_with_summed_totals(self):
+        rows = [
+            _match_row(player_id=1, player_name="N'Golo Kanté", goals=1, minutes_played=90.0),
+            _match_row(player_id=1, player_name="N'Golo Kanté", goals=0, minutes_played=80.0),
+            _match_row(player_id=1, player_name="N''Golo Kanté", goals=2, minutes_played=70.0),
+        ]
+        result = aggregate_player_season(_df(rows))
+        assert result.height == 1
+        row = result.row(0, named=True)
+        assert row["goals"] == 3
+        assert row["minutes_played"] == pytest.approx(240.0)
+        assert row["appearances"] == 3
+        assert row["player_name"] == "N'Golo Kanté"
+        assert row["player_name_variants"] == ["N''Golo Kanté", "N'Golo Kanté"]
+
+    def test_doubled_apostrophe_normalised_even_when_most_frequent(self):
+        rows = [
+            _match_row(player_id=1, player_name="N''Golo Kanté"),
+            _match_row(player_id=1, player_name="N''Golo Kanté"),
+            _match_row(player_id=1, player_name="N'Golo Kanté"),
+        ]
+        row = aggregate_player_season(_df(rows)).row(0, named=True)
+        assert row["player_name"] == "N'Golo Kanté"
+        # Variants keep the raw spellings unchanged.
+        assert row["player_name_variants"] == ["N''Golo Kanté", "N'Golo Kanté"]
+
+    def test_double_quote_normalised_to_apostrophe(self):
+        rows = [
+            _match_row(player_id=1, player_name='David N"Gog'),
+            _match_row(player_id=1, player_name='David N"Gog'),
+            _match_row(player_id=1, player_name="David N'Gog"),
+        ]
+        row = aggregate_player_season(_df(rows)).row(0, named=True)
+        assert row["player_name"] == "David N'Gog"
+        assert row["player_name_variants"] == ['David N"Gog', "David N'Gog"]
+
+    def test_outer_whitespace_stripped_before_quote_fix(self):
+        rows = [_match_row(player_id=1, player_name="Daniel Arnaud N''Di\t")]
+        row = aggregate_player_season(_df(rows)).row(0, named=True)
+        assert row["player_name"] == "Daniel Arnaud N'Di"
+        # Variants keep the raw spelling, tab included.
+        assert row["player_name_variants"] == ["Daniel Arnaud N''Di\t"]
+
+    def test_whitespace_variants_pool_their_counts(self):
+        rows = (
+            [_match_row(player_id=1, player_name=" Zed ")]
+            + [_match_row(player_id=1, player_name="Zed\t")]
+            + [_match_row(player_id=1, player_name="Abe")]
+        )
+        # " Zed " and "Zed\t" both normalise to "Zed" (2) and beat "Abe" (1).
+        row = aggregate_player_season(_df(rows)).row(0, named=True)
+        assert row["player_name"] == "Zed"
+
+    def test_team_name_normalised(self):
+        rows = [
+            _match_row(player_id=1, team_id=10, team_name="Côte d''Azur FC"),
+            _match_row(player_id=1, team_id=10, team_name="Côte d''Azur FC"),
+        ]
+        row = aggregate_player_season(_df(rows)).row(0, named=True)
+        assert row["team_name"] == "Côte d'Azur FC"
+
+    def test_normalised_spellings_pool_their_counts(self):
+        # Raw, "O Kane" (x3) is the most frequent spelling; after normalisation
+        # O'Kane (x2), O''Kane and O"Kane pool to 4 and win.
+        rows = (
+            [_match_row(player_id=1, player_name="O'Kane")] * 2
+            + [_match_row(player_id=1, player_name="O''Kane")]
+            + [_match_row(player_id=1, player_name='O"Kane')]
+            + [_match_row(player_id=1, player_name="O Kane")] * 3
+        )
+        row = aggregate_player_season(_df(rows)).row(0, named=True)
+        assert row["player_name"] == "O'Kane"
+        assert row["multi_team_season"] is False
+        assert row["is_primary_stint"] is True
+
+    def test_team_two_spellings_one_row_not_multi_team(self):
+        rows = [
+            _match_row(player_id=1, team_id=10, team_name="Leicester City", goals=1),
+            _match_row(player_id=1, team_id=10, team_name="Leicester", goals=1),
+            _match_row(player_id=1, team_id=10, team_name="Leicester City", goals=1),
+        ]
+        result = aggregate_player_season(_df(rows))
+        assert result.height == 1
+        row = result.row(0, named=True)
+        assert row["goals"] == 3
+        assert row["team_name"] == "Leicester City"
+        assert row["multi_team_season"] is False
+
+    def test_team_canonical_name_shared_by_all_its_players(self):
+        rows = [
+            _match_row(player_id=1, team_id=10, team_name="Team Alpha"),
+            _match_row(player_id=2, team_id=10, team_name="Team Alpha"),
+            _match_row(player_id=3, team_id=10, team_name="Team Alfa"),
+        ]
+        result = aggregate_player_season(_df(rows))
+        assert result.height == 3
+        assert result["team_name"].unique().to_list() == ["Team Alpha"]
+
+    def test_tie_break_is_alphabetical_and_order_independent(self):
+        rows = [
+            _match_row(player_id=1, player_name="Fernando Luiz Roza"),
+            _match_row(player_id=1, player_name="Fernando Luiz Rosa"),
+        ]
+        forward = aggregate_player_season(_df(rows))
+        backward = aggregate_player_season(_df(rows[::-1]))
+        assert forward["player_name"].to_list() == ["Fernando Luiz Rosa"]
+        assert backward["player_name"].to_list() == ["Fernando Luiz Rosa"]
+
+    def test_real_transfer_still_multi_team(self):
+        rows = [
+            _match_row(player_id=1, player_name="Player A", team_id=10, team_name="Team A"),
+            _match_row(player_id=1, player_name="Player  A", team_id=20, team_name="Team B"),
+        ]
+        result = aggregate_player_season(_df(rows))
+        assert result.height == 2
+        assert result["multi_team_season"].to_list() == [True, True]
+        # One canonical name per player_id across both stints (tie → alphabetical).
+        assert result["player_name"].unique().to_list() == ["Player  A"]
+
+    def test_find_name_variants_lists_only_multi_name_ids(self):
+        rows = [
+            _match_row(player_id=1, player_name="A", team_id=10, team_name="T"),
+            _match_row(player_id=1, player_name="A2", team_id=10, team_name="T"),
+            _match_row(player_id=2, player_name="B", team_id=20, team_name="U"),
+            _match_row(player_id=2, player_name="B", team_id=20, team_name="U2"),
+            _match_row(player_id=3, player_name="C", team_id=30, team_name="V"),
+        ]
+        variants = find_name_variants(_df(rows))
+        assert variants.select(["entity", "id"]).rows() == [("player", 1), ("team", 20)]
+        assert variants["names"].to_list() == [["A", "A2"], ["U", "U2"]]
+
+
+# ---------------------------------------------------------------------------
+# TestPoolAndMultiCompetitionFlags — ADR 003 §5, §7 (plan 003 C3)
+# ---------------------------------------------------------------------------
+
+_SA, _PL, _BL = 12, 2, 9
+_FLAG_CONFIG = (
+    CompetitionSeason(_SA, 27, "Serie A", 20, "FULL", "statsbomb"),
+    CompetitionSeason(_PL, 27, "Premier League", 20, "FULL", "statsbomb"),
+    CompetitionSeason(_BL, 27, "Bundesliga", 18, "PARTIAL", "statsbomb"),
+)
+
+
+def _agg(*rows: dict, config=_FLAG_CONFIG) -> pl.DataFrame:
+    return aggregate_player_season(_df(list(rows)), competition_seasons=config)
+
+
+class TestInPercentilePool:
+    def test_full_true_partial_false(self):
+        result = _agg(
+            _match_row(player_id=1, team_id=1, competition_id=_SA, minutes_dm_cm=90.0),
+            _match_row(player_id=2, team_id=2, competition_id=_BL, minutes_dm_cm=90.0),
+        )
+        flags = dict(result.select("player_id", "in_percentile_pool").iter_rows())
+        assert flags == {1: True, 2: False}
+
+    def test_independent_of_minutes_and_gk(self):
+        """ADR 003 §5: the flag says nothing about the player's own minutes/position."""
+        result = _agg(
+            _match_row(player_id=1, competition_id=_SA, minutes_played=5.0, minutes_gk=5.0),
+        )
+        row = result.row(0, named=True)
+        assert row["in_percentile_pool"] is True
+        assert row["meets_min_minutes"] is False and row["is_gk"] is True
+
+    def test_unconfigured_competition_season_raises(self):
+        with pytest.raises(ValueError, match="not in COMPETITION_SEASONS"):
+            _agg(_match_row(player_id=1, competition_id=99, minutes_dm_cm=90.0))
+
+    def test_unconfigured_season_raises(self):
+        with pytest.raises(ValueError, match="not in COMPETITION_SEASONS"):
+            _agg(_match_row(player_id=1, competition_id=_SA, season_id=28, minutes_dm_cm=90.0))
+
+    def test_key_differing_only_in_source_raises(self):
+        """A non-StatsBomb row never inherits a StatsBomb coverage class."""
+        with pytest.raises(ValueError, match="sportmonks"):
+            _agg(_match_row(player_id=1, competition_id=_SA, source="sportmonks",
+                            minutes_dm_cm=90.0))
+
+    def test_duplicate_config_raises(self):
+        dup = _FLAG_CONFIG + (_FLAG_CONFIG[0],)
+        with pytest.raises(ValueError, match="Duplicate"):
+            _agg(_match_row(player_id=1, competition_id=_SA, minutes_dm_cm=90.0), config=dup)
+
+    def test_default_config_is_competition_seasons(self):
+        """Default factory rows (La Liga 11/27, statsbomb) are FULL in config."""
+        result = aggregate_player_season(_df([_match_row(player_id=1, minutes_dm_cm=90.0)]))
+        assert result["in_percentile_pool"].to_list() == [True]
+
+
+class TestMultiCompetitionSeason:
+    def test_single_competition_false(self):
+        result = _agg(_match_row(player_id=1, competition_id=_SA, minutes_dm_cm=90.0))
+        assert result["multi_competition_season"].to_list() == [False]
+
+    def test_serie_a_to_premier_league_mover(self):
+        """January move between leagues: rows stay separate, within-competition
+        columns stay within-competition, both rows carry the flag."""
+        result = _agg(
+            _match_row(player_id=1, team_id=1, competition_id=_SA,
+                       minutes_played=600.0, minutes_dm_cm=600.0),
+            _match_row(player_id=1, team_id=2, competition_id=_PL,
+                       minutes_played=500.0, minutes_dm_cm=500.0),
+        ).sort("competition_id")
+        assert result.height == 2
+        assert result["multi_competition_season"].to_list() == [True, True]
+        assert result["multi_team_season"].to_list() == [False, False]
+        assert result["is_primary_stint"].to_list() == [True, True]
+        assert result["player_season_minutes_total"].to_list() == [500.0, 600.0]
+
+    def test_mixed_within_league_and_cross_league_move(self):
+        """A→B within Serie A, then B→C into the Premier League (3 rows)."""
+        result = _agg(
+            _match_row(player_id=1, team_id=1, competition_id=_SA,
+                       minutes_played=300.0, minutes_dm_cm=300.0),
+            _match_row(player_id=1, team_id=2, competition_id=_SA,
+                       minutes_played=400.0, minutes_dm_cm=400.0),
+            _match_row(player_id=1, team_id=3, competition_id=_PL,
+                       minutes_played=200.0, minutes_dm_cm=200.0),
+        )
+        by_team = {r["team_id"]: r for r in result.iter_rows(named=True)}
+        assert result["multi_competition_season"].all()
+        assert by_team[1]["multi_team_season"] and by_team[2]["multi_team_season"]
+        assert not by_team[3]["multi_team_season"]
+        assert [by_team[t]["is_primary_stint"] for t in (1, 2, 3)] == [False, True, True]
+        assert by_team[1]["player_season_minutes_total"] == 700.0
+        assert by_team[3]["player_season_minutes_total"] == 200.0
+
+    def test_partial_competition_counts(self):
+        """The flag describes the player's season, not pool eligibility."""
+        result = _agg(
+            _match_row(player_id=1, team_id=1, competition_id=_PL, minutes_dm_cm=90.0),
+            _match_row(player_id=1, team_id=2, competition_id=_BL, minutes_dm_cm=10.0),
+        )
+        assert result["multi_competition_season"].to_list() == [True, True]
+        assert sorted(result["in_percentile_pool"].to_list()) == [False, True]
+
+    def test_different_seasons_not_flagged(self):
+        config = _FLAG_CONFIG + (CompetitionSeason(_PL, 28, "PL next", 20, "FULL", "statsbomb"),)
+        result = _agg(
+            _match_row(player_id=1, team_id=1, competition_id=_SA, season_id=27, minutes_dm_cm=90.0),
+            _match_row(player_id=1, team_id=2, competition_id=_PL, season_id=28, minutes_dm_cm=90.0),
+            config=config,
+        )
+        assert result["multi_competition_season"].to_list() == [False, False]
+
+    def test_different_sources_not_flagged(self):
+        config = _FLAG_CONFIG + (CompetitionSeason(_PL, 27, "PL sm", 20, "FULL", "sportmonks"),)
+        result = _agg(
+            _match_row(player_id=1, team_id=1, competition_id=_SA, minutes_dm_cm=90.0),
+            _match_row(player_id=1, team_id=2, competition_id=_PL, source="sportmonks",
+                       minutes_dm_cm=90.0),
+            config=config,
+        )
+        assert result["multi_competition_season"].to_list() == [False, False]
+
+    def test_other_players_unaffected(self):
+        result = _agg(
+            _match_row(player_id=1, team_id=1, competition_id=_SA, minutes_dm_cm=90.0),
+            _match_row(player_id=1, team_id=2, competition_id=_PL, minutes_dm_cm=90.0),
+            _match_row(player_id=2, team_id=1, competition_id=_SA, minutes_dm_cm=90.0),
+        )
+        flags = result.filter(pl.col("player_id") == 2)["multi_competition_season"].to_list()
+        assert flags == [False]

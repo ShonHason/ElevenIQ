@@ -150,3 +150,61 @@ class TestCompetitionSeasons:
         cs = config_module.COMPETITION_SEASONS[0]
         with pytest.raises(AttributeError):
             cs.coverage = "PARTIAL"  # type: ignore[misc]
+
+
+class TestCompetitionSeasonSource:
+    """ADR 003 §5: source is part of the pool key and has no default."""
+
+    def test_every_entry_is_statsbomb(self):
+        assert {cs.source for cs in config_module.COMPETITION_SEASONS} == {"statsbomb"}
+
+    def test_source_is_required(self):
+        with pytest.raises(TypeError):
+            config_module.CompetitionSeason(1, 1, "X", 2, "FULL")  # type: ignore[call-arg]
+
+    def test_duplicate_keys_rejected(self):
+        cs = config_module.CompetitionSeason(1, 1, "X", 2, "FULL", "statsbomb")
+        with pytest.raises(ValueError, match="Duplicate"):
+            config_module.validate_competition_seasons((cs, cs))
+
+    def test_same_ids_different_source_allowed(self):
+        config_module.validate_competition_seasons((
+            config_module.CompetitionSeason(1, 1, "X", 2, "FULL", "statsbomb"),
+            config_module.CompetitionSeason(1, 1, "X", 2, "FULL", "sportmonks"),
+        ))
+
+
+class TestSourceStatsbombConstant:
+    def test_value(self):
+        assert config_module.SOURCE_STATSBOMB == "statsbomb"
+
+
+class TestExpectedTeamsValidation:
+    """ADR 003 §2: a league needs n·(n−1) > 0 fixtures, so expected_teams >= 2."""
+
+    @pytest.mark.parametrize("n", [0, 1])
+    def test_below_two_rejected(self, n):
+        cs = config_module.CompetitionSeason(1, 1, "Tiny", n, "FULL", "statsbomb")
+        with pytest.raises(ValueError, match="expected_teams must be >= 2.*Tiny"):
+            config_module.validate_competition_seasons((cs,))
+
+    def test_two_accepted(self):
+        config_module.validate_competition_seasons(
+            (config_module.CompetitionSeason(1, 1, "Pair", 2, "FULL", "statsbomb"),)
+        )
+
+
+class TestCoverageValueValidation:
+    """ADR 003 §5: coverage drives in_percentile_pool, so only exact
+    "FULL" / "PARTIAL" are accepted (Literal is not enforced at runtime)."""
+
+    def test_miscased_full_rejected(self):
+        cs = config_module.CompetitionSeason(1, 1, "Typo", 20, "Full", "statsbomb")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match='coverage must be "FULL" or "PARTIAL".*Typo'):
+            config_module.validate_competition_seasons((cs,))
+
+    @pytest.mark.parametrize("coverage", ["FULL", "PARTIAL"])
+    def test_valid_values_accepted(self, coverage):
+        config_module.validate_competition_seasons(
+            (config_module.CompetitionSeason(1, 1, "Ok", 20, coverage, "statsbomb"),)
+        )

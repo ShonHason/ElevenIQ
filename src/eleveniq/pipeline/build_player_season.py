@@ -4,7 +4,7 @@ per team per season.
 
 Public API
 ----------
-aggregate_player_season(df, min_minutes) -> pl.DataFrame
+aggregate_player_season(df, min_minutes, competition_seasons) -> pl.DataFrame
     Pure function: all aggregation logic.  No I/O.  Unit-testable directly.
 
 build_player_season(input_path, output_path, min_minutes) -> pl.DataFrame
@@ -21,8 +21,20 @@ Design notes
 - Rows are never dropped; meets_min_minutes flags eligibility (ADR 002 §5).
 - GK rows are kept but is_gk=True marks them ineligible for DNA/similarity/gems
   in V1 (ADR 002 §12).
-- One row per (player, team, season); is_primary_stint marks the team with the
-  most minutes for cross-team comparisons (ADR 002 §6).
+- One row per (player, team, competition, season). multi_team_season,
+  is_primary_stint and player_season_minutes_total are within-competition:
+  "player-season" there means player-competition-season (ADR 002 §6, §29).
+  is_primary_stint is NOT unique per (player_id, season_id, source) for a
+  player who played in two leagues in one season.
+- in_percentile_pool comes from the configured coverage class of the row's
+  (competition_id, season_id, source); multi_competition_season marks a player
+  seen in more than one competition in the same (season_id, source). Rows stay
+  separate (ADR 003 §5, §7).
+- Rows are keyed by ids only. StatsBomb spells some names differently from
+  match to match, so player_name / team_name are display attributes: outer
+  whitespace and known quoting artifacts are normalised, then the most frequent spelling per id
+  wins, ties broken by the alphabetically first spelling. Every raw player
+  spelling is kept in player_name_variants (plan 003 C3, ADR 002).
 """
 from __future__ import annotations
 
@@ -31,7 +43,19 @@ from pathlib import Path
 
 import polars as pl
 
-from eleveniq.config import MIN_MINUTES_THRESHOLD, MIN_AERIAL_CONTESTS
+from eleveniq.config import (
+    COMPETITION_SEASONS,
+    MIN_AERIAL_CONTESTS,
+    MIN_MINUTES_THRESHOLD,
+    CompetitionSeason,
+    validate_competition_seasons,
+)
+from eleveniq.pipeline.coverage import (
+    check_configured_coverage,
+    check_processed_match_ids,
+    check_season_ids_unique,
+)
+from eleveniq.statsbomb.loader import load_competitions
 from eleveniq.metrics.positions import POSITION_GROUP_COLUMNS
 
 logger = logging.getLogger(__name__)
@@ -41,8 +65,8 @@ INPUT_PATH = _PROJECT_ROOT / "data" / "interim" / "player_match_stats.parquet"
 OUTPUT_PATH = _PROJECT_ROOT / "data" / "processed" / "player_season_stats.parquet"
 
 _GROUP_KEY = [
-    "player_id", "player_name",
-    "team_id", "team_name",
+    "player_id",
+    "team_id",
     "competition_id", "season_id",
     "source",
 ]
@@ -110,9 +134,116 @@ def _season_position_group(df: pl.DataFrame) -> pl.Series:
     return df.select(result.alias("position_group"))["position_group"]
 
 
+# Known StatsBomb quoting artifacts, applied in order when choosing a display
+# name: a doubled apostrophe (N''Golo) and a double quote inside a name
+# (N"Gog) both stand for a single apostrophe.
+_NAME_QUOTE_FIXES: list[tuple[str, str]] = [("''", "'"), ('"', "'")]
+
+
+def _normalise_name(name: pl.Expr) -> pl.Expr:
+    """
+    Strip leading/trailing whitespace (incl. tabs), then apply
+    _NAME_QUOTE_FIXES to a name expression (display use only).
+    """
+    name = name.str.strip_chars()
+    for old, new in _NAME_QUOTE_FIXES:
+        name = name.str.replace_all(old, new, literal=True)
+    return name
+
+
+def _canonical_names(df: pl.DataFrame, id_col: str, name_col: str) -> pl.DataFrame:
+    """
+    Return one row per (id_col, source): the canonical name_col and a sorted
+    list of every raw spelling seen (``name_variants``).
+
+    Canonical = spellings are first normalised (_normalise_name), then the
+    normalised spelling on the most match rows wins; ties resolve to the
+    alphabetically first spelling so the result never depends on row order.
+    """
+    key = [id_col, "source"]
+    counts = (
+        df.filter(pl.col(name_col).is_not_null())
+        .group_by(key + [name_col])
+        .agg(pl.len().alias("_n"))
+    )
+    canonical = (
+        counts.with_columns(_normalise_name(pl.col(name_col)))
+        .group_by(key + [name_col])
+        .agg(pl.col("_n").sum())
+        .sort(key + ["_n", name_col], descending=[False, False, True, False])
+        .unique(subset=key, keep="first", maintain_order=True)
+        .select(key + [name_col])
+    )
+    variants = counts.group_by(key).agg(
+        pl.col(name_col).sort().alias("name_variants")
+    )
+    return canonical.join(variants, on=key, how="left")
+
+
+def find_name_variants(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Data-quality check: every player_id / team_id spelled more than one way.
+
+    Returns columns: entity ("player" | "team"), id, source, names (sorted
+    list of spellings), with one row per id that has more than one name.
+    """
+    frames = []
+    for entity, id_col, name_col in (
+        ("player", "player_id", "player_name"),
+        ("team", "team_id", "team_name"),
+    ):
+        names = _canonical_names(df, id_col, name_col)
+        frames.append(
+            names.filter(pl.col("name_variants").list.len() > 1).select(
+                pl.lit(entity).alias("entity"),
+                pl.col(id_col).cast(pl.Int64).alias("id"),
+                pl.col("source"),
+                pl.col("name_variants").alias("names"),
+            )
+        )
+    return pl.concat(frames).sort(["entity", "source", "id"])
+
+
+_COMP_SEASON_KEY = ["competition_id", "season_id", "source"]
+
+
+def _pool_flags(competition_seasons: tuple[CompetitionSeason, ...]) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "competition_id": [cs.competition_id for cs in competition_seasons],
+            "season_id": [cs.season_id for cs in competition_seasons],
+            "source": [cs.source for cs in competition_seasons],
+            "in_percentile_pool": [cs.coverage == "FULL" for cs in competition_seasons],
+        },
+        schema={
+            "competition_id": pl.Int64, "season_id": pl.Int64,
+            "source": pl.String, "in_percentile_pool": pl.Boolean,
+        },
+    )
+
+
+def find_teams_in_multiple_competitions(season: pl.DataFrame) -> pl.DataFrame:
+    """
+    Data-quality check: team_ids that appear in more than one competition in the
+    same (season_id, source). Every configured competition is a league (ADR 003
+    §2), so a team should play in only one; rows returned here would make
+    multi_competition_season fire for a player who never changed club. Once cup
+    competitions are ingested this check must be scoped to leagues.
+    Covers (player_id, team_id) too: a player's team rows share the team's
+    competition.
+    """
+    return (
+        season.group_by(["team_id", "season_id", "source"])
+        .agg(pl.col("competition_id").unique().sort().alias("competition_ids"))
+        .filter(pl.col("competition_ids").list.len() > 1)
+        .sort(["source", "season_id", "team_id"])
+    )
+
+
 def aggregate_player_season(
     df: pl.DataFrame,
     min_minutes: int = MIN_MINUTES_THRESHOLD,
+    competition_seasons: tuple[CompetitionSeason, ...] = COMPETITION_SEASONS,
 ) -> pl.DataFrame:
     """
     Aggregate player-match rows into season totals, per-90 metrics, and
@@ -121,6 +252,9 @@ def aggregate_player_season(
     Args:
         df: player_match_stats DataFrame (one row per player per match).
         min_minutes: minimum minutes threshold for meets_min_minutes flag.
+        competition_seasons: configured competition-seasons; their coverage
+            class sets in_percentile_pool. A (competition_id, season_id, source)
+            in df but not configured raises ValueError.
 
     Returns:
         player_season_stats DataFrame (one row per player per team per season).
@@ -141,6 +275,17 @@ def aggregate_player_season(
         agg_exprs.append(pl.col(col).sum())
 
     season = df.group_by(_GROUP_KEY).agg(agg_exprs)
+
+    # Display names are attached after grouping so a spelling change never
+    # splits a player's or team's season into two rows.
+    player_names = _canonical_names(df, "player_id", "player_name").rename(
+        {"name_variants": "player_name_variants"}
+    )
+    team_names = _canonical_names(df, "team_id", "team_name").drop("name_variants")
+    season = (
+        season.join(player_names, on=["player_id", "source"], how="left")
+        .join(team_names, on=["team_id", "source"], how="left")
+    )
 
     # ------------------------------------------------------------------
     # Step 2: Season position group from exact per-group minute totals
@@ -224,10 +369,10 @@ def aggregate_player_season(
     # for the same season is never treated as a multi-team stint.
     _player_season_key = ["player_id", "competition_id", "season_id", "source"]
 
-    # Count how many team rows each player has in the same season.
+    # Count distinct teams per player-season (rows are keyed by team_id).
     team_counts = (
         season.group_by(_player_season_key)
-        .agg(pl.len().alias("_team_count"))
+        .agg(pl.col("team_id").n_unique().alias("_team_count"))
     )
     season = season.join(team_counts, on=_player_season_key, how="left")
     season = season.with_columns(
@@ -260,6 +405,37 @@ def aggregate_player_season(
          (pl.col("team_id") == pl.col("_primary_team_id"))).alias("is_primary_stint")
     ).drop(["_max_minutes", "_primary_team_id"])
 
+    # ------------------------------------------------------------------
+    # Step 7: Pool membership and multi-competition flags (ADR 003 §5, §7)
+    # ------------------------------------------------------------------
+    # in_percentile_pool comes from config only. A left join plus a null check
+    # fails loudly on an unconfigured competition-season instead of defaulting.
+    # validate_competition_seasons makes the config keys unique, so the left
+    # join cannot add rows.
+    validate_competition_seasons(competition_seasons)
+    season = season.join(_pool_flags(competition_seasons), on=_COMP_SEASON_KEY, how="left")
+    unconfigured = season.filter(pl.col("in_percentile_pool").is_null())
+    if unconfigured.height:
+        keys = unconfigured.select(_COMP_SEASON_KEY).unique().sort(_COMP_SEASON_KEY).rows()
+        raise ValueError(
+            f"Competition-season(s) not in COMPETITION_SEASONS: {keys} "
+            "(competition_id, season_id, source)"
+        )
+
+    # StatsBomb season_ids are shared across competitions (27 = 2015/2016
+    # everywhere; checked at build time by check_season_ids_unique), so
+    # (player_id, season_id, source) is the player's whole season. PARTIAL
+    # competitions count: the flag describes the player's season, not pool
+    # eligibility.
+    _cross_comp_key = ["player_id", "season_id", "source"]
+    comp_counts = season.group_by(_cross_comp_key).agg(
+        pl.col("competition_id").n_unique().alias("_comp_count")
+    )
+    season = season.join(comp_counts, on=_cross_comp_key, how="left")
+    season = season.with_columns(
+        (pl.col("_comp_count") > 1).alias("multi_competition_season")
+    ).drop("_comp_count")
+
     return season
 
 
@@ -267,9 +443,14 @@ def build_player_season(
     input_path: Path | None = None,
     output_path: Path | None = None,
     min_minutes: int = MIN_MINUTES_THRESHOLD,
+    competition_seasons: tuple[CompetitionSeason, ...] = COMPETITION_SEASONS,
+    data_root: Path | None = None,
 ) -> pl.DataFrame:
     """
     Read player_match_stats.parquet, aggregate to season level, write output.
+
+    Fails before writing when the ADR 003 §5 coverage checks disagree with
+    config, or when a team_id appears in more than one competition in a season.
 
     Returns the season DataFrame.
     """
@@ -277,15 +458,46 @@ def build_player_season(
     out_path = output_path or OUTPUT_PATH
 
     match_df = pl.read_parquet(in_path)
-    season_df = aggregate_player_season(match_df, min_minutes)
+
+    # ADR 003 §5: config must agree with the downloaded data before the pool
+    # flag is written. Each check raises CoverageCheckError on disagreement.
+    check_season_ids_unique(load_competitions(data_root), competition_seasons)
+    check_configured_coverage(competition_seasons, data_root)
+    check_processed_match_ids(match_df, competition_seasons, data_root)
+
+    variants = find_name_variants(match_df)
+    for row in variants.iter_rows(named=True):
+        logger.info(
+            "Name variants: %s_id=%d (%s) → %s",
+            row["entity"], row["id"], row["source"], row["names"],
+        )
+    logger.info(
+        "%d player_ids and %d team_ids have more than one name",
+        variants.filter(pl.col("entity") == "player").height,
+        variants.filter(pl.col("entity") == "team").height,
+    )
+
+    season_df = aggregate_player_season(match_df, min_minutes, competition_seasons)
+
+    shared_teams = find_teams_in_multiple_competitions(season_df)
+    if shared_teams.height:
+        raise ValueError(
+            f"team_id(s) in more than one competition in a season: {shared_teams.rows()}"
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     season_df.write_parquet(out_path)
-    multi_team_count = int(season_df["multi_team_season"].sum())
+    multi_team_rows = int(season_df["multi_team_season"].sum())
+    multi_team_players = season_df.filter(pl.col("multi_team_season"))["player_id"].n_unique()
+    multi_comp_players = season_df.filter(pl.col("multi_competition_season"))["player_id"].n_unique()
     logger.info(
-        "Wrote %d rows (%d multi-team stints) → %s",
+        "Wrote %d rows (%d multi-team stints, %d player_ids; %d multi-competition "
+        "player_ids; %d in_percentile_pool rows) → %s",
         len(season_df),
-        multi_team_count,
+        multi_team_rows,
+        multi_team_players,
+        multi_comp_players,
+        int(season_df["in_percentile_pool"].sum()),
         out_path,
     )
     return season_df
@@ -304,8 +516,8 @@ if __name__ == "__main__":
 
     match_df = pl.read_parquet(INPUT_PATH)
 
-    multi_team = season_df.filter(pl.col("multi_team_season"))["player_name"].unique().len()
-    print(f"\nRows: {len(season_df):,}  Players with multi-team season: {multi_team}")
+    multi_team = season_df.filter(pl.col("multi_team_season"))["player_id"].n_unique()
+    print(f"\nRows: {len(season_df):,}  Player_ids with multi-team season: {multi_team}")
 
     # Players meeting 600 and 900 min per position group
     print("\n--- Players meeting minimum-minutes thresholds per position group ---")
@@ -320,13 +532,16 @@ if __name__ == "__main__":
         for row in counts.iter_rows(named=True):
             print(f"    {row['position_group']:12s}  {row['players']}")
 
-    # Top 5 progressive passes per 90 (outfield, 900+ min, primary stint)
-    print("\n--- Top 5 progressive passes p90 (outfield, 900+ min, primary stint) ---")
+    # Top 5 progressive passes per 90 (outfield, 900+ min, primary stint, pool
+    # rows). Cross-league movers can have one primary row per league; this
+    # diagnostic does not deduplicate them (M4 decision, ADR 002 §29).
+    print("\n--- Top 5 progressive passes p90 (outfield, 900+ min, primary stint, pool) ---")
     top5 = (
         season_df.filter(
             ~pl.col("is_gk")
             & pl.col("meets_min_minutes")
             & pl.col("is_primary_stint")
+            & pl.col("in_percentile_pool")
         )
         .sort("progressive_passes_p90", descending=True)
         .head(5)
