@@ -125,6 +125,25 @@ Percentile-cohort design stays in M4.
 - `/finish-chunk`.
 
 **C3: Tests, flags and full run**
+- **Season rows keyed by ids, not names (do this first).** The 5-league run split 9 players
+  into two rows for the same team, because StatsBomb spells their names differently from match
+  to match (e.g. `N'Golo Kanté` / `N''Golo Kanté`, `Fernando Luiz Rosa` / `Roza`). The cause is
+  `_GROUP_KEY` in `build_player_season.py`, which includes `player_name` and `team_name`. These
+  players were then flagged `multi_team_season` by mistake: the flag showed 123 player_ids but
+  132 names, and 9 of those players never changed team. Their minutes were also split across
+  two rows, which affects the minutes gate. Fix:
+  - Group season rows by ids only: `player_id, team_id, competition_id, season_id, source`.
+  - Canonical display name per `player_id` and per `team_id`: the most frequent spelling, with a
+    deterministic tie-break. Keep every spelling in a `player_name_variants` list column
+    (useful for search later).
+  - Compute `multi_team_season` from the number of distinct `team_id`s. Every report counts
+    `player_id`s, not names.
+  - Unit test: one player under two spellings produces one season row. Data-quality check:
+    log every `player_id` / `team_id` that has more than one name.
+  - Changes to expected values (La Liga row count, multi-team counts, minutes-gate counts) are
+    recorded in ADR 002 with before/after numbers, never updated silently.
+  - stats-reviewer reviews the impact after the fix: how many players cross the 900-minute
+    gate once their rows are merged.
 - Parametrise the integration tests over the reference files.
 - Add the `in_percentile_pool` and `multi_competition_season` flags. stats-reviewer reviews them
   before implementation.
