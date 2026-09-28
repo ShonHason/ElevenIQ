@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """
-Spike: Chunk A data verification — La Liga 2015/16.
+Spike: Chunk A data verification for one competition-season.
 
 Reports on aerial duels, corners, pass types, long passes, ball recoveries,
 and dribbled-past events to confirm metric definitions before implementation.
 
-Run:
-    .venv/bin/python spikes/verify_chunk_a_metrics.py
+It also computes the reference totals (match count, starts, goals, own goals,
+crosses and Chunk A totals) from raw JSON, reconciles goals + own goals
+against the matches.json scores (a mismatch fails the spike), and writes the
+"base" and "chunk_a" sections of
+tests/fixtures/reference_totals/{competition_id}_{season_id}.json.
 
-No files are written. Numbers here are the reference values for Chunk A tests.
+Run:
+    .venv/bin/python spikes/verify_chunk_a_metrics.py --competition-id 11 --season-id 27
+
+Never imports eleveniq.pipeline: the totals are an independent reference.
 """
 from __future__ import annotations
 
@@ -17,9 +23,14 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import median, quantiles
 
-DATA_ROOT = Path(__file__).resolve().parents[1] / "data" / "raw" / "statsbomb"
-COMPETITION_ID = 11   # La Liga
-SEASON_ID = 27        # 2015/16
+from reference_totals import (
+    DATA_ROOT,
+    competition_label,
+    load_matches,
+    parse_args,
+    reconcile_goals,
+    write_reference,
+)
 
 # StatsBomb pitch: 120 yd × 80 yd.
 # Penalty area (attacking end): x >= 102, 18 <= y <= 62
@@ -33,11 +44,7 @@ def _in_penalty_area(loc: list[float]) -> bool:
     return x >= PENALTY_BOX_X_MIN and PENALTY_BOX_Y_MIN <= y <= PENALTY_BOX_Y_MAX
 
 
-def load_all_events() -> list[dict]:
-    matches_path = DATA_ROOT / "matches" / str(COMPETITION_ID) / f"{SEASON_ID}.json"
-    with open(matches_path) as f:
-        matches = json.load(f)
-
+def load_all_events(matches: list[dict]) -> list[dict]:
     events: list[dict] = []
     for m in matches:
         mid = m["match_id"]
@@ -119,7 +126,7 @@ def section_aerial_duels(events: list[dict]) -> None:
     )
 
 
-def section_corners(events: list[dict]) -> None:
+def section_corners(events: list[dict], n_matches: int) -> None:
     """
     Corners are passes with pass.type.name == "Corner".
     We report: total corners, how many have pass.cross==True, and how many
@@ -163,7 +170,7 @@ def section_corners(events: list[dict]) -> None:
             end_outside_box += 1
 
     print(f"\nTotal corners (pass.type.name == 'Corner'): {total:,}")
-    print(f"  Expected range: ~3,500–4,000 for a full La Liga season")
+    print(f"  Per match: {total / n_matches:.1f}  (La Liga 2015/16 reference: ~9–10.5)")
     print(f"\npass.cross values:")
     print(f"  cross=True  : {cross_true:,}")
     print(f"  cross=False : {cross_false:,}")
@@ -250,8 +257,8 @@ def section_long_passes(events: list[dict]) -> None:
     print(
         "\nChosen threshold: 30 yards (≈ p78), per ADR 002 §19."
         "\nReason: conventional round number near the 78th percentile of open-play"
-        "\n  pass lengths; the data-observed share (17.8% of all passes) is the"
-        "\n  documented justification.  No external definition is cited."
+        "\n  pass lengths; the data-observed La Liga 2015/16 share (17.8% of all"
+        "\n  passes) is the documented justification.  No external definition is cited."
         "\n  (32 yd and 25 yd were also evaluated; see ADR 002 §19 for the decision.)"
     )
     print()
@@ -340,24 +347,110 @@ def section_dribbled_past(events: list[dict]) -> None:
         "\nConfirmation: 'Dribbled Past' events carry the team, player, and"
         "\n  position of the DEFENDER who was beaten — not the dribbler."
         "\n  The dribbler's Dribble event (with outcome.name=='Complete') is"
-        "\n  linked via related_events. This is consistent across all 380 matches."
+        "\n  linked via related_events. Check the sample above for this competition."
     )
     print()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Reference totals (Plan 003 §3) — definitions per ADR 002, independent of the
+# pipeline code. Counted over events that carry a player.
+# ─────────────────────────────────────────────────────────────────────────────
+
+LONG_PASS_THRESHOLD = 30.0
+# Set-piece pass types excluded from long passes (ADR 002 §19).
+SET_PIECE_TYPES = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off"})
+# Sub-payloads that carry aerial_won on the winner's event (ADR 002 §20).
+AERIAL_WON_KEYS = {"Pass": "pass", "Clearance": "clearance", "Shot": "shot",
+                   "Miscontrol": "miscontrol"}
+SIMPLE_COUNTS = {"Dispossessed": "dispossessed", "Miscontrol": "miscontrols",
+                 "Pressure": "pressures", "Dribbled Past": "dribbled_past"}
+
+
+def section_reference_totals(matches: list[dict], events: list[dict]) -> tuple[dict, dict]:
+    """Return (base, chunk_a) totals for the reference file."""
+    print("=" * 68)
+    print("REFERENCE TOTALS")
+    print("=" * 68)
+
+    goals, own_goals = reconcile_goals(matches, events)
+    starts = sum(
+        len(e["tactics"]["lineup"]) for e in events if e["type"]["name"] == "Starting XI"
+    )
+
+    a = {k: 0 for k in (
+        "dispossessed", "miscontrols", "pressures", "ball_recoveries",
+        "ball_recoveries_failed", "dribbled_past", "aerials_won", "aerials_lost",
+        "long_passes_attempted", "long_passes_completed", "passes_missing_length",
+        "switches",
+    )}
+    crosses_attempted = crosses_completed = 0
+
+    for e in events:
+        if not e.get("player"):
+            continue
+        etype = e["type"]["name"]
+        if etype in SIMPLE_COUNTS:
+            a[SIMPLE_COUNTS[etype]] += 1
+        key = AERIAL_WON_KEYS.get(etype)
+        if key and (e.get(key) or {}).get("aerial_won"):
+            a["aerials_won"] += 1
+        if etype == "Duel" and ((e.get("duel") or {}).get("type") or {}).get("name") == "Aerial Lost":
+            a["aerials_lost"] += 1
+        elif etype == "Ball Recovery":
+            if (e.get("ball_recovery") or {}).get("recovery_failure"):
+                a["ball_recoveries_failed"] += 1
+            else:
+                a["ball_recoveries"] += 1
+        elif etype == "Pass":
+            pd = e.get("pass") or {}
+            completed = pd.get("outcome") is None
+            if pd.get("cross"):
+                crosses_attempted += 1
+                crosses_completed += completed
+            if pd.get("switch"):
+                a["switches"] += 1
+            length = pd.get("length")
+            if length is None:
+                a["passes_missing_length"] += 1
+            elif length >= LONG_PASS_THRESHOLD and (pd.get("type") or {}).get("name") not in SET_PIECE_TYPES:
+                a["long_passes_attempted"] += 1
+                a["long_passes_completed"] += completed
+
+    base = {
+        "matches": len(matches),
+        "starts": starts,
+        "goals": goals,
+        "own_goals": own_goals,
+        "crosses_attempted": crosses_attempted,
+        "crosses_completed": crosses_completed,
+    }
+    for label, section in (("base", base), ("chunk_a", a)):
+        for k, v in section.items():
+            print(f"  {label:<8} {k:<24} {v:>10,}")
+    print()
+    return base, a
+
 
 def main() -> None:
-    print("\nLoading all La Liga 2015/16 event files (380 matches)…")
-    events = load_all_events()
+    args = parse_args(__doc__.splitlines()[1])
+    matches = load_matches(args.competition_id, args.season_id)
+    label = competition_label(matches)
+    print(f"\nLoading all {label} event files ({len(matches)} matches)…")
+    events = load_all_events(matches)
     print(f"Loaded {len(events):,} total events.\n")
 
     section_aerial_duels(events)
-    section_corners(events)
+    section_corners(events, len(matches))
     section_pass_types(events)
     section_long_passes(events)
     section_ball_recoveries(events)
     section_dribbled_past(events)
+    base, chunk_a = section_reference_totals(matches, events)
+
+    if not args.no_write:
+        write_reference(args.competition_id, args.season_id, "base", base)
+        write_reference(args.competition_id, args.season_id, "chunk_a", chunk_a)
 
     print("=" * 68)
     print("END OF VERIFICATION REPORT")

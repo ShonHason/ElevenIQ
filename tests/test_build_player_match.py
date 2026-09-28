@@ -22,11 +22,18 @@ import polars as pl
 import pytest
 
 from eleveniq.pipeline.build_player_match import (
+    STARTING_XI_ISSUES,
+    MatchProcessingError,
+    StarterCrossCheckError,
     _group_minutes_to_columns,
     _primary_raw_position,
     _process_match,
+    build_all,
     build_competition_season,
+    concat_parts,
+    part_path,
 )
+from eleveniq.config import CompetitionSeason
 
 _FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "statsbomb"
 
@@ -261,18 +268,17 @@ class TestExplicitToAfterCardCause:
 
 def test_build_competition_season_writes_parquet(tmp_path):
     out = tmp_path / "out.parquet"
-    df, dismissals, failed = build_competition_season(
+    df, _ = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=out
     )
     assert out.exists()
     reloaded = pl.read_parquet(out)
     assert len(reloaded) == len(df)
-    assert failed == []
 
 
 def test_build_competition_season_row_count(tmp_path):
     out = tmp_path / "out.parquet"
-    df, _, _ = build_competition_season(
+    df, _ = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=out
     )
     assert len(df) == 6  # Frank (unused sub) excluded; Grace (fallback starter) included
@@ -280,7 +286,7 @@ def test_build_competition_season_row_count(tmp_path):
 
 def test_build_competition_season_schema_has_started_and_assists(tmp_path):
     out = tmp_path / "out.parquet"
-    df, _, _ = build_competition_season(
+    df, _ = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=out
     )
     assert "started" in df.columns
@@ -292,7 +298,7 @@ def test_build_competition_season_schema_has_started_and_assists(tmp_path):
 
 def test_build_competition_season_returns_dismissal_report(tmp_path):
     out = tmp_path / "out.parquet"
-    _, dismissals, _ = build_competition_season(
+    _, dismissals = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=out
     )
     assert any(d.get("player_id") == 1003 for d in dismissals)
@@ -307,7 +313,7 @@ def test_build_competition_season_schema_has_new_columns(tmp_path):
     the Parquet output so build_player_season can aggregate them.
     """
     out = tmp_path / "out.parquet"
-    df, _, _ = build_competition_season(
+    df, _ = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=out
     )
     for col in (
@@ -330,7 +336,7 @@ def test_build_competition_season_crosses_non_negative(tmp_path):
     in the fixture output — basic sanity guard.
     """
     out = tmp_path / "out.parquet"
-    df, _, _ = build_competition_season(
+    df, _ = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=out
     )
     assert (df["crosses_attempted"] >= 0).all()
@@ -343,7 +349,7 @@ def test_build_competition_season_crosses_completed_le_attempted(tmp_path):
     is a subset of all crosses attempted.
     """
     out = tmp_path / "out.parquet"
-    df, _, _ = build_competition_season(
+    df, _ = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=out
     )
     assert (df["crosses_completed"] <= df["crosses_attempted"]).all(), (
@@ -585,47 +591,35 @@ class TestPrimaryRawPosition:
 # build_competition_season error handler
 # ---------------------------------------------------------------------------
 
-def test_build_competition_season_bad_match_isolated_in_failed_ids(tmp_path, monkeypatch):
+def test_build_competition_season_failed_match_fails_league(tmp_path, monkeypatch):
     """
-    Milestones tech-debt (L550–552): the except-Exception block must append the
-    failed match_id to failed_ids and continue processing remaining matches.
-
-    Strategy:
-    - Patch load_matches to return both match 9999 (good) and match 9998 (bad).
-    - Patch _process_match to raise for match 9998 only.
-    The call must return a non-empty DataFrame (from 9999) and failed_ids=[9998].
+    A match that raises inside _process_match is logged, the remaining matches
+    are still attempted, and then the whole league fails: MatchProcessingError
+    names the failed match id and no part is written, so a part never silently
+    lacks matches (Plan 003 C2 review).
     """
     import eleveniq.pipeline.build_player_match as _bpm
 
     original_process = _bpm._process_match
+    attempted: list[int] = []
 
     def _patched_process(match_id, competition_id, season_id, *, data_root=None):
+        attempted.append(match_id)
         if match_id == 9998:
             raise ValueError("synthetic failure for match 9998")
         return original_process(match_id, competition_id, season_id, data_root=data_root)
 
     def _patched_load_matches(competition_id, season_id, data_root=None):
-        # Return both the good fixture match and the synthetic bad match.
-        return [{"match_id": 9999}, {"match_id": 9998}]
+        return [{"match_id": 9998}, {"match_id": 9999}]
 
     monkeypatch.setattr(_bpm, "_process_match", _patched_process)
     monkeypatch.setattr(_bpm, "load_matches", _patched_load_matches)
 
     out = tmp_path / "out.parquet"
-    df, _, failed = build_competition_season(
-        99, 1, data_root=_FIXTURE_ROOT, output_path=out
-    )
-
-    assert 9998 in failed, (
-        "match_id 9998 raised an exception; it must appear in failed_ids"
-    )
-    assert 9999 not in failed, (
-        "match_id 9999 succeeded; it must NOT appear in failed_ids"
-    )
-    assert len(df) > 0, (
-        "The successful match (9999) must still produce rows "
-        "despite the failure on match 9998"
-    )
+    with pytest.raises(MatchProcessingError, match=r"\[9998\]"):
+        build_competition_season(99, 1, data_root=_FIXTURE_ROOT, output_path=out)
+    assert attempted == [9998, 9999]
+    assert not out.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -650,3 +644,420 @@ def test_every_team_has_exactly_11_starters():
     assert len(bad) == 0, (
         f"{len(bad)} team(s) without exactly 11 starters:\n{bad.sort('match_id')}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Starter cross-check against the Starting XI event (Plan 003 C2)
+# ---------------------------------------------------------------------------
+
+def _write_match(root: Path, match_id: int, events: list[dict], lineups: list[dict]) -> None:
+    import json
+    for sub, payload in (("events", events), ("lineups", lineups)):
+        (root / sub).mkdir(parents=True, exist_ok=True)
+        (root / sub / f"{match_id}.json").write_text(json.dumps(payload))
+    (root / "matches" / "99").mkdir(parents=True, exist_ok=True)
+    (root / "matches" / "99" / "1.json").write_text(json.dumps([{"match_id": match_id}]))
+
+
+def _xi_event(team_id: int, player_ids: list[int]) -> dict:
+    return {
+        "id": f"xi{team_id}", "type": {"name": "Starting XI"}, "team": {"id": team_id},
+        "minute": 0, "second": 0, "period": 1,
+        "tactics": {"lineup": [{"player": {"id": p}} for p in player_ids]},
+    }
+
+
+_HALF_END = {"id": "he", "type": {"name": "Half End"}, "minute": 90, "second": 0, "period": 2}
+
+
+def _spell(frm: str, to: str | None, reason: str) -> dict:
+    return {"position_id": 10, "position": "Center Defensive Midfield",
+            "from": frm, "to": to, "from_period": 1, "to_period": None if to is None else 1,
+            "start_reason": reason}
+
+
+class TestZeroLengthKickoffSpellGuard:
+    """A bench player with a zero-length 00:00 spell (from == to == "00:00") must
+    NOT be promoted to starter by the 00:00 fallback, even when the team has
+    fewer than 11 starters and the player later comes on."""
+
+    @pytest.fixture()
+    def result(self, tmp_path):
+        lineups = [{
+            "team_id": 501, "team_name": "Synthetic FC",
+            "lineup": [
+                # Real starter whose start_reason is not "Starting XI" -> inferred.
+                {"player_id": 5001, "player_name": "Inferred Starter",
+                 "positions": [_spell("00:00", None, "Tactical Shift")]},
+                # Bench player: zero-length 00:00 spell, then subbed on at 60:00.
+                {"player_id": 5002, "player_name": "Bench Ghost",
+                 "positions": [_spell("00:00", "00:00", "Tactical Shift"),
+                               _spell("60:00", None, "Substitution - On (Tactical)")]},
+            ],
+        }]
+        _write_match(tmp_path, 7001, [_xi_event(501, [5001]), _HALF_END], lineups)
+        rows, report = _process_match(7001, 99, 1, data_root=tmp_path)
+        return {r["player_id"]: r for r in rows}, report
+
+    def test_bench_player_with_zero_length_spell_not_started(self, result):
+        by_id, _ = result
+        assert by_id[5002]["started"] is False
+        assert by_id[5002]["started_inferred"] is False
+
+    def test_real_kickoff_spell_still_inferred(self, result):
+        by_id, _ = result
+        assert by_id[5001]["started"] is True
+        assert by_id[5001]["started_inferred"] is True
+
+    def test_cross_check_passes(self, result):
+        _, report = result
+        assert not [d for d in report if d.get("issue") in STARTING_XI_ISSUES]
+
+
+class TestStartingXiCrossCheck:
+    def _lineups(self) -> list[dict]:
+        return [{
+            "team_id": 601, "team_name": "Check FC",
+            "lineup": [
+                {"player_id": 6001, "player_name": "A",
+                 "positions": [_spell("00:00", None, "Starting XI")]},
+                {"player_id": 6002, "player_name": "B",
+                 "positions": [_spell("60:00", None, "Substitution - On (Tactical)")]},
+            ],
+        }]
+
+    def test_fixture_match_has_no_cross_check_issues(self, process_match_result):
+        _, report = process_match_result
+        assert not [d for d in report if d.get("issue") in STARTING_XI_ISSUES]
+
+    def test_mismatch_recorded_with_player_ids(self, tmp_path):
+        _write_match(tmp_path, 7002, [_xi_event(601, [6002]), _HALF_END], self._lineups())
+        _, report = _process_match(7002, 99, 1, data_root=tmp_path)
+        entry = next(d for d in report if d.get("issue") == "starting_xi_mismatch")
+        assert entry["missing_from_derived"] == [6002]
+        assert entry["extra_in_derived"] == [6001]
+
+    def test_missing_starting_xi_event_recorded(self, tmp_path):
+        _write_match(tmp_path, 7003, [_HALF_END], self._lineups())
+        _, report = _process_match(7003, 99, 1, data_root=tmp_path)
+        assert any(d.get("issue") == "starting_xi_missing" for d in report)
+
+    def test_mismatch_fails_build_and_writes_nothing(self, tmp_path):
+        _write_match(tmp_path, 7002, [_xi_event(601, [6002]), _HALF_END], self._lineups())
+        out = tmp_path / "out.parquet"
+        with pytest.raises(StarterCrossCheckError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+        assert not out.exists()
+
+    def test_duplicate_starting_xi_event_recorded_not_merged(self, tmp_path):
+        # Two identical XI events for one team: merged, they would equal the
+        # derived starters and pass silently, so a duplicate must be flagged.
+        events = [_xi_event(601, [6001]), {**_xi_event(601, [6001]), "id": "xi601b"},
+                  _HALF_END]
+        _write_match(tmp_path, 7005, events, self._lineups())
+        _, report = _process_match(7005, 99, 1, data_root=tmp_path)
+        issues = [d for d in report if d.get("issue") in STARTING_XI_ISSUES]
+        assert [(d["issue"], d["team_id"], d["starting_xi_events"]) for d in issues] == [
+            ("starting_xi_duplicate", 601, 2)
+        ]
+
+    def test_duplicate_starting_xi_fails_build_and_writes_nothing(self, tmp_path):
+        events = [_xi_event(601, [6001]), {**_xi_event(601, [6001]), "id": "xi601b"},
+                  _HALF_END]
+        _write_match(tmp_path, 7005, events, self._lineups())
+        out = tmp_path / "out.parquet"
+        with pytest.raises(StarterCrossCheckError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+        assert not out.exists()
+
+    def test_matching_xi_builds(self, tmp_path):
+        _write_match(tmp_path, 7004, [_xi_event(601, [6001]), _HALF_END], self._lineups())
+        out = tmp_path / "out.parquet"
+        build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+        assert out.exists()
+
+
+_RAW_ROOT = Path(__file__).resolve().parents[1] / "data" / "raw" / "statsbomb"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("match_id", "comp_id", "team_name", "n_inferred"),
+    [
+        (3754047, 2, "Swansea City", 10),
+        (3825596, 11, "Sporting Gijón", 3),
+    ],
+)
+def test_real_fallback_matches_pass_cross_check(match_id, comp_id, team_name, n_inferred):
+    if not (_RAW_ROOT / "events" / f"{match_id}.json").exists():
+        pytest.skip("Raw StatsBomb data not available")
+    rows, report = _process_match(match_id, comp_id, 27, data_root=_RAW_ROOT)
+    assert not [d for d in report if d.get("issue") in STARTING_XI_ISSUES]
+    team_rows = [r for r in rows if r["team_name"] == team_name]
+    assert sum(r["started"] for r in team_rows) == 11
+    assert sum(r["started_inferred"] for r in team_rows) == n_inferred
+
+
+# ---------------------------------------------------------------------------
+# Multi-league entry point: per-league parts, skip-if-exists, --force, concat
+# ---------------------------------------------------------------------------
+
+class TestBuildAll:
+    _CS = (
+        CompetitionSeason(99, 1, "Fixture A", 2, "FULL"),
+        CompetitionSeason(99, 2, "Fixture B", 2, "PARTIAL"),
+    )
+
+    @pytest.fixture()
+    def calls(self, monkeypatch):
+        """Replace build_competition_season with a stub that writes a tiny part."""
+        import eleveniq.pipeline.build_player_match as _bpm
+        made: list[tuple[int, int]] = []
+
+        def _stub(competition_id, season_id, *, data_root=None, output_path=None):
+            made.append((competition_id, season_id))
+            df = pl.DataFrame({"competition_id": [competition_id], "season_id": [season_id],
+                               "started": [True]})
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            df.write_parquet(output_path)
+            return df, []
+
+        monkeypatch.setattr(_bpm, "build_competition_season", _stub)
+        return made
+
+    def test_part_path_layout(self, tmp_path):
+        assert part_path(9, 27, tmp_path) == tmp_path / "9_27.parquet"
+
+    def test_builds_one_part_per_competition_season_and_concats(self, tmp_path, calls):
+        out = tmp_path / "combined.parquet"
+        build_all(self._CS, part_dir=tmp_path / "parts", output_path=out)
+        assert calls == [(99, 1), (99, 2)]
+        assert (tmp_path / "parts" / "99_1.parquet").exists()
+        assert (tmp_path / "parts" / "99_2.parquet").exists()
+        assert pl.read_parquet(out)["season_id"].to_list() == [1, 2]
+
+    def test_existing_part_skipped_without_force(self, tmp_path, calls):
+        parts = tmp_path / "parts"
+        build_all(self._CS, part_dir=parts, output_path=tmp_path / "c.parquet")
+        calls.clear()
+        summaries = build_all(self._CS, part_dir=parts, output_path=tmp_path / "c.parquet")
+        assert calls == []
+        assert all(s["skipped"] for s in summaries.values())
+
+    def test_force_rebuilds_existing_part(self, tmp_path, calls):
+        parts = tmp_path / "parts"
+        build_all(self._CS, part_dir=parts, output_path=tmp_path / "c.parquet")
+        calls.clear()
+        build_all(self._CS, force=True, part_dir=parts, output_path=tmp_path / "c.parquet")
+        assert calls == [(99, 1), (99, 2)]
+
+    def test_skip_concat_writes_no_combined_file(self, tmp_path, calls):
+        out = tmp_path / "combined.parquet"
+        build_all(self._CS, concat=False, part_dir=tmp_path / "parts", output_path=out)
+        assert not out.exists()
+
+    def test_concat_with_missing_part_leaves_combined_untouched(self, tmp_path, caplog):
+        parts = tmp_path / "parts"
+        out = tmp_path / "c.parquet"
+        pl.DataFrame({"sentinel": [1]}).write_parquet(out)
+        before = out.read_bytes()
+        parts.mkdir()
+        pl.DataFrame({"competition_id": [99], "season_id": [1],
+                      "started": [True]}).write_parquet(part_path(99, 1, parts))
+        with caplog.at_level("WARNING"):
+            result = concat_parts(self._CS, part_dir=parts, output_path=out)
+        assert result is None
+        assert out.read_bytes() == before
+        assert "99_2.parquet" in caplog.text
+        assert "99_1.parquet" not in caplog.text
+
+    def test_subset_build_concats_full_config(self, tmp_path, calls, caplog):
+        """A CLI-style single-league build (only=) must never shrink the combined
+        file to that league: with another configured part missing, the combined
+        file is left untouched; once every part exists, the concat covers all."""
+        parts = tmp_path / "parts"
+        out = tmp_path / "combined.parquet"
+        pl.DataFrame({"sentinel": [1]}).write_parquet(out)
+        before = out.read_bytes()
+
+        with caplog.at_level("WARNING"):
+            build_all(self._CS, only=self._CS[:1], part_dir=parts, output_path=out)
+        assert calls == [(99, 1)]
+        assert out.read_bytes() == before
+        assert "99_2.parquet" in caplog.text
+
+        build_all(self._CS, only=self._CS[1:], part_dir=parts, output_path=out)
+        assert calls == [(99, 1), (99, 2)]
+        assert sorted(pl.read_parquet(out)["season_id"].to_list()) == [1, 2]
+
+    def test_only_must_be_configured(self, tmp_path, calls):
+        stray = (CompetitionSeason(1, 1, "Stray", 2, "FULL"),)
+        with pytest.raises(ValueError, match="unconfigured"):
+            build_all(self._CS, only=stray, part_dir=tmp_path, output_path=tmp_path / "c.parquet")
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "error", [StarterCrossCheckError("synthetic"), MatchProcessingError("[123]")]
+    )
+    def test_failed_forced_rebuild_removes_stale_part_and_blocks_concat(
+        self, tmp_path, calls, monkeypatch, error
+    ):
+        """A forced rebuild that fails must not leave the pre-change part behind:
+        the part is gone, the other league still rebuilds, the combined file is
+        untouched, and a later concat refuses because the part is missing."""
+        import eleveniq.pipeline.build_player_match as _bpm
+        parts = tmp_path / "parts"
+        out = tmp_path / "combined.parquet"
+        build_all(self._CS, part_dir=parts, output_path=out)  # stale parts + combined
+        before = out.read_bytes()
+        calls.clear()
+        stub = _bpm.build_competition_season
+
+        def _fail_first(competition_id, season_id, **kw):
+            if season_id == 1:
+                raise error
+            return stub(competition_id, season_id, **kw)
+
+        monkeypatch.setattr(_bpm, "build_competition_season", _fail_first)
+        with pytest.raises(RuntimeError, match="Fixture A"):
+            build_all(self._CS, force=True, part_dir=parts, output_path=out)
+        assert not part_path(99, 1, parts).exists()
+        assert calls == [(99, 2)]
+        assert out.read_bytes() == before
+        assert concat_parts(self._CS, part_dir=parts, output_path=out) is None
+        assert out.read_bytes() == before
+
+
+# ---------------------------------------------------------------------------
+# QA: kickoff-spell and Starting XI cross-check edge cases (Plan 003 C2)
+# ---------------------------------------------------------------------------
+
+class TestKickoffSpellAfterZeroLengthSpell:
+    """A real starter whose start_reason is not "Starting XI" and whose FIRST
+    spell is zero-length at 00:00 (instant shape change at kick-off), followed
+    by a real 00:00 spell, must still be inferred as a starter. Guards against
+    the zero-length guard being implemented as "look at the first spell only"."""
+
+    def test_starter_with_leading_zero_length_spell_is_inferred(self, tmp_path):
+        lineups = [{
+            "team_id": 701, "team_name": "Shift FC",
+            "lineup": [
+                {"player_id": 7101, "player_name": "Shifted Starter",
+                 "positions": [_spell("00:00", "00:00", "Tactical Shift"),
+                               _spell("00:00", None, "Tactical Shift")]},
+            ],
+        }]
+        _write_match(tmp_path, 7101, [_xi_event(701, [7101]), _HALF_END], lineups)
+        rows, report = _process_match(7101, 99, 1, data_root=tmp_path)
+        row = next(r for r in rows if r["player_id"] == 7101)
+        assert row["started"] is True
+        assert row["started_inferred"] is True
+        assert not [d for d in report if d.get("issue") in STARTING_XI_ISSUES]
+
+
+class TestStartingXiCrossCheckPerTeam:
+    """The cross-check is per team-match: a missing Starting XI event for one
+    team must be attributed to that team only, and must fail the build."""
+
+    @staticmethod
+    def _two_team_lineups() -> list[dict]:
+        return [
+            {"team_id": 801, "team_name": "Home FC", "lineup": [
+                {"player_id": 8101, "player_name": "H",
+                 "positions": [_spell("00:00", None, "Starting XI")]}]},
+            {"team_id": 802, "team_name": "Away FC", "lineup": [
+                {"player_id": 8201, "player_name": "A",
+                 "positions": [_spell("00:00", None, "Starting XI")]}]},
+        ]
+
+    def test_missing_xi_attributed_to_the_right_team(self, tmp_path):
+        _write_match(tmp_path, 7201, [_xi_event(801, [8101]), _HALF_END],
+                     self._two_team_lineups())
+        _, report = _process_match(7201, 99, 1, data_root=tmp_path)
+        issues = [d for d in report if d.get("issue") in STARTING_XI_ISSUES]
+        assert [(d["issue"], d["team_id"]) for d in issues] == [
+            ("starting_xi_missing", 802)
+        ]
+
+    def test_missing_xi_fails_build_and_writes_nothing(self, tmp_path):
+        _write_match(tmp_path, 7201, [_xi_event(801, [8101]), _HALF_END],
+                     self._two_team_lineups())
+        out = tmp_path / "out.parquet"
+        with pytest.raises(StarterCrossCheckError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+        assert not out.exists()
+
+
+class TestBuildAllResumeAndConcat:
+    """Resumable runs (Plan 003 §4): a rerun that skips an existing part and
+    builds a missing one must still produce a combined file containing every
+    configured league, and only configured leagues."""
+
+    _CS = (
+        CompetitionSeason(98, 1, "Existing", 2, "FULL"),
+        CompetitionSeason(98, 2, "New", 2, "FULL"),
+    )
+
+    @staticmethod
+    def _part(path: Path, comp: int, season: int) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame({"competition_id": [comp], "season_id": [season],
+                      "started": [True]}).write_parquet(path)
+
+    def test_combined_includes_skipped_and_newly_built_parts(self, tmp_path, monkeypatch):
+        import eleveniq.pipeline.build_player_match as _bpm
+        parts = tmp_path / "parts"
+        self._part(part_path(98, 1, parts), 98, 1)
+        built: list[tuple[int, int]] = []
+
+        def _stub(competition_id, season_id, *, data_root=None, output_path=None):
+            built.append((competition_id, season_id))
+            self._part(output_path, competition_id, season_id)
+            return pl.read_parquet(output_path), []
+
+        monkeypatch.setattr(_bpm, "build_competition_season", _stub)
+        out = tmp_path / "combined.parquet"
+        summaries = build_all(self._CS, part_dir=parts, output_path=out)
+
+        assert built == [(98, 2)]
+        assert summaries[(98, 1)]["skipped"] is True
+        assert summaries[(98, 2)]["skipped"] is False
+        assert sorted(pl.read_parquet(out)["season_id"].to_list()) == [1, 2]
+
+    def test_concat_ignores_unconfigured_stale_part(self, tmp_path):
+        parts = tmp_path / "parts"
+        for cs in self._CS:
+            self._part(part_path(cs.competition_id, cs.season_id, parts),
+                       cs.competition_id, cs.season_id)
+        self._part(part_path(16, 27, parts), 16, 27)  # e.g. old Champions League part
+        df = concat_parts(self._CS, part_dir=parts, output_path=tmp_path / "c.parquet")
+        assert set(df["competition_id"].to_list()) == {98}
+        assert len(df) == 2
+
+
+class TestSummariseQualityReport:
+    """Summary counts per category; the dismissal count must only include real
+    dismissal entries (no "issue" key), not fallback or cross-check entries."""
+
+    def test_counts_each_category_separately(self):
+        from eleveniq.pipeline.build_player_match import summarise_quality_report
+        report = [
+            {"match_id": 1, "player_id": 10, "dismissal_minute": 30.0},
+            {"match_id": 1, "player_id": 11, "dismissal_minute": 80.0},
+            {"issue": "dismissal_missing_timestamp", "match_id": 2, "player_id": 12},
+            {"issue": "started_inferred_fallback", "match_id": 3, "players": ["a", "b", "c"]},
+            {"issue": "started_inferred_fallback", "match_id": 4, "players": ["d"]},
+            {"issue": "starter_count_mismatch", "match_id": 5},
+            {"issue": "starting_xi_mismatch", "match_id": 6},
+        ]
+        assert summarise_quality_report(report) == {
+            "dismissals": 2,
+            "missing_timestamp": 1,
+            "fallback_team_matches": 2,
+            "fallback_players": 4,
+            "starter_count_mismatches": 1,
+        }
+
+    def test_empty_report_all_zero(self):
+        from eleveniq.pipeline.build_player_match import summarise_quality_report
+        assert set(summarise_quality_report([]).values()) == {0}

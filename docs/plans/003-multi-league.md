@@ -128,6 +128,15 @@ Percentile-cohort design stays in M4.
 - Parametrise the integration tests over the reference files.
 - Add the `in_percentile_pool` and `multi_competition_season` flags. stats-reviewer reviews them
   before implementation.
+- **ADR 003 §5 build-time coverage check** (deferred from the C2 review). Read the downloaded
+  `matches.json` and fail the build when the configured `coverage` disagrees with the §2 rule:
+  available / (n·(n−1)) ≥ `FULL_COVERAGE_THRESHOLD`, every team appears, and
+  n_teams == `expected_teams`. `expected_teams` is not used in production code yet.
+  `tests/test_reference_totals.py` only checks the coverage ratio against the reference files.
+- **Generalise the La Liga-only integration tests** that read the combined parquet
+  (`tests/test_aggregation.py`, `tests/test_positions.py`, `tests/test_quality_report.py`,
+  `tests/test_build_player_season.py`). They will break or mislead once the combined file
+  holds five leagues. Do not run them against a multi-league combined file before this.
 - Run the full pipeline on all five leagues, then run `pytest -m integration`.
 - stats-reviewer runs its post-run review.
 - `/finish-chunk`.

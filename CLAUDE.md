@@ -112,8 +112,15 @@ Always use the project virtualenv, not the system Python.
 # Setup (once)
 python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
-# Run the pipeline (La Liga 2015/16)
+# Run the pipeline: all leagues in COMPETITION_SEASONS (existing parts skipped; --force rebuilds)
 .venv/bin/python -m eleveniq.pipeline.build_player_match
+
+# Single league (e.g. La Liga 2015/16). The concat always covers every configured league and
+# leaves the combined parquet untouched while any part is missing; --skip-concat skips it
+.venv/bin/python -m eleveniq.pipeline.build_player_match --competition-id 11 --season-id 27
+
+# After pipeline code changes, rebuild with --force: existing parts are reused, not checked
+.venv/bin/python -m eleveniq.pipeline.build_player_match --force
 
 # Fast unit tests (default — no I/O, sub-second)
 .venv/bin/python -m pytest tests/ -q -m "not integration"

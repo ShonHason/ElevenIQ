@@ -5,9 +5,11 @@ Files are cached locally under data/raw/statsbomb/ using the same path structure
 as the upstream repository. Any file that already exists on disk is skipped so
 the command is idempotent.
 
-Usage (programmatic):
+Usage (programmatic), for any configured competition-season:
+    from eleveniq.config import COMPETITION_SEASONS
     from eleveniq.statsbomb.downloader import download_competition_season
-    download_competition_season(competition_id=11, season_id=27)
+    for cs in COMPETITION_SEASONS:
+        download_competition_season(cs.competition_id, cs.season_id)
 """
 from __future__ import annotations
 

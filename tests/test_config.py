@@ -122,3 +122,31 @@ class TestXgAssistedMaxCarryUnits:
             "XG_ASSISTED_MAX_CARRY_UNITS must be float so it can be used in "
             "cumulative carry comparisons without integer truncation"
         )
+
+
+# ---------------------------------------------------------------------------
+# COMPETITION_SEASONS — Plan 003 / ADR 003 §3
+# ---------------------------------------------------------------------------
+
+class TestCompetitionSeasons:
+    def test_five_2015_16_leagues_with_adr_003_classes(self):
+        got = {
+            (cs.competition_id, cs.season_id): (cs.expected_teams, cs.coverage)
+            for cs in config_module.COMPETITION_SEASONS
+        }
+        assert got == {
+            (11, 27): (20, "FULL"),
+            (2, 27): (20, "FULL"),
+            (12, 27): (20, "FULL"),
+            (7, 27): (20, "FULL"),
+            (9, 27): (18, "PARTIAL"),
+        }
+
+    def test_keys_unique(self):
+        keys = [(cs.competition_id, cs.season_id) for cs in config_module.COMPETITION_SEASONS]
+        assert len(keys) == len(set(keys))
+
+    def test_entries_are_immutable(self):
+        cs = config_module.COMPETITION_SEASONS[0]
+        with pytest.raises(AttributeError):
+            cs.coverage = "PARTIAL"  # type: ignore[misc]

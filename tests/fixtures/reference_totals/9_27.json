@@ -1,0 +1,34 @@
+{
+  "competition_id": 9,
+  "season_id": 27,
+  "base": {
+    "matches": 34,
+    "starts": 748,
+    "goals": 90,
+    "own_goals": 6,
+    "crosses_attempted": 701,
+    "crosses_completed": 219
+  },
+  "chunk_a": {
+    "dispossessed": 969,
+    "miscontrols": 1157,
+    "pressures": 12386,
+    "ball_recoveries": 3590,
+    "ball_recoveries_failed": 312,
+    "dribbled_past": 762,
+    "aerials_won": 1785,
+    "aerials_lost": 1785,
+    "long_passes_attempted": 5658,
+    "long_passes_completed": 3114,
+    "passes_missing_length": 0,
+    "switches": 846
+  },
+  "chunk_b": {
+    "xg_assisted": 60.0772,
+    "xg_assisted_direct": 50.7149,
+    "final_third_entries_pass": 1902,
+    "final_third_entries_carry": 859,
+    "box_entries_pass": 488,
+    "box_entries_carry": 328
+  }
+}

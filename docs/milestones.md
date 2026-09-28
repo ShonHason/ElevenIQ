@@ -196,10 +196,12 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
   - **L501–502** `elif starter_count > 11: dismissal_report.append(...)` — branch for a
     team with more than 11 players counted as starters. Does not occur in La Liga
     2015/16. Needs a synthetic fixture with 12+ starter-flagged lineup entries.
-  - **L550–552** `except Exception: logger.error(...); errors.append(...)` — per-match
-    error handler in `build_competition_season`. Needs a test that injects a bad match
-    file (or patches `_process_match` to raise) and asserts the failed match id is
-    returned in `failed_ids` while other matches still succeed.
+  - ~~per-match error handler in `build_competition_season`~~ — resolved in Plan 003 C2:
+    a failed match now fails the whole league (`MatchProcessingError`, no part written),
+    tested by `test_build_competition_season_failed_match_fails_league`.
+- `_process_match` returns its quality entries as `dismissal_report`, but the list also
+  carries fallback, starter-count and Starting XI cross-check entries (Plan 003 C2).
+  Rename it (e.g. `quality_report`) along with its docstring and callers.
 
 **Multi-league expansion (all 2015/16 leagues, chunks C1–C3):** see [docs/plans/003-multi-league.md](plans/003-multi-league.md).
 

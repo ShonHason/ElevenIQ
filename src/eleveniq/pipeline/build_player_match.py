@@ -38,7 +38,12 @@ from eleveniq.metrics.progressive import is_progressive_pass, is_progressive_car
 from eleveniq.metrics.shots import is_shot_on_target
 from eleveniq.metrics.tackles import is_tackle_won
 from eleveniq.metrics.xg_assisted import compute_xg_assisted_per_player
-from eleveniq.config import LONG_PASS_THRESHOLD_UNITS, XG_ASSISTED_MAX_CARRY_UNITS
+from eleveniq.config import (
+    COMPETITION_SEASONS,
+    LONG_PASS_THRESHOLD_UNITS,
+    XG_ASSISTED_MAX_CARRY_UNITS,
+    CompetitionSeason,
+)
 from eleveniq.pipeline.quality_report import (
     DISMISSAL_TOLERANCE_MINUTES,
     check_dismissal_event_quality,
@@ -50,7 +55,22 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _INTERIM_DIR = _PROJECT_ROOT / "data" / "interim"
+# Combined output (input to build_player_season) and per-competition-season parts.
 OUTPUT_PATH = _INTERIM_DIR / "player_match_stats.parquet"
+PART_DIR = _INTERIM_DIR / "player_match"
+
+# Quality-report issues that fail the build (starter cross-check).
+STARTING_XI_ISSUES = frozenset(
+    {"starting_xi_missing", "starting_xi_mismatch", "starting_xi_duplicate"}
+)
+
+
+class StarterCrossCheckError(RuntimeError):
+    """Derived starters disagree with the Starting XI event for some team-match."""
+
+
+class MatchProcessingError(RuntimeError):
+    """One or more matches of a competition-season raised during processing."""
 
 _SCHEMA: dict[str, type] = {
     "match_id": pl.Int64,
@@ -370,6 +390,29 @@ def _aggregate_events(player_events: list[dict]) -> dict:
     }
 
 
+def _is_kickoff_spell(spell: dict) -> bool:
+    """True for a period-1 spell that starts at 00:00 and has non-zero length."""
+    return (
+        spell["from"] == "00:00"
+        and spell["from_period"] == 1
+        and spell.get("to") != "00:00"
+    )
+
+
+def _starting_xi_by_team(events: list[dict]) -> dict[int, list[set[int]]]:
+    """Map team_id -> one player-id set per Starting XI event for that team.
+
+    A team normally has exactly one; the caller flags zero or more than one.
+    """
+    xi: dict[int, list[set[int]]] = {}
+    for event in events:
+        if event["type"]["name"] != "Starting XI":
+            continue
+        players = {entry["player"]["id"] for entry in event["tactics"]["lineup"]}
+        xi.setdefault(event["team"]["id"], []).append(players)
+    return xi
+
+
 def _process_match(
     match_id: int,
     competition_id: int,
@@ -393,6 +436,8 @@ def _process_match(
     xga_by_player = compute_xg_assisted_per_player(
         events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS
     )
+
+    starting_xi = _starting_xi_by_team(events)
 
     # Build per-player event index
     player_events: dict[int, list[dict]] = {}
@@ -512,13 +557,13 @@ def _process_match(
         # a player with any period-1 stint beginning at "00:00" also counts as
         # started (covers StatsBomb data where real starters have a non-"Starting
         # XI" start_reason, e.g. "Tactical Shift" — confirmed in match 3825596).
+        # Zero-length 00:00 spells (from == to == "00:00") do not count.
         starter_count = sum(1 for row, _ in team_entries if row["started"])
         if starter_count < 11:
             inferred_players: list[str] = []
             for row, positions in team_entries:
                 if not row["started"] and any(
-                    p.get("from") == "00:00" and p.get("from_period", 1) == 1
-                    for p in positions
+                    _is_kickoff_spell(p) for p in positions
                 ):
                     row["started"] = True
                     row["started_inferred"] = True
@@ -549,6 +594,36 @@ def _process_match(
                 "starter_count_after_fallback": starter_count,
             })
 
+        # Cross-check: the team must have exactly one Starting XI event and the
+        # derived starters must equal its tactics.lineup. build_competition_season
+        # fails on any entry recorded here.
+        derived = {row["player_id"] for row, _ in team_entries if row["started"]}
+        xi_events = starting_xi.get(team_id, [])
+        if not xi_events:
+            dismissal_report.append({
+                "issue": "starting_xi_missing",
+                "match_id": match_id,
+                "team_id": team_id,
+                "team_name": team_name,
+            })
+        elif len(xi_events) > 1:
+            dismissal_report.append({
+                "issue": "starting_xi_duplicate",
+                "match_id": match_id,
+                "team_id": team_id,
+                "team_name": team_name,
+                "starting_xi_events": len(xi_events),
+            })
+        elif derived != (expected := xi_events[0]):
+            dismissal_report.append({
+                "issue": "starting_xi_mismatch",
+                "match_id": match_id,
+                "team_id": team_id,
+                "team_name": team_name,
+                "missing_from_derived": sorted(expected - derived),
+                "extra_in_derived": sorted(derived - expected),
+            })
+
         rows.extend(row for row, _ in team_entries)
 
     return rows, dismissal_report
@@ -560,15 +635,23 @@ def build_competition_season(
     *,
     data_root: Path | None = None,
     output_path: Path | None = None,
-) -> tuple[pl.DataFrame, list[dict], list[int]]:
+) -> tuple[pl.DataFrame, list[dict]]:
     """
     Process all matches for one competition-season.
 
-    Writes player_match_stats.parquet and returns (DataFrame, quality_report, failed_match_ids).
-    Errors on individual matches are logged and skipped so one bad file does
-    not abort the entire season.
+    Writes one parquet (default: PART_DIR/{competition_id}_{season_id}.parquet)
+    and returns (DataFrame, quality_report). Every match is attempted and each
+    failure is logged, but a part is only written when all matches succeed, so
+    a part never silently lacks matches.
+
+    Raises:
+        MatchProcessingError: if any match raised; names the failed match ids.
+        StarterCrossCheckError: if, for any team-match, the derived starters
+            differ from the Starting XI event (or the event is missing or
+            duplicated).
+        In both cases the parquet is not written.
     """
-    out_path = output_path or OUTPUT_PATH
+    out_path = output_path or part_path(competition_id, season_id)
     matches = load_matches(competition_id, season_id, data_root)
     logger.info(
         "Building competition=%d season=%d  matches=%d",
@@ -579,7 +662,7 @@ def build_competition_season(
 
     all_rows: list[dict] = []
     all_dismissals: list[dict] = []
-    errors: list[tuple[int, Exception]] = []
+    failed_ids: list[int] = []
 
     for match in matches:
         match_id = match["match_id"]
@@ -589,26 +672,170 @@ def build_competition_season(
             )
             all_rows.extend(rows)
             all_dismissals.extend(dismissals)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.error("match_id=%d failed", match_id, exc_info=True)
-            errors.append((match_id, exc))
+            failed_ids.append(match_id)
+
+    if failed_ids:
+        raise MatchProcessingError(
+            f"competition={competition_id} season={season_id}: "
+            f"{len(failed_ids)} match(es) failed: {failed_ids}"
+        )
+
+    xi_issues = [
+        d for d in all_dismissals if d.get("issue") in STARTING_XI_ISSUES
+    ]
+    if xi_issues:
+        raise StarterCrossCheckError(
+            f"competition={competition_id} season={season_id}: "
+            f"{len(xi_issues)} team-match(es) where derived starters differ from "
+            f"the Starting XI event. First: {xi_issues[0]}"
+        )
 
     df = pl.DataFrame(all_rows, schema=_SCHEMA)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_path)
-    logger.info(
-        "Wrote %d rows → %s  (errors on %d matches)",
-        len(df),
-        out_path,
-        len(errors),
-    )
+    logger.info("Wrote %d rows → %s", len(df), out_path)
+    return df, all_dismissals
 
-    failed_ids = [mid for mid, _ in errors]
-    return df, all_dismissals, failed_ids
+
+def part_path(competition_id: int, season_id: int, part_dir: Path | None = None) -> Path:
+    """Per-competition-season parquet path: {part_dir}/{comp}_{season}.parquet."""
+    return (part_dir or PART_DIR) / f"{competition_id}_{season_id}.parquet"
+
+
+def summarise_quality_report(report: list[dict]) -> dict[str, int]:
+    """Counts of each quality-report category for logging."""
+    return {
+        "dismissals": sum(1 for d in report if d.get("issue") is None),
+        "missing_timestamp": sum(
+            1 for d in report if d.get("issue") == "dismissal_missing_timestamp"
+        ),
+        "fallback_team_matches": sum(
+            1 for d in report if d.get("issue") == "started_inferred_fallback"
+        ),
+        "fallback_players": sum(
+            len(d["players"]) for d in report
+            if d.get("issue") == "started_inferred_fallback"
+        ),
+        "starter_count_mismatches": sum(
+            1 for d in report if d.get("issue") == "starter_count_mismatch"
+        ),
+    }
+
+
+def concat_parts(
+    competition_seasons: tuple[CompetitionSeason, ...] = COMPETITION_SEASONS,
+    *,
+    part_dir: Path | None = None,
+    output_path: Path | None = None,
+) -> pl.DataFrame | None:
+    """
+    Concatenate the per-competition-season parquets into the combined file read
+    by build_player_season. Every configured part must exist, so the combined
+    file never silently omits a league: if any is missing, the missing parts are
+    logged, the combined file is left untouched and None is returned.
+    """
+    paths = [
+        part_path(cs.competition_id, cs.season_id, part_dir) for cs in competition_seasons
+    ]
+    missing = [str(p) for p in paths if not p.exists()]
+    if missing:
+        logger.warning(
+            "Combined file not updated: %d configured part(s) missing: %s",
+            len(missing),
+            missing,
+        )
+        return None
+    df = pl.concat([pl.read_parquet(p) for p in paths], how="vertical")
+    out_path = output_path or OUTPUT_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(out_path)
+    logger.info("Concatenated %d part(s), %d rows → %s", len(paths), len(df), out_path)
+    return df
+
+
+def build_all(
+    competition_seasons: tuple[CompetitionSeason, ...] = COMPETITION_SEASONS,
+    *,
+    only: tuple[CompetitionSeason, ...] | None = None,
+    force: bool = False,
+    concat: bool = True,
+    data_root: Path | None = None,
+    part_dir: Path | None = None,
+    output_path: Path | None = None,
+) -> dict[tuple[int, int], dict]:
+    """
+    Build competition-seasons into their own parts, then concatenate.
+
+    `only` restricts which leagues are built (e.g. one league from the CLI); the
+    concat always covers every entry of `competition_seasons`, so a subset build
+    never shrinks the combined file (concat_parts leaves it untouched while any
+    configured part is missing).
+
+    A part that already exists is skipped unless force=True, so a failed league
+    can be rerun alone. With force=True the existing part is deleted before the
+    rebuild, so a failed rebuild never leaves a stale part behind. A league that raises (e.g. StarterCrossCheckError,
+    MatchProcessingError) is logged and the remaining leagues still run; the
+    concat is then refused and a RuntimeError names the failed leagues.
+
+    Returns {(competition_id, season_id): summary dict} for the leagues built
+    in this call (skipped leagues have {"skipped": True}).
+    """
+    if only is not None and not set(only) <= set(competition_seasons):
+        raise ValueError(f"only= contains unconfigured competition-season(s): {only}")
+    summaries: dict[tuple[int, int], dict] = {}
+    failed_leagues: list[str] = []
+    for cs in competition_seasons if only is None else only:
+        key = (cs.competition_id, cs.season_id)
+        path = part_path(cs.competition_id, cs.season_id, part_dir)
+        if path.exists() and not force:
+            logger.info("Skipping %s: %s exists (use --force to rebuild)", cs.label, path)
+            summaries[key] = {"label": cs.label, "skipped": True}
+            continue
+        path.unlink(missing_ok=True)
+        try:
+            df, report = build_competition_season(
+                cs.competition_id, cs.season_id, data_root=data_root, output_path=path
+            )
+        except Exception:  # noqa: BLE001
+            logger.error("%s failed", cs.label, exc_info=True)
+            failed_leagues.append(cs.label)
+            continue
+        summaries[key] = {
+            "label": cs.label,
+            "skipped": False,
+            "rows": len(df),
+            "starts": int(df["started"].sum()),
+            **summarise_quality_report(report),
+        }
+
+    if failed_leagues:
+        raise RuntimeError(f"League(s) failed, concat not run: {failed_leagues}")
+    if concat:
+        concat_parts(competition_seasons, part_dir=part_dir, output_path=output_path)
+    return summaries
+
+
+def _select(
+    competition_id: int | None, season_id: int | None
+) -> tuple[CompetitionSeason, ...]:
+    selected = tuple(
+        cs for cs in COMPETITION_SEASONS
+        if (competition_id is None or cs.competition_id == competition_id)
+        and (season_id is None or cs.season_id == season_id)
+    )
+    if not selected:
+        raise SystemExit(
+            f"No configured competition-season matches "
+            f"competition_id={competition_id} season_id={season_id}"
+        )
+    return selected
 
 
 if __name__ == "__main__":
+    import argparse
     import sys
 
     logging.basicConfig(
@@ -616,22 +843,31 @@ if __name__ == "__main__":
         format="%(levelname)s  %(message)s",
         stream=sys.stdout,
     )
-    # La Liga 2015/16: competition_id=11, season_id=27
-    df, dismissals, failed_ids = build_competition_season(11, 27)
-    n_dismissed = sum(1 for d in dismissals if d.get("issue") is None)
-    n_missing_ts = sum(
-        1 for d in dismissals if d.get("issue") == "dismissal_missing_timestamp"
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    parser.add_argument("--competition-id", type=int, help="Build only this competition")
+    parser.add_argument("--season-id", type=int, help="Build only this season")
+    parser.add_argument("--force", action="store_true", help="Rebuild existing parts")
+    parser.add_argument(
+        "--skip-concat", action="store_true",
+        help="Do not rebuild the combined player_match_stats.parquet",
     )
-    n_fallbacks = sum(
-        1 for d in dismissals if d.get("issue") == "started_inferred_fallback"
+    args = parser.parse_args()
+
+    summaries = build_all(
+        COMPETITION_SEASONS,
+        only=_select(args.competition_id, args.season_id),
+        force=args.force,
+        concat=not args.skip_concat,
     )
-    n_mismatches = sum(
-        1 for d in dismissals if d.get("issue") == "starter_count_mismatch"
-    )
-    print(
-        f"\nDone. Rows: {len(df):,}  Failed matches: {len(failed_ids)}\n"
-        f"Quality report: {n_dismissed} dismissal(s), "
-        f"{n_missing_ts} missing-timestamp dismissal(s), "
-        f"{n_fallbacks} starter fallback(s), "
-        f"{n_mismatches} starter mismatch(es)"
-    )
+    for summary in summaries.values():
+        if summary["skipped"]:
+            print(f"{summary['label']}: skipped (part exists)")
+            continue
+        print(
+            f"{summary['label']}: rows={summary['rows']:,} starts={summary['starts']:,} "
+            f"dismissals={summary['dismissals']} "
+            f"missing_ts={summary['missing_timestamp']} "
+            f"fallback_players={summary['fallback_players']} "
+            f"(team-matches={summary['fallback_team_matches']}) "
+            f"starter_count_mismatches={summary['starter_count_mismatches']}"
+        )

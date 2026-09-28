@@ -50,7 +50,8 @@ def compute_xg_assisted_per_player(
         - Assisted shots with missing shooter id or possession: WARNING, credited
           as direct (conservative; no window to check).
         - Assisted shots with no "Ball Receipt*" before the shot: INFO, counted
-          as direct. Expected: ~6 in La Liga 2015/16.
+          as direct. Expected to be rare: 6 in La Liga 2015/16 and 0 in the
+          other 2015/16 leagues, so a large count points at a linkage problem.
 
     Raises:
         KeyError: if any event is missing "id" (used to build id_to_event lookup),
@@ -170,7 +171,7 @@ def compute_xg_assisted_per_player(
     if no_receipt_count:
         logger.info(
             "xg_assisted: %d assisted shot(s) had no Ball Receipt* before the shot "
-            "(counted as direct). Expected: ~6 in La Liga 2015/16.",
+            "(counted as direct; expected to be rare).",
             no_receipt_count,
         )
 

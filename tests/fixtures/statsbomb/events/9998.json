@@ -1,5 +1,23 @@
 [
   {
+    "id": "xi201",
+    "type": {"name": "Starting XI"},
+    "team": {"id": 201},
+    "minute": 0,
+    "second": 0,
+    "period": 1,
+    "tactics": {"lineup": [{"player": {"id": 3001}}]}
+  },
+  {
+    "id": "xi202",
+    "type": {"name": "Starting XI"},
+    "team": {"id": 202},
+    "minute": 0,
+    "second": 0,
+    "period": 1,
+    "tactics": {"lineup": [{"player": {"id": 4001}}]}
+  },
+  {
     "id": "f1",
     "type": {"name": "Bad Behaviour"},
     "player": {"id": 3001},

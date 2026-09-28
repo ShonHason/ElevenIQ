@@ -1,5 +1,23 @@
 [
   {
+    "id": "xi101",
+    "type": {"name": "Starting XI"},
+    "team": {"id": 101},
+    "minute": 0,
+    "second": 0,
+    "period": 1,
+    "tactics": {"lineup": [{"player": {"id": 1001}}, {"player": {"id": 1002}}, {"player": {"id": 1003}}]}
+  },
+  {
+    "id": "xi102",
+    "type": {"name": "Starting XI"},
+    "team": {"id": 102},
+    "minute": 0,
+    "second": 0,
+    "period": 1,
+    "tactics": {"lineup": [{"player": {"id": 2001}}, {"player": {"id": 2004}}]}
+  },
+  {
     "id": "e1",
     "type": {"name": "Pass"},
     "player": {"id": 1002},

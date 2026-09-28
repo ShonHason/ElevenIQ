@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Spike: Chunk B data verification — La Liga 2015/16.
+Spike: Chunk B data verification for one competition-season.
 
 Reports on:
   1. Shot-based xG assisted (pass.assisted_shot_id linkage + carry-between analysis)
@@ -8,10 +8,15 @@ Reports on:
   3. Box entries (passes and carries entering x>=102, 18<=y<=62)
   4. Top-5 per-90 leaders for each metric (outfield, 900+ min)
 
-Run:
-    .venv/bin/python spikes/verify_chunk_b_metrics.py
+Also reconciles goals + own goals against the matches.json scores (a mismatch
+fails the spike) and writes the "chunk_b" section of
+tests/fixtures/reference_totals/{competition_id}_{season_id}.json.
 
-No files are written. Numbers here are the reference values for Chunk B tests.
+Run:
+    .venv/bin/python spikes/verify_chunk_b_metrics.py --competition-id 11 --season-id 27
+
+Never imports eleveniq.pipeline. Section 4 reads data/processed/ for minutes
+only, filtered to this competition-season, and is skipped if absent.
 """
 from __future__ import annotations
 
@@ -24,10 +29,16 @@ from typing import NamedTuple
 
 import polars as pl
 
-DATA_ROOT = Path(__file__).resolve().parents[1] / "data" / "raw" / "statsbomb"
+from reference_totals import (
+    DATA_ROOT,
+    competition_label,
+    load_matches,
+    parse_args,
+    reconcile_goals,
+    write_reference,
+)
+
 PROCESSED = Path(__file__).resolve().parents[1] / "data" / "processed"
-COMPETITION_ID = 11  # La Liga
-SEASON_ID = 27       # 2015/16
 
 # StatsBomb pitch 120×80.
 FINAL_THIRD_X = 80.0
@@ -50,15 +61,23 @@ def _in_box(loc: list[float]) -> bool:
     return loc[0] >= BOX_X_MIN and BOX_Y_MIN <= loc[1] <= BOX_Y_MAX
 
 
+def _load_seasons(competition_id: int, season_id: int) -> pl.DataFrame:
+    """Processed season rows for this competition-season (empty if not built)."""
+    path = PROCESSED / "player_season_stats.parquet"
+    if not path.exists():
+        return pl.DataFrame(schema={"player_id": pl.Int64, "player_name": pl.Utf8,
+                                    "is_gk": pl.Boolean,
+                                    "player_season_minutes_total": pl.Float64})
+    return pl.read_parquet(path).filter(
+        (pl.col("competition_id") == competition_id) & (pl.col("season_id") == season_id)
+    )
+
+
 def _dist(a: list[float], b: list[float]) -> float:
     return math.hypot(b[0] - a[0], b[1] - a[1])
 
 
-def load_all_events_by_match() -> dict[int, list[dict]]:
-    matches_path = DATA_ROOT / "matches" / str(COMPETITION_ID) / f"{SEASON_ID}.json"
-    with open(matches_path) as f:
-        matches = json.load(f)
-
+def load_all_events_by_match(matches: list[dict]) -> dict[int, list[dict]]:
     by_match: dict[int, list[dict]] = {}
     for m in matches:
         mid = m["match_id"]
@@ -79,7 +98,9 @@ def load_all_events(by_match: dict[int, list[dict]]) -> list[dict]:
 # Section 1 — xG assisted
 # ─────────────────────────────────────────────────────────────────────────────
 
-def section_xg_assisted(by_match: dict[int, list[dict]]) -> dict:
+def section_xg_assisted(
+    by_match: dict[int, list[dict]], competition_id: int, season_id: int
+) -> dict:
     """Return a data dict so section 4 can reuse per-player totals."""
     print("=" * 72)
     print("SECTION 1 — xG ASSISTED (pass.assisted_shot_id linkage)")
@@ -297,7 +318,7 @@ def section_xg_assisted(by_match: dict[int, list[dict]]) -> dict:
     print(f"\n1d. Reconciliation (pass side vs shot side)")
     print(f"    xG assisted (pass side, assisted_shot_id): {total_assisted_xg:.6f}")
     print(f"    Note: shot-side total (shot.key_pass_id) verified separately in the")
-    print(f"    recomputation script; difference = 0.00000000 on La Liga 2015/16.")
+    print(f"    recomputation script (difference = 0.00000000 on La Liga 2015/16).")
 
     print(f"\n1e. xg_assisted_direct (cumulative carry rule)")
     print(f"    Rule: shooter had no Dribble AND sum of Carry distances from LAST")
@@ -329,7 +350,7 @@ def section_xg_assisted(by_match: dict[int, list[dict]]) -> dict:
         print(f"      Max   : {carry_distances[-1]:.1f}")
 
     # Top 5 by carry-between xG share (900+ min)
-    seasons = pl.read_parquet(PROCESSED / "player_season_stats.parquet")
+    seasons = _load_seasons(competition_id, season_id)
     qualified = set(
         seasons.filter(
             (pl.col("is_gk") == False) &
@@ -352,6 +373,8 @@ def section_xg_assisted(by_match: dict[int, list[dict]]) -> dict:
 
     print()
     return {
+        "xg_assisted": total_assisted_xg,
+        "xg_assisted_direct": xga_direct_total,
         "player_xg_assisted": dict(player_xg_assisted),
         "player_names": dict(player_names),
     }
@@ -430,6 +453,8 @@ def section_final_third(events: list[dict]) -> dict:
     print()
 
     return {
+        "final_third_entries_pass": pass_ft_total,
+        "final_third_entries_carry": carry_ft_total,
         "player_pass_ft": dict(player_pass_ft),
         "player_carry_ft": dict(player_carry_ft),
         "player_names": dict(player_names),
@@ -514,6 +539,8 @@ def section_box_entries(events: list[dict]) -> dict:
     print()
 
     return {
+        "box_entries_pass": pass_box_total,
+        "box_entries_carry": carry_box_total,
         "player_pass_box": dict(player_pass_box),
         "player_carry_box": dict(player_carry_box),
         "player_names": dict(player_names),
@@ -528,12 +555,14 @@ def section_top5_per90(
     xga_data: dict,
     ft_data: dict,
     box_data: dict,
+    competition_id: int,
+    season_id: int,
 ) -> None:
     print("=" * 72)
     print("SECTION 4 — TOP-5 PER 90 (outfield, 900+ min)")
     print("=" * 72)
 
-    seasons = pl.read_parquet(PROCESSED / "player_season_stats.parquet")
+    seasons = _load_seasons(competition_id, season_id)
     outfield = seasons.filter(
         (pl.col("is_gk") == False) &
         (pl.col("player_season_minutes_total") >= MIN_MINUTES)
@@ -591,17 +620,39 @@ def section_top5_per90(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    print("\nLoading all La Liga 2015/16 event files (380 matches)…")
-    by_match = load_all_events_by_match()
+    args = parse_args(__doc__.splitlines()[1])
+    matches = load_matches(args.competition_id, args.season_id)
+    label = competition_label(matches)
+    print(f"\nLoading all {label} event files ({len(matches)} matches)…")
+    by_match = load_all_events_by_match(matches)
     n_matches = len(by_match)
     all_events = load_all_events(by_match)
     n_events = len(all_events)
     print(f"Loaded {n_matches} matches, {n_events:,} total events.\n")
 
-    xga_data = section_xg_assisted(by_match)
+    reconcile_goals(matches, all_events)
+    xga_data = section_xg_assisted(by_match, args.competition_id, args.season_id)
     ft_data = section_final_third(all_events)
     box_data = section_box_entries(all_events)
-    section_top5_per90(xga_data, ft_data, box_data)
+    if _load_seasons(args.competition_id, args.season_id).is_empty():
+        print("SECTION 4 skipped: no processed season rows for this competition-season.\n")
+    else:
+        section_top5_per90(xga_data, ft_data, box_data,
+                           args.competition_id, args.season_id)
+
+    chunk_b = {
+        "xg_assisted": round(xga_data["xg_assisted"], 4),
+        "xg_assisted_direct": round(xga_data["xg_assisted_direct"], 4),
+        "final_third_entries_pass": ft_data["final_third_entries_pass"],
+        "final_third_entries_carry": ft_data["final_third_entries_carry"],
+        "box_entries_pass": box_data["box_entries_pass"],
+        "box_entries_carry": box_data["box_entries_carry"],
+    }
+    print("REFERENCE TOTALS (chunk_b)")
+    for k, v in chunk_b.items():
+        print(f"  {k:<28} {v:>12,}")
+    if not args.no_write:
+        write_reference(args.competition_id, args.season_id, "chunk_b", chunk_b)
 
     print("=" * 72)
     print("END OF VERIFICATION REPORT")
