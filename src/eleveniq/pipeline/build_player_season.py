@@ -48,7 +48,8 @@ _GROUP_KEY = [
 ]
 
 
-# Count columns that get a per-90 companion.
+# Columns that get a per-90 companion. Mostly integer counts but also includes
+# the Float64 metrics xg_assisted and xg_assisted_direct.
 _COUNT_COLS: list[str] = [
     "goals", "shots", "shots_on_target",
     "passes_attempted", "passes_completed",
@@ -69,6 +70,12 @@ _COUNT_COLS: list[str] = [
     "aerials_lost",
     "long_passes_attempted",
     "switches",
+    "xg_assisted",
+    "xg_assisted_direct",
+    "final_third_entries_pass",
+    "final_third_entries_carry",
+    "box_entries_pass",
+    "box_entries_carry",
 ]
 
 # Columns that are summed directly but do NOT get per-90 values.

@@ -67,3 +67,58 @@ class TestConfigUsedAsDefault:
             f"!= MIN_MINUTES_THRESHOLD {config_module.MIN_MINUTES_THRESHOLD!r}; "
             "the default must reference the constant, not a hard-coded value"
         )
+
+
+# ---------------------------------------------------------------------------
+# LONG_PASS_THRESHOLD_UNITS — Chunk B rename from _YDS (ADR 002 §19, §24)
+# ---------------------------------------------------------------------------
+
+class TestLongPassThresholdUnits:
+    """
+    ADR 002 §24 (Chunk B): LONG_PASS_THRESHOLD_YDS was renamed to
+    LONG_PASS_THRESHOLD_UNITS.  The value (30) did not change.
+    Verify the new name exists, the old name does not, and the value is correct.
+    """
+
+    def test_long_pass_threshold_units_exists(self):
+        assert hasattr(config_module, "LONG_PASS_THRESHOLD_UNITS"), (
+            "LONG_PASS_THRESHOLD_UNITS must exist in config.py after Chunk B rename"
+        )
+
+    def test_long_pass_threshold_units_value(self):
+        assert config_module.LONG_PASS_THRESHOLD_UNITS == 30, (
+            "ADR 002 §19: threshold value must remain 30 after rename"
+        )
+
+    def test_old_yds_name_removed(self):
+        assert not hasattr(config_module, "LONG_PASS_THRESHOLD_YDS"), (
+            "LONG_PASS_THRESHOLD_YDS must be removed; it was renamed to "
+            "LONG_PASS_THRESHOLD_UNITS in Chunk B (ADR 002 §24)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# XG_ASSISTED_MAX_CARRY_UNITS — new constant in Chunk B (ADR 002 §26)
+# ---------------------------------------------------------------------------
+
+class TestXgAssistedMaxCarryUnits:
+    """
+    ADR 002 §26: XG_ASSISTED_MAX_CARRY_UNITS is a new constant (10.0) that
+    controls the carry-distance threshold for the xg_assisted_direct metric.
+    """
+
+    def test_xg_assisted_max_carry_units_exists(self):
+        assert hasattr(config_module, "XG_ASSISTED_MAX_CARRY_UNITS"), (
+            "XG_ASSISTED_MAX_CARRY_UNITS must be present in config.py (ADR 002 §26)"
+        )
+
+    def test_xg_assisted_max_carry_units_value(self):
+        assert config_module.XG_ASSISTED_MAX_CARRY_UNITS == 10.0, (
+            "ADR 002 §26: threshold must be 10.0 StatsBomb units"
+        )
+
+    def test_xg_assisted_max_carry_units_is_float(self):
+        assert isinstance(config_module.XG_ASSISTED_MAX_CARRY_UNITS, float), (
+            "XG_ASSISTED_MAX_CARRY_UNITS must be float so it can be used in "
+            "cumulative carry comparisons without integer truncation"
+        )

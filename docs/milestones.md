@@ -223,6 +223,17 @@ split-season players be ranked using (a) their per-stint `minutes_played` only,
 the primary stint meets the minimum threshold on its own? Record the decision
 in ADR 002 §6 or a new ADR.
 
+**Pre-conditions from chunk B reviews — must be done before computing percentiles:**
+
+- **xg_assisted_direct "no-receipt" fallback not validated:** 6 assisted shots in La Liga 2015/16 had no preceding Ball Receipt* and were counted as direct. Verify that those 6 events are genuine first-touch shots and not data gaps before using xg_assisted_direct in percentile rankings.
+- **"Missing shooter identity" fallback direction is questionable:** ADR 002 §26 credits the passer as direct when the shooter cannot be identified. For scouting, the more statistically honest fallback is xg_assisted only (not direct), since nothing can be inferred about the carry window. No occurrences in La Liga 2015/16, but document or reconsider the fallback direction before expanding to other datasets.
+- **xg_assisted_direct threshold is arbitrary; check collinearity:** The 10-unit (~8.75 m) threshold for "direct" is a design choice with no external reference. La Liga 2015/16 shows 84.3% of assisted xG is classified as direct, making xg_assisted_direct_p90 likely near-collinear with xg_assisted_p90. Run a correlation test at M4 and decide whether both columns are needed in the DNA feature set.
+- ~~**Entry functions do not enforce the completed-pass guard internally**~~ **Resolved in Chunk B:** `is_final_third_entry_pass` and `is_box_entry_pass` now require `outcome` as a keyword argument (same contract as `is_progressive_pass`); omitting it raises `TypeError`.
+- **box_entries_pass / progressive_passes overlap not quantified per position group:** The box-entry pass definition is a near-subset of progressive passes. Before M4 feature selection, measure the overlap fraction by position group (expected to be near 100% for FB-WB, AM-Winger, ST) to assess whether both features carry independent signal.
+- **Throw-ins included in final_third_entries_pass and box_entries_pass:** Throw-ins are not in SET_PIECE_TYPES and are counted as entries (~4% of pre-exclusion box totals per ADR 002 §27). A right back who takes throw-ins near the attacking third will accumulate entry counts that do not reflect progressive passing skill. Quantify throw-in entries by position group and decide whether to add "Throw-in" to SET_PIECE_TYPES before M4.
+- **GK carry-entry per-90 columns are present but meaningless:** box_entries_carry_p90 and final_third_entries_carry_p90 are non-null for GKs who meet the minute threshold. The is_gk gate in DNA/similarity excludes them from cohorts, but analysts reading the Parquet directly may not know this. Add a note to the column schema or the M4 cohort-filter logic that these four columns must be excluded from GK rows.
+- **Extreme per-90 xGA values for low-minute players are not validated for the new metric:** xg_assisted_p90 for a player with 10 minutes and one high-xG key pass can be ≥8. The minimum-minutes gate in ADR 002 §5 should eliminate these from rankings, but the distribution of xg_assisted_p90 below the threshold has not been inspected. Verify at M4 that no sub-threshold rows with extreme xg_assisted_p90 survive the meets_min_minutes filter.
+
 **Pre-conditions from chunk A reviews — must be done before computing percentiles:**
 
 - `long_passes_attempted` includes passes with outcome "Unknown"; the same

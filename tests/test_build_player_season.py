@@ -72,6 +72,12 @@ def _match_row(
     long_passes_completed: int = 0,
     passes_missing_length: int = 0,
     switches: int = 0,
+    xg_assisted: float = 0.0,
+    xg_assisted_direct: float = 0.0,
+    final_third_entries_pass: int = 0,
+    final_third_entries_carry: int = 0,
+    box_entries_pass: int = 0,
+    box_entries_carry: int = 0,
     started: bool = True,
     started_inferred: bool = False,
     minutes_gk: float = 0.0,
@@ -132,6 +138,11 @@ def _match_row(
         long_passes_attempted=long_passes_attempted,
         long_passes_completed=long_passes_completed,
         passes_missing_length=passes_missing_length, switches=switches,
+        xg_assisted=xg_assisted, xg_assisted_direct=xg_assisted_direct,
+        final_third_entries_pass=final_third_entries_pass,
+        final_third_entries_carry=final_third_entries_carry,
+        box_entries_pass=box_entries_pass,
+        box_entries_carry=box_entries_carry,
         started=started, started_inferred=started_inferred,
         minutes_gk=minutes_gk, minutes_cb=minutes_cb,
         minutes_fb_wb=minutes_fb_wb, minutes_dm_cm=minutes_dm_cm,
@@ -869,8 +880,8 @@ class TestIntegration:
         assert season_df["dribbled_past"].sum() == 8_846
         assert season_df["aerials_won"].sum() == 16_526
         assert season_df["aerials_lost"].sum() == 16_526
-        assert season_df["long_passes_attempted"].sum() == 65_185
-        assert season_df["long_passes_completed"].sum() == 37_586
+        assert season_df["long_passes_attempted"].sum() == 65_096
+        assert season_df["long_passes_completed"].sum() == 37_498
         assert season_df["passes_missing_length"].sum() == 0
         assert season_df["switches"].sum() == 11_615
         # Season totals must equal match-level totals for every count column.
@@ -880,6 +891,65 @@ class TestIntegration:
             assert season_df[col].sum() == match_df[col].sum(), (
                 f"{col}: season sum != match sum"
             )
+
+    def test_chunk_b_metrics_reconcile(self, frames):
+        """La Liga 2015/16 Chunk B totals must match expected values (ADR 002 §§25-27).
+
+        Reference values verified by spikes/verify_chunk_b_metrics.py as of the
+        Chunk B commit; see ADR 002 §19 (Kick Off long-pass exclusion), §25
+        (xg_assisted), §26 (xg_assisted_direct), and §27 (entries).
+        """
+        match_df, season_df = frames
+        # Reference values independently verified by spikes/verify_chunk_b_metrics.py,
+        # which applies its own SET_PIECE_TYPES exclusion without importing entries.py.
+        assert abs(season_df["xg_assisted"].sum() - 673.0822) < 0.001
+        assert abs(season_df["xg_assisted_direct"].sum() - 567.4899) < 0.001
+        assert season_df["final_third_entries_pass"].sum() == 22_454
+        assert season_df["final_third_entries_carry"].sum() == 11_902
+        assert season_df["box_entries_pass"].sum() == 6_035
+        assert season_df["box_entries_carry"].sum() == 3_751
+        # Match == season rollup for all six new columns.
+        for col in ("xg_assisted", "xg_assisted_direct",
+                    "final_third_entries_pass", "final_third_entries_carry",
+                    "box_entries_pass", "box_entries_carry"):
+            assert season_df[col].sum() == pytest.approx(match_df[col].sum(), abs=0.001), (
+                f"{col}: season sum != match sum"
+            )
+
+    def test_chunk_b_xg_assisted_shot_side_reconcile(self, frames):
+        """Independent shot-side xGA (from raw StatsBomb JSON) must equal season xg_assisted total."""
+        import json as _json
+        _, season_df = frames
+        _raw = Path(__file__).resolve().parents[1] / "data" / "raw" / "statsbomb"
+        matches_path = _raw / "matches" / "11" / "27.json"
+        if not matches_path.exists():
+            pytest.skip("StatsBomb raw data not available for shot-side reconciliation")
+        with open(matches_path) as f:
+            matches = _json.load(f)
+        shot_side_xga = 0.0
+        missing_xg_count = 0
+        for m in matches:
+            event_path = _raw / "events" / f"{m['match_id']}.json"
+            with open(event_path) as f:
+                events = _json.load(f)
+            for ev in events:
+                if ev.get("type", {}).get("name") == "Shot":
+                    shot = ev.get("shot", {})
+                    if shot.get("key_pass_id") is not None:
+                        xg = shot.get("statsbomb_xg")
+                        if xg is None:
+                            missing_xg_count += 1
+                            continue
+                        shot_side_xga += xg
+        assert missing_xg_count == 0, (
+            f"{missing_xg_count} assisted shot(s) with missing statsbomb_xg; "
+            "pipeline excludes them — a non-zero count means the shot-side total "
+            "and the pipeline total would diverge silently"
+        )
+        assert abs(shot_side_xga - season_df["xg_assisted"].sum()) < 0.001, (
+            f"shot-side xGA {shot_side_xga:.4f} != season xg_assisted "
+            f"{season_df['xg_assisted'].sum():.4f}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1781,3 +1851,91 @@ class TestUnknownPositionGroupFlag:
         result = aggregate_player_season(_df([unknown_row]), min_minutes=900)
         row = result.filter(pl.col("player_id") == 1).row(0, named=True)
         assert row["meets_min_minutes"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestChunkBSeasonColumns — Chunk B column presence and invariants
+# ---------------------------------------------------------------------------
+
+class TestChunkBSeasonColumns:
+    """
+    ADR 002 §25–27: xg_assisted, xg_assisted_direct, and the four entry
+    columns must be present in the season output with per-90 companions,
+    and must obey the xg_assisted_direct ≤ xg_assisted invariant.
+    """
+
+    def test_xg_assisted_p90_present(self):
+        rows = [_match_row(player_id=1, xg_assisted=0.5, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        assert "xg_assisted_p90" in result.columns, (
+            "xg_assisted must have a per-90 companion column"
+        )
+
+    def test_xg_assisted_direct_p90_present(self):
+        rows = [_match_row(player_id=1, xg_assisted_direct=0.3, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        assert "xg_assisted_direct_p90" in result.columns, (
+            "xg_assisted_direct must have a per-90 companion column"
+        )
+
+    def test_entry_columns_p90_present(self):
+        rows = [_match_row(player_id=1, final_third_entries_pass=3,
+                           box_entries_carry=1, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        for col in ("final_third_entries_pass", "final_third_entries_carry",
+                    "box_entries_pass", "box_entries_carry"):
+            assert f"{col}_p90" in result.columns, (
+                f"{col} must have a per-90 companion column (ADR 002 §27)"
+            )
+
+    def test_xg_assisted_p90_correct_value(self):
+        # 0.9 xGA in 90 min → xg_assisted_p90 = 0.9
+        rows = [_match_row(player_id=1, xg_assisted=0.9, minutes_played=90.0,
+                           minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["xg_assisted_p90"] == pytest.approx(0.9)
+
+    def test_xg_assisted_direct_never_exceeds_xg_assisted_at_season_level(self):
+        """ADR §26: xg_assisted_direct ≤ xg_assisted.  Season sum must respect this."""
+        rows = [
+            _match_row(player_id=1, xg_assisted=0.5, xg_assisted_direct=0.4,
+                       minutes_dm_cm=90.0),
+            _match_row(player_id=1, xg_assisted=0.3, xg_assisted_direct=0.1,
+                       minutes_dm_cm=90.0),
+        ]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["xg_assisted"] == pytest.approx(0.8)
+        assert row["xg_assisted_direct"] == pytest.approx(0.5)
+        assert row["xg_assisted_direct"] <= row["xg_assisted"], (
+            "xg_assisted_direct must never exceed xg_assisted at season level"
+        )
+
+    def test_xg_assisted_p90_null_when_zero_minutes(self):
+        # ADR 002 §5: per-90 must be null for 0-minute rows.
+        rows = [_match_row(player_id=1, xg_assisted=0.3, minutes_played=0.0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["xg_assisted_p90"] is None, (
+            "xg_assisted_p90 must be null when minutes_played == 0"
+        )
+
+    def test_final_third_entries_pass_accumulates_across_matches(self):
+        # Two matches with 5 and 3 entries → season total = 8.
+        rows = [
+            _match_row(player_id=1, final_third_entries_pass=5, minutes_dm_cm=90.0),
+            _match_row(player_id=1, final_third_entries_pass=3, minutes_dm_cm=90.0),
+        ]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["final_third_entries_pass"] == 8
+
+    def test_box_entries_carry_accumulates_across_matches(self):
+        rows = [
+            _match_row(player_id=1, box_entries_carry=2, minutes_dm_cm=90.0),
+            _match_row(player_id=1, box_entries_carry=4, minutes_dm_cm=90.0),
+        ]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["box_entries_carry"] == 6

@@ -22,12 +22,12 @@ A completed pass is progressive if ALL of the following hold:
    pass was not completed and is immediately excluded.
 
 2. The pass does NOT start in the attacking team's own defensive 40%
-   (`start_x < 48.0` yards — first 40% of the 120-yard StatsBomb pitch).
+   (`start_x < 48.0` units — first 40% of the 120-unit StatsBomb pitch).
 
-3. The ball moves ≥ 10 yards closer to the opponent's goal centre
+3. The ball moves ≥ 10 units closer to the opponent's goal centre
    (Euclidean to `(120, 40)`), **OR** the pass **enters** the opponent's
    penalty area from outside it:
-   `not _in_opponent_penalty_area(*start) and _in_opponent_penalty_area(*end)`
+   `not in_opponent_penalty_area(*start) and in_opponent_penalty_area(*end)`
 
    Penalty area bounds: `x ≥ 102, 18 ≤ y ≤ 62`.
 
@@ -49,19 +49,19 @@ return dist_reduction >= threshold or entered_box
 ```
 
 **Why "enters from outside" for the penalty-area OR clause?**
-Without the `not _in_opponent_penalty_area(*start)` guard, a backward or lateral
+Without the `not in_opponent_penalty_area(*start)` guard, a backward or lateral
 pass entirely inside the box would satisfy the OR clause. For example,
 `(110,40) → (108,40)` ends inside the penalty area but is a backward pass with
 negative distance reduction. It must NOT count as progressive. The fix: both start
 AND end must satisfy `start outside box, end inside box`. Passes where both start
-and end are inside the box are judged only by the 10-yard distance rule.
+and end are inside the box are judged only by the 10-unit distance rule.
 
 **This is our own definition.** It is not identical to FBref's:
 
 | Aspect | ElevenIQ | FBref |
 |--------|----------|-------|
-| Distance threshold | 10 **yards** | 10 **metres** (~10.9 yds) — we are slightly more permissive |
-| Start-zone exclusion | start_x < 48 (start only) | both start AND end in defensive 40% |
+| Distance threshold | 10 **units** (~8.75 m) | 10 **metres** (~11.4 units) — FBref is slightly more stringent |
+| Start-zone exclusion | start_x < 48 units (start only) | both start AND end in defensive 40% |
 | Penalty-area OR clause | Yes — but only passes that cross INTO the box | No |
 | Goal kicks | Included (no pass-type knowledge) — caller must filter if needed | Excluded |
 
@@ -74,11 +74,11 @@ receive a `TypeError` at call time rather than silently counting incomplete pass
 
 ### Key constants
 ```python
-DEFENSIVE_40_THRESHOLD_X = 48.0    # first 40% of 120-yard pitch
-OPP_PENALTY_AREA_X       = 102.0   # 18 yards from opponent goal line
-OPP_PENALTY_AREA_Y_MIN   = 18.0    # 22 yards left of goal centre
-OPP_PENALTY_AREA_Y_MAX   = 62.0    # 22 yards right of goal centre
-PROG_PASS_THRESHOLD_YDS  = 10.0
+DEFENSIVE_40_THRESHOLD_X  = 48.0    # first 40% of 120-unit pitch
+OPP_PENALTY_AREA_X        = 102.0   # ~15.75 m from opponent goal line
+OPP_PENALTY_AREA_Y_MIN    = 18.0    # ~15.3 m from left touchline
+OPP_PENALTY_AREA_Y_MAX    = 62.0    # ~15.3 m from right touchline
+PROG_PASS_THRESHOLD_UNITS = 10.0    # renamed from PROG_PASS_THRESHOLD_YDS (Chunk B)
 ```
 
 ---
@@ -92,8 +92,8 @@ PROG_PASS_THRESHOLD_YDS  = 10.0
 
 A carry is progressive if **both** hold:
 
-1. Euclidean distance to the opponent's goal centre decreases by ≥ 5 yards.
-2. The total carry distance (straight line) is ≥ 5 yards.
+1. Euclidean distance to the opponent's goal centre decreases by ≥ 5 units (~4.4 m).
+2. The total carry distance (straight line) is ≥ 5 units (~4.4 m).
 
 ```
 dist_reduction = dist_to_goal(start) - dist_to_goal(end)   # condition 1
@@ -103,8 +103,8 @@ progressive    = dist_reduction >= 5.0 AND carry_length >= 5.0
 
 **This is our own definition.** Carries from any zone of the pitch are eligible —
 there is no start-zone exclusion (unlike progressive passes). FBref uses 5 metres
-(~5.5 yards) for both thresholds; we use 5 yards, making the definition slightly
-more permissive.
+(~5.7 units) for both thresholds; we use 5 units (~4.4 m), making the definition
+slightly more permissive.
 
 The minimum-distance floor (condition 2) prevents near-stationary ball-reception
 touches that happen to shift slightly toward goal from being counted.
@@ -777,27 +777,34 @@ player-DNA feature set.
 
 ## 19. Long-Pass Threshold
 
-A long pass is a pass with `pass.length >= LONG_PASS_THRESHOLD_YDS` (30 yards,
-from `config.py`) **and** `pass.type.name NOT IN {"Corner", "Goal Kick", "Free Kick"}`.
+A long pass is a pass with `pass.length >= LONG_PASS_THRESHOLD_UNITS` (30 units,
+from `config.py`) **and** `pass.type.name NOT IN SET_PIECE_TYPES`
+(`{"Corner", "Goal Kick", "Free Kick", "Kick Off"}`).
 
 **Why the set-piece exclusion?**  76.6% of corner kicks and a large fraction of goal
-kicks exceed 30 yards.  Including them inflates `long_passes_attempted` for wide
+kicks exceed 30 units.  Including them inflates `long_passes_attempted` for wide
 players and GKs relative to central players, biasing the metric as a measure of
-distribution range.
+distribution range.  Kick Off passes are excluded for the same reason: they are
+restarts, not distribution actions.
 
-**Data — La Liga 2015/16:**
+**Chunk B amendment:** "Kick Off" was added to `SET_PIECE_TYPES` when that constant
+was promoted from a local variable in `build_player_match.py` to the shared
+`entries.py` module.  This removed 89 attempted / 88 completed Kick Off long passes
+from the La Liga 2015/16 totals (0.1% of total).
+
+**Data — La Liga 2015/16 (current, after Chunk B):**
 
 | Metric | Value |
 |--------|-------|
-| `long_passes_attempted` (open play + throw-in) | 65,185 |
-| `long_passes_completed` | 37,586 |
-| Completion rate | 57.7% |
+| `long_passes_attempted` (open play + throw-in) | 65,096 |
+| `long_passes_completed` | 37,498 |
+| Completion rate | 57.6% |
 | Share of all passes | 17.8% |
 
-The 30-yard threshold is a conventional round number near the 78th percentile of
+The 30-unit threshold is a conventional round number near the 78th percentile of
 open-play pass lengths.  No external definition is cited; the data-observed share
 is the documented justification.  If a different threshold is required for a future
-data source, change `LONG_PASS_THRESHOLD_YDS` in `config.py`; no pipeline logic
+data source, change `LONG_PASS_THRESHOLD_UNITS` in `config.py`; no pipeline logic
 needs to change.
 
 ---
@@ -914,3 +921,222 @@ that stage.  The threshold value will be revisited and recorded here after Miles
 validation.
 **Decision:** `MIN_AERIAL_CONTESTS = 10` stands for now.  Validation deferred to the
 DNA milestone.
+
+---
+
+## 24. Coordinate Units — Normalised Pitch Units (not yards)
+
+StatsBomb coordinates use a **normalised pitch coordinate system: 120 × 80 units**.
+These are not true yards or metres.
+
+**Approximate conversions** on a standard 105 × 68 m pitch:
+- 1 unit ≈ 0.875 m lengthwise (105 m / 120 units)
+- 1 unit ≈ 0.850 m widthwise (68 m / 80 units)
+
+All distance thresholds in this codebase are expressed in StatsBomb units.
+Any user-facing display must convert to metres using the conversions above.
+The conversions are approximate because real pitch dimensions vary; do not use
+them for precision applications.
+
+**Constant renaming (Chunk B):**
+All `*_YDS` suffixes were renamed to `*_UNITS` in `config.py` and
+`metrics/progressive.py`.  Threshold **values were not changed**; only names changed.
+
+| Old name | New name | Value |
+|---|---|---|
+| `LONG_PASS_THRESHOLD_YDS` | `LONG_PASS_THRESHOLD_UNITS` | 30 |
+| `PROG_PASS_THRESHOLD_YDS` | `PROG_PASS_THRESHOLD_UNITS` | 10.0 |
+| `PROG_CARRY_THRESHOLD_YDS` | `PROG_CARRY_THRESHOLD_UNITS` | 5.0 |
+| `PROG_CARRY_MIN_DIST_YDS` | `PROG_CARRY_MIN_DIST_UNITS` | 5.0 |
+| *(new)* | `XG_ASSISTED_MAX_CARRY_UNITS` | 10.0 |
+
+---
+
+## 25. xG Assisted
+
+**File:** `src/eleveniq/metrics/xg_assisted.py`
+**Function:** `compute_xg_assisted_per_player(events, *, max_carry_units) -> dict[int, tuple[float, float]]`
+
+### Definition
+
+`xg_assisted` for a player = sum of `shot.statsbomb_xg` for all shots in the match
+where `pass.assisted_shot_id` resolves to a pass by that player (pass-side traversal).
+
+**Reconciliation:**  When traversed from the shot side via `shot.key_pass_id`, the
+total xGA is identical.  La Liga 2015/16: 673.0822 xG from both traversals.
+
+**goal_assist and shot_assist:**  In StatsBomb data, `goal_assist` and `shot_assist`
+are mutually exclusive.  Both pass variants carry `assisted_shot_id` — verified on
+100% of the 722 `goal_assist`-only passes in La Liga 2015/16.  The join key
+`assisted_shot_id` is reliable for both types.
+
+**Collinearity (hypothesis for M4):** `xg_assisted` and `key_passes` share the same
+underlying events.  Whether collinearity is severe enough to affect position-group
+percentile ranking is a hypothesis to test at Milestone 4 DNA validation, not a
+confirmed fact.
+
+---
+
+## 26. xG Assisted Direct
+
+**File:** `src/eleveniq/metrics/xg_assisted.py` (same function, second element of returned tuple)
+
+### Definition
+
+Same as §25 `xg_assisted`, with additional constraints on the shooter's actions after
+receiving the pass.  A shot counts as "direct" if ALL of the following hold:
+
+1. The shooter did **not** execute a `Dribble` event between their last
+   `"Ball Receipt*"` (exact StatsBomb event type name, asterisk required) and the Shot.
+2. The **cumulative distance** of all Carry segments in the window from that last
+   "Ball Receipt*" to the Shot (**exclusive on both ends** — the receipt and shot events
+   themselves are not included; only events with `receipt_idx < event_idx < shot_idx`,
+   same `possession_team.id`) is ≤ `XG_ASSISTED_MAX_CARRY_UNITS` (10 units,
+   ~8.75 m lengthwise, from `config.py`).
+3. No Ball Receipt* found before the shot → counted as direct (shooter's first touch
+   was the shot; no carry window exists).
+
+**Cumulative carry rule:** Two carries of 6 units each = 12 total → NOT direct.
+A single carry of 9 units → direct.  Any Dribble by the shooter → NOT direct,
+regardless of carry distance.
+
+**Turnover guard:** Events between the receipt and the shot where
+`possession_team.id ≠ shooter's possession_team.id` are skipped.
+La Liga 2015/16: shot-side == pass-side to 8 decimal places; zero contamination.
+
+**No receipt found:** 6 of 6,485 assisted shots (0.1%) had no preceding
+`"Ball Receipt*"` event for the shooter.  These are counted as direct.
+Logged at `INFO` level by the pipeline.
+
+**Missing shooter identity:** If a shot event is missing `player.id` or `possession`,
+the carry window cannot be determined.  These are credited as direct (conservative
+fallback: cannot prove the shot was indirect).  Logged at `WARNING` level.
+La Liga 2015/16: zero occurrences.
+
+**Missing `statsbomb_xg`:** If a shot event has no `statsbomb_xg` value (`None`),
+the shot is **excluded** from both `xg_assisted` and `xg_assisted_direct`.
+No credit is assigned.  Logged at `WARNING` level.
+La Liga 2015/16: zero occurrences.
+
+**La Liga 2015/16 totals:**
+
+| Metric | Value |
+|---|---|
+| `xg_assisted` | 673.0822 |
+| `xg_assisted_direct` | 567.4899 |
+| Direct fraction | 84.3% |
+| Excluded fraction | 15.7% (105.59 xG) |
+
+**Reference figures (NOT the direct/indirect split):** 47% of assisted shots
+(3,049 / 6,485) had any carry or dribble (no threshold); those shots carried 34.6%
+of xGA (232.91 xG).  After the 10-unit threshold, only 15.7% (105.59 xG) is
+excluded, leaving 567.49 xGA direct.
+
+**Arbitrary threshold:** The 10-unit threshold (~8.75 m) is a design choice with no
+external definition.  This ADR is the authoritative record of its arbitrary nature.
+The threshold is configurable via `XG_ASSISTED_MAX_CARRY_UNITS` in `config.py`.
+
+**Noise note (hypothesis for M4):** `xg_assisted` is event-rare, especially in
+DM-CM.  Whether 900 min is sufficient for stable percentile ranking is a hypothesis
+to test at Milestone 4, not a known fact.
+
+---
+
+## 27. Final-Third and Box Entry Metrics
+
+**File:** `src/eleveniq/metrics/entries.py`
+
+### Shared constant
+
+```python
+SET_PIECE_TYPES: frozenset[str] = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off"})
+```
+
+This constant is shared with the long-pass exclusion (§19).  One definition, one import.
+
+### final_third_entries_pass
+
+A completed pass where:
+- start x < 80.0 (outside the final third)
+- end x ≥ 80.0 (enters the final third)
+- `pass.type.name not in SET_PIECE_TYPES`
+
+Throw-in, Recovery, and Interception passes are **included** — they represent
+territorial progression, not restarts.
+
+**La Liga 2015/16:** 22,454.  Set-piece passes excluded: 1,498.
+
+### final_third_entries_carry
+
+A carry where:
+- start x < 80.0 (outside the final third)
+- end x ≥ 80.0 (enters the final third)
+
+No type exclusion for carries.  **La Liga 2015/16:** 11,902.
+
+### box_entries_pass
+
+A completed pass where:
+- start is NOT in the opponent's penalty area (using `in_opponent_penalty_area` from
+  `metrics/progressive.py`, promoted to public in Chunk B)
+- end IS in the opponent's penalty area (`x ≥ 102, 18 ≤ y ≤ 62`)
+- `pass.type.name not in SET_PIECE_TYPES`
+
+Throw-ins are included (≈4% of pre-exclusion total).  **La Liga 2015/16:** 6,035.
+Set-piece passes excluded: 1,464.
+
+### box_entries_carry
+
+A carry where:
+- start is NOT in the opponent's penalty area
+- end IS in the opponent's penalty area
+
+**La Liga 2015/16:** 3,751.
+
+### Design notes
+
+- **Overlap with progressive passes:** Intentional.  A pass that enters the box
+  satisfies the `entered_box` OR-clause in §1 progressive pass definition.  The two
+  metrics capture different questions (box entries vs. overall progression).  Same
+  precedent as §16 cross/progressive overlap.
+- **Separate columns, not combined:** Pass and carry entries are kept as separate
+  columns.  They capture qualitatively different actions and are expected to have
+  different position-group distributions.
+- **23.7% of box-entry passes (pre-exclusion) are crosses.** (La Liga 2015/16)
+
+---
+
+## Stats-Review Decisions — Chunk B
+
+The following concerns were raised by the stats-reviewer for Chunk B.
+
+**Concern — combined pass+carry column.**
+Reviewer suggested a single `final_third_entries` or `box_entries` column combining
+both pass and carry counts.
+**Decision:** REJECTED.  Pass and carry entries are kept as separate columns.
+The two actions differ in their position-group distribution and tactical meaning.
+A combined column would lose signal.  See §27.
+
+**Concern — xg_assisted_direct possession-chain contamination.**
+Reviewer raised the possibility of events from the opposing team contaminating the
+carry window between receipt and shot.
+**Decision:** ACCEPTED and implemented.  A turnover guard skips any event where
+`possession_team.id ≠ shooter's possession_team.id`.  La Liga 2015/16 verification
+confirmed zero contamination cases (shot-side == pass-side to 8 decimal places).
+
+**Concern — goal_assist passes and assisted_shot_id reliability.**
+Reviewer questioned whether `goal_assist=True` passes always carry `assisted_shot_id`.
+**Decision:** Verified in spike.  722 / 722 goal_assist passes (100%) carry
+`assisted_shot_id`.  No code change needed; documented in §25.
+
+**Concern — xg_assisted noise in DM-CM.**
+Reviewer noted that xg_assisted is event-rare in defensive midfield, potentially
+making per-90 values unstable for percentile ranking.
+**Decision:** Recorded as a hypothesis to test at Milestone 4 DNA validation.
+The 900-min minimum threshold is unchanged.  See §26.
+
+**Concern — percentile inflation from position-group mixing.**
+Reviewer noted that team context (Messi's xGA inflated by being at Barcelona) could
+bias percentiles.
+**Decision:** Position-group percentiles are the primary mitigation.  Team-context
+normalisation is deferred to Milestone 4.  No immediate action required.

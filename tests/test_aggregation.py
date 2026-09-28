@@ -1238,7 +1238,7 @@ class TestAggregateEventsChunkA:
         # A pass that is both >= 30 yards AND has switch=True must increment both
         # long_passes_attempted and switches.  This is not a mutual-exclusion case.
         event = _switch_pass_event(switch=True)
-        # _switch_pass_event uses length=35.0, which is >= LONG_PASS_THRESHOLD_YDS
+        # _switch_pass_event uses length=35.0, which is >= LONG_PASS_THRESHOLD_UNITS
         r = _aggregate_events([event])
         assert r["long_passes_attempted"] == 1, (
             "A 35-yard switch pass must count as a long pass attempted"
@@ -1388,6 +1388,264 @@ class TestAggregateEventsChunkAInvariants:
         assert total == 1, (
             "A null-length pass must increment exactly one of "
             "passes_missing_length or long_passes_attempted"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestAggregateEventsChunkB — entries and Kick Off exclusion (ADR 002 §27)
+# ---------------------------------------------------------------------------
+
+def _entry_pass_event(
+    *,
+    start: list,
+    end: list,
+    pass_type: str | None = None,
+    outcome: str | None = None,
+) -> dict:
+    """Minimal completed (or incomplete) pass with location/end_location."""
+    pass_data: dict = {"end_location": end}
+    if pass_type is not None:
+        pass_data["type"] = {"name": pass_type}
+    if outcome is not None:
+        pass_data["outcome"] = {"name": outcome}
+    return {
+        "type": {"name": "Pass"},
+        "location": start,
+        "pass": pass_data,
+    }
+
+
+def _entry_carry_event(*, start: list, end: list) -> dict:
+    """Minimal Carry event."""
+    return {
+        "type": {"name": "Carry"},
+        "location": start,
+        "carry": {"end_location": end},
+    }
+
+
+class TestAggregateEventsChunkBEntries:
+    """
+    Unit tests for final_third_entries_{pass,carry} and box_entries_{pass,carry}
+    as aggregated in _aggregate_events().  Derived from ADR 002 §27.
+    """
+
+    # -- final_third_entries_pass ----------------------------------------
+
+    def test_completed_pass_into_final_third_counted(self):
+        # Open play, start outside (x=70), end inside (x=85) → entry
+        r = _aggregate_events([_entry_pass_event(start=[70.0, 40.0], end=[85.0, 40.0])])
+        assert r["final_third_entries_pass"] == 1
+
+    def test_incomplete_pass_into_final_third_not_counted(self):
+        # ADR §27: pipeline only counts completed passes (outcome_name is None).
+        r = _aggregate_events([
+            _entry_pass_event(start=[70.0, 40.0], end=[85.0, 40.0], outcome="Incomplete")
+        ])
+        assert r["final_third_entries_pass"] == 0
+
+    def test_corner_pass_into_final_third_excluded(self):
+        # ADR §27: Corner is in SET_PIECE_TYPES → excluded.
+        r = _aggregate_events([
+            _entry_pass_event(start=[70.0, 40.0], end=[85.0, 40.0], pass_type="Corner")
+        ])
+        assert r["final_third_entries_pass"] == 0
+
+    def test_kick_off_pass_into_final_third_excluded(self):
+        # ADR §27 / Chunk B amendment: Kick Off added to SET_PIECE_TYPES.
+        r = _aggregate_events([
+            _entry_pass_event(start=[60.0, 40.0], end=[82.0, 40.0], pass_type="Kick Off")
+        ])
+        assert r["final_third_entries_pass"] == 0
+
+    def test_throw_in_pass_into_final_third_counted(self):
+        # ADR §27: Throw-in not in SET_PIECE_TYPES → included.
+        r = _aggregate_events([
+            _entry_pass_event(start=[70.0, 40.0], end=[85.0, 40.0], pass_type="Throw-in")
+        ])
+        assert r["final_third_entries_pass"] == 1
+
+    def test_pass_both_in_final_third_not_counted(self):
+        # Start already in final third → no entry.
+        r = _aggregate_events([_entry_pass_event(start=[82.0, 40.0], end=[95.0, 40.0])])
+        assert r["final_third_entries_pass"] == 0
+
+    def test_pass_missing_location_not_counted(self):
+        # Passes missing location/end_location must not crash or increment entries.
+        event = {"type": {"name": "Pass"}, "pass": {}}
+        r = _aggregate_events([event])
+        assert r["final_third_entries_pass"] == 0
+
+    # -- final_third_entries_carry ----------------------------------------
+
+    def test_carry_into_final_third_counted(self):
+        r = _aggregate_events([_entry_carry_event(start=[75.0, 40.0], end=[82.0, 40.0])])
+        assert r["final_third_entries_carry"] == 1
+
+    def test_carry_already_in_final_third_not_counted(self):
+        r = _aggregate_events([_entry_carry_event(start=[81.0, 40.0], end=[95.0, 40.0])])
+        assert r["final_third_entries_carry"] == 0
+
+    def test_carry_backward_out_of_final_third_not_counted(self):
+        r = _aggregate_events([_entry_carry_event(start=[85.0, 40.0], end=[70.0, 40.0])])
+        assert r["final_third_entries_carry"] == 0
+
+    # -- box_entries_pass -------------------------------------------------
+
+    def test_completed_pass_into_box_counted(self):
+        # (100, 40) → (105, 40): start outside, end inside penalty area.
+        r = _aggregate_events([_entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0])])
+        assert r["box_entries_pass"] == 1
+
+    def test_incomplete_pass_into_box_not_counted(self):
+        r = _aggregate_events([
+            _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0], outcome="Incomplete")
+        ])
+        assert r["box_entries_pass"] == 0
+
+    def test_corner_into_box_excluded(self):
+        r = _aggregate_events([
+            _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0], pass_type="Corner")
+        ])
+        assert r["box_entries_pass"] == 0
+
+    def test_free_kick_into_box_excluded(self):
+        r = _aggregate_events([
+            _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0], pass_type="Free Kick")
+        ])
+        assert r["box_entries_pass"] == 0
+
+    def test_throw_in_into_box_counted(self):
+        # ADR §27: throw-ins included (≈4% of pre-exclusion total).
+        r = _aggregate_events([
+            _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0], pass_type="Throw-in")
+        ])
+        assert r["box_entries_pass"] == 1
+
+    def test_pass_start_inside_box_not_counted(self):
+        # Start already inside the penalty area → NOT an entry.
+        r = _aggregate_events([_entry_pass_event(start=[103.0, 40.0], end=[110.0, 40.0])])
+        assert r["box_entries_pass"] == 0
+
+    # -- box_entries_carry ------------------------------------------------
+
+    def test_carry_into_box_counted(self):
+        r = _aggregate_events([_entry_carry_event(start=[100.0, 40.0], end=[105.0, 40.0])])
+        assert r["box_entries_carry"] == 1
+
+    def test_carry_start_inside_box_not_counted(self):
+        r = _aggregate_events([_entry_carry_event(start=[103.0, 40.0], end=[110.0, 40.0])])
+        assert r["box_entries_carry"] == 0
+
+    def test_carry_end_outside_y_range_not_counted(self):
+        # end_y > 62 → outside penalty area.
+        r = _aggregate_events([_entry_carry_event(start=[100.0, 40.0], end=[105.0, 70.0])])
+        assert r["box_entries_carry"] == 0
+
+    # -- independence and accumulation ------------------------------------
+
+    def test_final_third_entry_can_also_be_box_entry(self):
+        # A pass from x=70 to x=105 enters both the final third and the box.
+        # Both counters must increment independently.
+        r = _aggregate_events([_entry_pass_event(start=[70.0, 40.0], end=[105.0, 40.0])])
+        assert r["final_third_entries_pass"] == 1
+        assert r["box_entries_pass"] == 1
+
+    def test_multiple_entries_accumulate(self):
+        events = [
+            _entry_pass_event(start=[70.0, 40.0], end=[85.0, 40.0]),   # ft entry only
+            _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0]),  # box entry only
+            _entry_carry_event(start=[75.0, 40.0], end=[82.0, 40.0]),   # ft carry entry
+            _entry_carry_event(start=[100.0, 40.0], end=[104.0, 40.0]), # box carry entry
+        ]
+        r = _aggregate_events(events)
+        assert r["final_third_entries_pass"] == 1
+        assert r["box_entries_pass"] == 1
+        assert r["final_third_entries_carry"] == 1
+        assert r["box_entries_carry"] == 1
+
+
+class TestAggregateEventsChunkBInvariants:
+    """
+    Spec-derived invariants for the six new Chunk B columns.
+    """
+
+    def test_empty_events_chunk_b_fields_all_zero(self):
+        # The four entry fields (tracked by _aggregate_events) must be present and 0.
+        # xg_assisted / xg_assisted_direct are merged separately in _process_match
+        # and are NOT returned by _aggregate_events — they are not tested here.
+        result = _aggregate_events([])
+        for field in (
+            "final_third_entries_pass", "final_third_entries_carry",
+            "box_entries_pass", "box_entries_carry",
+        ):
+            assert field in result, f"Field {field!r} missing from _aggregate_events output"
+            assert result[field] == 0, (
+                f"Expected {field}=0 for empty events but got {result[field]}"
+            )
+
+    def test_kick_off_excluded_from_long_passes_chunk_b(self):
+        # ADR §19 Chunk B amendment: Kick Off was added to SET_PIECE_TYPES.
+        # A Kick Off pass >= 30 units must NOT count as long_passes_attempted.
+        r = _aggregate_events([_long_pass_event(length=35.0, pass_type="Kick Off")])
+        assert r["long_passes_attempted"] == 0, (
+            "ADR §19 Chunk B: 'Kick Off' added to SET_PIECE_TYPES must exclude "
+            "long Kick Off passes from long_passes_attempted"
+        )
+
+    def test_pass_from_outside_final_third_into_box_counts_in_both_columns(self):
+        # A pass from outside the final third (x<80) that lands inside the penalty
+        # area (x>=102, 18<=y<=62) must count in BOTH final_third_entries_pass AND
+        # box_entries_pass.  The two metrics are independent but overlap is legal.
+        r = _aggregate_events([_entry_pass_event(start=[70.0, 40.0], end=[105.0, 40.0])])
+        assert r["final_third_entries_pass"] == 1, (
+            "Pass from x<80 to box must count as a final-third entry"
+        )
+        assert r["box_entries_pass"] == 1, (
+            "Pass from outside box to inside box must count as a box entry"
+        )
+
+    def test_goal_kick_into_box_excluded_from_box_entries_pass(self):
+        # Goal Kick is in SET_PIECE_TYPES → excluded from box_entries_pass.
+        # This is a box_entries_pass-specific regression: the Chunk B code checks
+        # pass_type_name not in SET_PIECE_TYPES inside the outcome_name is None branch.
+        r = _aggregate_events([
+            _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0], pass_type="Goal Kick")
+        ])
+        assert r["box_entries_pass"] == 0, (
+            "Goal Kick is in SET_PIECE_TYPES and must be excluded from box_entries_pass"
+        )
+
+    def test_carry_missing_end_location_does_not_increment_entries(self):
+        # A Carry event with end_location absent must not crash and must not
+        # increment any entry counter (the pipeline guards with `if loc and end_loc`).
+        event = {
+            "type": {"name": "Carry"},
+            "location": [75.0, 40.0],
+            "carry": {},   # end_location key absent
+        }
+        r = _aggregate_events([event])
+        assert r["final_third_entries_carry"] == 0, (
+            "Carry with missing end_location must not increment final_third_entries_carry"
+        )
+        assert r["box_entries_carry"] == 0, (
+            "Carry with missing end_location must not increment box_entries_carry"
+        )
+
+    def test_carry_missing_location_does_not_increment_entries(self):
+        # A Carry event with location absent must not crash and must not increment
+        # any entry counter.
+        event = {
+            "type": {"name": "Carry"},
+            # location key absent
+            "carry": {"end_location": [82.0, 40.0]},
+        }
+        r = _aggregate_events([event])
+        assert r["final_third_entries_carry"] == 0, (
+            "Carry with missing location must not increment final_third_entries_carry"
+        )
+        assert r["box_entries_carry"] == 0, (
+            "Carry with missing location must not increment box_entries_carry"
         )
 
 

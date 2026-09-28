@@ -2,6 +2,7 @@
 import math
 import pytest
 from eleveniq.metrics.progressive import (
+    in_opponent_penalty_area,
     is_progressive_pass,
     is_progressive_carry,
     OPPONENT_GOAL,
@@ -9,6 +10,9 @@ from eleveniq.metrics.progressive import (
     OPP_PENALTY_AREA_X,
     OPP_PENALTY_AREA_Y_MIN,
     OPP_PENALTY_AREA_Y_MAX,
+    PROG_PASS_THRESHOLD_UNITS,
+    PROG_CARRY_THRESHOLD_UNITS,
+    PROG_CARRY_MIN_DIST_UNITS,
 )
 
 
@@ -207,3 +211,105 @@ class TestIsProgressiveCarry:
         end = (66.0, 40.0)
         assert is_progressive_carry(start, end, min_distance=5.0) is True
         assert is_progressive_carry(start, end, min_distance=7.0) is False
+
+
+# ---------------------------------------------------------------------------
+# in_opponent_penalty_area — promoted to public API in Chunk B (ADR 002 §27)
+# Imported by entries.py as the canonical box-boundary predicate.
+# ---------------------------------------------------------------------------
+
+class TestInOpponentPenaltyArea:
+    """
+    in_opponent_penalty_area was renamed from _in_opponent_penalty_area in
+    Chunk B so entries.py can import it.  Its boundary logic is the shared
+    definition used by is_progressive_pass, is_box_entry_pass, and is_box_entry_carry.
+    Tests here ensure the public name is correct and the boundary conditions
+    are exactly as specified in ADR 002 §1 / §27.
+    """
+
+    def test_centre_of_box_is_inside(self):
+        # (110, 40) is clearly inside the penalty area
+        assert in_opponent_penalty_area(110.0, 40.0) is True
+
+    def test_at_x_boundary_is_inside(self):
+        # x == 102.0 exactly → inside (>= 102)
+        assert in_opponent_penalty_area(102.0, 40.0) is True
+
+    def test_just_outside_x_boundary_is_outside(self):
+        # x == 101.9 → outside
+        assert in_opponent_penalty_area(101.9, 40.0) is False
+
+    def test_at_y_min_boundary_is_inside(self):
+        # y == 18.0 exactly → inside (>= 18)
+        assert in_opponent_penalty_area(110.0, 18.0) is True
+
+    def test_just_below_y_min_boundary_is_outside(self):
+        # y == 17.9 → outside
+        assert in_opponent_penalty_area(110.0, 17.9) is False
+
+    def test_at_y_max_boundary_is_inside(self):
+        # y == 62.0 exactly → inside (<= 62)
+        assert in_opponent_penalty_area(110.0, 62.0) is True
+
+    def test_just_above_y_max_boundary_is_outside(self):
+        # y == 62.1 → outside
+        assert in_opponent_penalty_area(110.0, 62.1) is False
+
+    def test_corner_of_box_is_inside(self):
+        # All four corners of the penalty area must be inside
+        assert in_opponent_penalty_area(102.0, 18.0) is True
+        assert in_opponent_penalty_area(102.0, 62.0) is True
+        assert in_opponent_penalty_area(120.0, 18.0) is True
+        assert in_opponent_penalty_area(120.0, 62.0) is True
+
+    def test_midfield_is_outside(self):
+        assert in_opponent_penalty_area(60.0, 40.0) is False
+
+    def test_own_goal_area_is_outside(self):
+        assert in_opponent_penalty_area(5.0, 40.0) is False
+
+
+# ---------------------------------------------------------------------------
+# Constant-rename guard — ADR 002 §24 (Chunk B)
+# Ensures *_UNITS names are present and *_YDS names are gone.
+# ---------------------------------------------------------------------------
+
+class TestChunkBConstantRenames:
+    """
+    ADR 002 §24: all *_YDS constants in progressive.py were renamed to *_UNITS.
+    Values were not changed.  These tests guard against accidental revert or
+    parallel-name ambiguity.
+    """
+
+    def test_prog_pass_threshold_units_value(self):
+        assert PROG_PASS_THRESHOLD_UNITS == 10.0
+
+    def test_prog_carry_threshold_units_value(self):
+        assert PROG_CARRY_THRESHOLD_UNITS == 5.0
+
+    def test_prog_carry_min_dist_units_value(self):
+        assert PROG_CARRY_MIN_DIST_UNITS == 5.0
+
+    def test_old_yds_names_not_importable(self):
+        import eleveniq.metrics.progressive as prog
+        assert not hasattr(prog, "PROG_PASS_THRESHOLD_YDS"), (
+            "PROG_PASS_THRESHOLD_YDS must be removed; renamed to PROG_PASS_THRESHOLD_UNITS"
+        )
+        assert not hasattr(prog, "PROG_CARRY_THRESHOLD_YDS"), (
+            "PROG_CARRY_THRESHOLD_YDS must be removed; renamed to PROG_CARRY_THRESHOLD_UNITS"
+        )
+        assert not hasattr(prog, "PROG_CARRY_MIN_DIST_YDS"), (
+            "PROG_CARRY_MIN_DIST_YDS must be removed; renamed to PROG_CARRY_MIN_DIST_UNITS"
+        )
+
+    def test_in_opponent_penalty_area_is_public(self):
+        # The function must be importable without a leading underscore.
+        # entries.py depends on this public name.
+        import eleveniq.metrics.progressive as prog
+        assert hasattr(prog, "in_opponent_penalty_area"), (
+            "in_opponent_penalty_area must be public (no leading underscore) "
+            "so entries.py can import it"
+        )
+        assert not hasattr(prog, "_in_opponent_penalty_area"), (
+            "_in_opponent_penalty_area (private) must be removed after Chunk B rename"
+        )

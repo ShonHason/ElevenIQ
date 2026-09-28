@@ -27,10 +27,18 @@ from eleveniq.metrics.positions import (
     primary_position_group,
 )
 from eleveniq.metrics.aerials import has_aerial_won, is_aerial_lost
+from eleveniq.metrics.entries import (
+    SET_PIECE_TYPES,
+    is_final_third_entry_pass,
+    is_final_third_entry_carry,
+    is_box_entry_pass,
+    is_box_entry_carry,
+)
 from eleveniq.metrics.progressive import is_progressive_pass, is_progressive_carry
 from eleveniq.metrics.shots import is_shot_on_target
 from eleveniq.metrics.tackles import is_tackle_won
-from eleveniq.config import LONG_PASS_THRESHOLD_YDS
+from eleveniq.metrics.xg_assisted import compute_xg_assisted_per_player
+from eleveniq.config import LONG_PASS_THRESHOLD_UNITS, XG_ASSISTED_MAX_CARRY_UNITS
 from eleveniq.pipeline.quality_report import (
     DISMISSAL_TOLERANCE_MINUTES,
     check_dismissal_event_quality,
@@ -101,9 +109,13 @@ _SCHEMA: dict[str, type] = {
     "long_passes_completed": pl.Int32,
     "passes_missing_length": pl.Int32,
     "switches": pl.Int32,
+    "xg_assisted": pl.Float64,
+    "xg_assisted_direct": pl.Float64,
+    "final_third_entries_pass": pl.Int32,
+    "final_third_entries_carry": pl.Int32,
+    "box_entries_pass": pl.Int32,
+    "box_entries_carry": pl.Int32,
 }
-
-_SET_PIECE_TYPES: frozenset[str] = frozenset({"Corner", "Goal Kick", "Free Kick"})
 
 
 def _group_minutes_to_columns(group_minutes: dict[str, float]) -> dict[str, float]:
@@ -167,6 +179,10 @@ def _aggregate_events(player_events: list[dict]) -> dict:
     long_passes_completed = 0
     passes_missing_length = 0
     switches = 0
+    final_third_entries_pass = 0
+    final_third_entries_carry = 0
+    box_entries_pass = 0
+    box_entries_carry = 0
 
     for event in player_events:
         event_type = event.get("type", {}).get("name", "")
@@ -205,15 +221,23 @@ def _aggregate_events(player_events: list[dict]) -> dict:
                 if outcome_name is None:
                     crosses_completed += 1
 
+            pass_type_name: str | None = (pass_data.get("type") or {}).get("name")
             pass_length = pass_data.get("length")
             if pass_length is None:
                 passes_missing_length += 1
             else:
-                pass_type_name = (pass_data.get("type") or {}).get("name")
-                if pass_length >= LONG_PASS_THRESHOLD_YDS and pass_type_name not in _SET_PIECE_TYPES:
+                if pass_length >= LONG_PASS_THRESHOLD_UNITS and pass_type_name not in SET_PIECE_TYPES:
                     long_passes_attempted += 1
                     if outcome_name is None:
                         long_passes_completed += 1
+
+            if outcome_name is None and loc and end_loc:
+                start = (loc[0], loc[1])
+                end = (end_loc[0], end_loc[1])
+                if is_final_third_entry_pass(start, end, outcome=outcome_name, pass_type_name=pass_type_name):
+                    final_third_entries_pass += 1
+                if is_box_entry_pass(start, end, outcome=outcome_name, pass_type_name=pass_type_name):
+                    box_entries_pass += 1
 
             if pass_data.get("switch"):
                 switches += 1
@@ -240,8 +264,14 @@ def _aggregate_events(player_events: list[dict]) -> dict:
             loc = event.get("location")
             end_loc = carry_data.get("end_location")
             if loc and end_loc:
-                if is_progressive_carry((loc[0], loc[1]), (end_loc[0], end_loc[1])):
+                start = (loc[0], loc[1])
+                end = (end_loc[0], end_loc[1])
+                if is_progressive_carry(start, end):
                     progressive_carries += 1
+                if is_final_third_entry_carry(start, end):
+                    final_third_entries_carry += 1
+                if is_box_entry_carry(start, end):
+                    box_entries_carry += 1
 
         elif event_type == "Duel":
             duel_data = event.get("duel") or {}
@@ -333,6 +363,10 @@ def _aggregate_events(player_events: list[dict]) -> dict:
         "long_passes_completed": long_passes_completed,
         "passes_missing_length": passes_missing_length,
         "switches": switches,
+        "final_third_entries_pass": final_third_entries_pass,
+        "final_third_entries_carry": final_third_entries_carry,
+        "box_entries_pass": box_entries_pass,
+        "box_entries_carry": box_entries_carry,
     }
 
 
@@ -354,6 +388,11 @@ def _process_match(
     events = load_events(match_id, data_root)
     lineups = load_lineups(match_id, data_root)
     match_duration = compute_match_duration(events)
+
+    # Compute xg_assisted per player (requires full match event list for cross-player lookup)
+    xga_by_player = compute_xg_assisted_per_player(
+        events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS
+    )
 
     # Build per-player event index
     player_events: dict[int, list[dict]] = {}
@@ -445,6 +484,7 @@ def _process_match(
                         **quality_issue,
                     })
 
+            xga, xga_direct = xga_by_player.get(player_id, (0.0, 0.0))
             team_entries.append((
                 {
                     "match_id": match_id,
@@ -462,6 +502,8 @@ def _process_match(
                     "started_inferred": False,
                     **_group_minutes_to_columns(group_minutes),
                     **_aggregate_events(player_events.get(player_id, [])),
+                    "xg_assisted": xga,
+                    "xg_assisted_direct": xga_direct,
                 },
                 positions,
             ))
