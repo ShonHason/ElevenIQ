@@ -83,8 +83,10 @@ future-potential prediction. Do not add these without explicit re-scoping.
   decision goes into docs/decisions/ as a numbered ADR (e.g. 001-data-source.md).
 - **Challenge weak assumptions.** If a design choice is questionable, say so rather than
   implementing it silently.
-- **At the end of each chunk, run /finish-chunk. Never commit outside it.**
----
+- **At the end of each chunk, run /finish-chunk. Never commit outside it**, with one
+  exception: a commit that touches only docs/, spikes/ and/or CLAUDE.md (no src/ or
+  tests/ changes) may be committed directly after explicit user approval, without
+  /finish-chunk. Everything else still goes through /finish-chunk.
 
 ---
 
