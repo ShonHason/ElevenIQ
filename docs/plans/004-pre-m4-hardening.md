@@ -1,0 +1,225 @@
+# Plan 004: Pre-M4 hardening
+
+Status: planned; decisions on §8 assists and the downloader CLI recorded 2026-09-29. Three chunks: H1 (code), H2 (verification), H3 (docs/tests).
+H1 and H2 each end with `/finish-chunk`. H3 changes docs and tests. Because it touches
+`tests/`, it also goes through `/finish-chunk`: the docs-only commit exception in CLAUDE.md
+does not cover `tests/`.
+
+## Context
+The pre-M4 review ([docs/reviews/pre-m4-review.md](../reviews/pre-m4-review.md)) found four
+kinds of problem:
+- silent defaults that turn missing or unexpected data into plausible values;
+- core DNA metrics that are only checked against the pipeline itself;
+- ADR/code drift;
+- stale commands.
+
+M4 builds percentiles on these columns, so they need to be trustworthy first.
+This plan fixes review items 1, 2, 3 and 5-13. The review items are cited below as R1…R22.
+
+**Out of scope:**
+- **R4** (the per-stint vs season-total minutes gate, and `is_primary_stint` for cross-league movers).
+  These decisions are **M4's first task**, recorded in an ADR before any cohort code.
+- **Notes R14-R22.** The exceptions are R15 (the period-5 filter is in H1) and R17 (the wording
+  fix is in H3). The others stay as notes; M4 can pick up R16 (npxG) and R18 (position purity).
+- **Metric definitions.** No definition changes. The one possible exception is H1.3, which has a
+  stop condition.
+
+## Principles
+- **Counters and fail-loud checks do not change the data.** They live in the per-league quality report,
+  not in parquet columns, so `player_match_stats` keeps its schema.
+- **Failure follows the existing pattern.** A failing check raises a new
+  `DataQualityError(RuntimeError)`, and the part is not written. This is the same pattern as
+  `StarterCrossCheckError` (build_player_match.py:686-694).
+- **Mismatches are reported, not tuned away.** In H2, if a spike and the pipeline disagree, stop
+  and report. Do not adjust either side.
+
+---
+
+## H1: pipeline hardening (code)
+
+**Before starting:** run the **stats-reviewer** on H1.3 and H1.5. H1.3 may change a ratio
+definition, and H1.5 introduces an allow-list; CLAUDE.md requires the review before implementation.
+
+**Baseline:** copy the current parquets to the scratchpad before any code change:
+`data/interim/player_match/*.parquet`, `player_match_stats.parquet` and `player_season_stats.parquet`.
+
+### H1.1 Single UNKNOWN rule (R1)
+- In `build_player_match`, collect every team-match row with `minutes_unknown > 0`, together with its
+  `position_raw` values. The build fails on any such row.
+- `aggregate_player_season` adds `is_outfield = position_group ∈ OUTFIELD_GROUPS`
+  (import from `metrics/positions.py`).
+- The docs then state one rule: "cohorts filter on `is_outfield`; UNKNOWN minutes fail the build".
+  Update ADR 002 §4 (remove "surfaces in the quality report"), ADR 002 §12 (replace
+  `!= 'GK'` with `is_outfield`) and ADR 003 §5 (the UNKNOWN gate is now this column).
+  Also update the docstring at positions.py:11.
+- Keep `test_no_unknown_positions_in_pipeline_output`, and add a season-level
+  `minutes_unknown == 0` assertion.
+
+### H1.2 Unknown shot/tackle outcomes and duel types (R2)
+- `_aggregate_events` counts:
+  - shot outcomes ∉ `KNOWN_SHOT_OUTCOMES`;
+  - tackle outcomes ∉ `KNOWN_TACKLE_OUTCOMES`;
+  - duel types ∉ `KNOWN_DUEL_TYPES`.
+- Each counter records the offending values. The per-league report includes them, and the build fails when
+  any counter is above 0.
+- Fix the shots.py and tackles.py docstrings so they describe the real check.
+
+### H1.3 Unknown-outcome passes in the cross and long-pass denominators (R5)
+- **Step 1, measure only.** Count unknown-outcome crosses and long passes per league in the
+  quality report.
+- **If both counts are 0 in every league:** the denominators are already correct. Add the counters
+  as a fail-loud guard (build fails when > 0) and record the rule in ADR 002 §14/§15/§19.
+  Outputs stay identical.
+- **If either count is above 0:** fixing the denominators changes `cross_completion_pct` /
+  `long_pass_completion_pct` and adds `*_unknown_outcome` columns. **STOP and report the counts and
+  the per-player effect** before changing anything. That would be a definition change, and it needs
+  an ADR amendment and your sign-off.
+  (ADR 002 §14: 0.7% of La Liga passes have an unknown outcome, so a non-zero count is plausible.)
+
+### H1.4 Shots with missing xG (R6)
+- Keep the existing `shots_missing_xg` column.
+- The build fails when any league sums to > 0. Expected: 0.
+
+### H1.5 Dropped-event and missing-location counters (R7)
+- **Dropped events.** For every event with a `player.id` that does not end up in an output row, count it
+  by `(event type, reason)`. The two reasons are "not in lineup" and "0 minutes".
+- **This counter is not expected to be 0.** ADR 002 §3 (L198-203) records bench players with
+  Bad Behaviour red cards (3 in La Liga). Allow-list exactly that case: a `Bad Behaviour` event by
+  a 0-minute lineup player. Any other dropped event fails the build.
+  The stats-reviewer confirms the allow-list before implementation.
+- **Missing locations.** Count `Pass` and `Carry` events missing `location` or `end_location`.
+  The build fails when the count is > 0.
+
+### H1.6 `compute_match_duration` raises (R8)
+- Raise `ValueError` when no events have period ≤ 4.
+- Require the `period` key; drop the `.get(..., 1)` default.
+- Update ADR 002 §3 (L128-130) and `tests/test_minutes.py` (the 90.0 fallback test becomes a raise test).
+
+### H1.7 Period-5 filter (R15)
+- In `_process_match`, drop `period == 5` events before building the per-player index and before
+  `compute_xg_assisted_per_player`. Dismissal lookup keeps the full list, so a shootout card still
+  clamps nothing (all stints have ended).
+- Add a unit test: a shootout Shot must not count in `shots` or `goals`.
+
+### H1.8 Downloader CLI (decided 2026-09-29)
+- Add a small `__main__` to `statsbomb/downloader.py`.
+  - With no arguments, it downloads every entry in `COMPETITION_SEASONS`.
+  - `--competition-id` / `--season-id` select a single league. An unconfigured pair exits with an
+    error, mirroring `build_player_match._select`.
+- `download_competitions()` currently ignores `data_root` (downloader.py:43-46). Leave it as is
+  unless the CLI needs it.
+- Add a unit test for argument selection. Nothing is downloaded in tests.
+
+### H1 verification
+1. Run the fast suite, with new unit tests for every counter (fail when > 0; allow-list honoured).
+2. Rebuild all leagues with `build_player_match --force`, then run `build_player_season`.
+3. Every counter is 0, except the allow-listed bench-card drops. Report those per league.
+4. **Identical outputs:**
+   - Compare the new parquets with the baseline using `DataFrame.equals` on the same row order.
+     All `player_match` parts and the combined file must be equal.
+   - The season file must be equal once the new `is_outfield` column is dropped.
+   - `sha256` is also compared for the `player_match` files, as secondary evidence only: parquet
+     writer metadata can differ, so a byte mismatch that has frame equality is reported but not treated as a failure.
+5. Any value difference means STOP and report.
+6. Run the integration suite; it must stay green.
+7. `/finish-chunk`.
+
+---
+
+## H2: independent verification (spikes → reference files → tests)
+
+### Scope
+Raw-JSON reference totals, per league, for these columns (R3):
+`minutes_played, shots, xg, passes_attempted, passes_completed, progressive_passes,
+progressive_carries, key_passes, assists, tackles_attempted, tackles_won, dribbles_attempted,
+dribbles_completed, interceptions, clearances, blocks, fouls_committed, fouls_won, carries`.
+
+### Approach
+- Add a new spike, `spikes/verify_core_metrics.py`.
+  - It uses the same CLI and helpers as the existing spikes (`reference_totals.py`), is stdlib only,
+    and **never imports `eleveniq`**.
+  - Every definition is re-implemented from the ADR text (ADR 002 §1, §2, §3, §8, §13 and
+    `_aggregate_events` semantics as documented), not copied from `src/`.
+- It writes a new `"core"` section into each of the 5 files in `tests/fixtures/reference_totals/`.
+  The existing sections stay untouched.
+- **Minutes also get a structural check that does not depend on a second implementation.**
+  Per team-match, summed minutes ≤ 11 × match duration (+ tolerance). Summed across the league,
+  they equal Σ(11 × duration) minus the dismissal losses, within a stated tolerance. The spike fails when
+  this is violated. That makes the minutes reference more than "the same rule coded twice".
+- **Limitation, stated honestly:** for the derived metrics (progressive, key passes), the spike is a
+  second implementation of the same written spec. It catches coding errors and silent drops, not
+  a wrong definition.
+- `TestIntegration` gets `test_core_metrics_reconcile`, parametrised over the 5 references:
+  - the season sum equals the reference (exact for counts, `abs=0.001` for xg and minutes);
+  - the match sum equals the season sum.
+- `test_reference_totals.py` adds the unit check "every reference file has a `core` section".
+
+### Stop rule
+If a spike total and the pipeline disagree in any league, **STOP and report** the column, the league, both
+values and a sample of the differing matches. Do not change the spike or the pipeline to make them agree.
+The resolution is your call.
+
+### H2 verification
+Run the spike for all 5 leagues (the goals reconciliation must pass), then the integration suite
+(green), then `/finish-chunk`.
+
+---
+
+## H3: docs and tests (drift and self-checks)
+
+### ADR 002
+- **§1 L72:** quote the real outcome expression (`(pass_data.get("outcome") or {}).get("name")`).
+- **§6 header (L293-296):** replace "None of this is in the current code" with "Implemented in
+  build_player_season.py".
+- **§6c (L343-345):** xA is extracted as `xg_assisted` (§25).
+- **§6e:**
+  - an absent `from_period` raises (it no longer defaults to 1);
+  - record the Starting XI cross-check that fails the build (from plan 003 L122-124).
+- **§8 assists (decided 2026-09-29):** keep `assists_p90`. Amend §8 to read "stored with a
+  p90 column; excluded from DNA per §6c", the same treatment as goals. No code change.
+- **§26 wording:** crediting unknown-shooter shots as direct is a *permissive* fallback, not a conservative one,
+  and it had 0 occurrences. Mirror the change in the xg_assisted.py:114-119 comment and docstring.
+
+### Stale docstrings
+- minutes.py:76-80 (`compute_player_minutes` has its own loop).
+- quality_report.py:22-23 (the dismissal fix is already applied).
+- Remove the now-inaccurate claims left after H1 in shots.py, tackles.py and positions.py.
+
+### CLAUDE.md
+- **Add these commands:** `build_player_season`; the downloader CLI from H1.8.
+- **Integration-test prerequisites:** they need `data/raw/`, `data/interim/` and `data/processed/`.
+- **Stored grain:** player-team-competition-season.
+- **Group names:** `FB-WB` and `DM-CM`.
+- **Minutes default:** 900.
+- Fix the `test_positions.py:453` skip message (`src.cli build-match` does not exist).
+
+### Self-checking tests (R12)
+- **test_aggregation.py L61-335** (`TestPassCompletion`, `TestPer90SafeDivision`,
+  `TestMultiTeamAggregationKey`): rewrite them to call `aggregate_player_season`, or delete the ones
+  already covered in test_build_player_season.py. Close the milestones.md:99-101 tech-debt item.
+- **test_quality_report.py:407-451:** add an independent oracle. The number of dismissed in-parquet
+  players per league is counted by a spike from raw cards (a new `dismissals` field in the `base`
+  section; ADR 002 §3: 109 La Liga cards, 3 of them bench). Keep the existing test as a secondary check.
+  The spike runs with H2's spike, so this sub-item's fixture change lands in H2.
+- **test_season_identity_edges.py:225-239:** additionally assert the ADR-recorded counts:
+  - 68 `multi_team_season` player_ids (ADR 002 §28);
+  - 47 `multi_competition_season` player_ids / 94 rows (ADR 003 §7);
+  - 2,279 pool rows (ADR 003 §5).
+
+### H3 verification
+Run the fast and integration suites (green), grep the old stale phrases (expect no hits), then
+`/finish-chunk`.
+
+---
+
+## Risks
+- **H1.3 may not be output-neutral.** It has a stop condition.
+- **H1.5 allow-list scope.** If other dropped-event types show up (e.g. events by a player missing from
+  the lineup), the build fails by design. Report them; do not widen the allow-list without a decision.
+- **Parquet bytes.** Byte equality can fail on writer metadata alone. Frame equality is the gate.
+- **H2 is only as independent as the spec.** The minutes structural check and the goals-vs-scores
+  reconciliation are the only truly external oracles.
+
+## Order
+H1 → H2 → H3. H2 builds its references after H1, so any H1 fail-loud check that fires on real data
+is resolved first. Each chunk stops for sign-off before the next begins.
