@@ -11,10 +11,17 @@ Design notes
   other in the output, per ADR 002 §6b.  Per-90 values are not computed here.
 - Players with minutes_played == 0 (unused substitutes) are excluded from output.
 - One dismissal quality report is collected per season run and returned separately.
+  It also carries the fail-loud data checks (plan 004 H1): UNKNOWN-position
+  minutes, unknown shot/tackle outcomes and duel types, Pass/Carry events with
+  missing locations, shots missing xG, and dropped events. Any of these fails the
+  build (DataQualityError) except the allow-listed bench-card drop
+  (ALLOWED_DROPPED_EVENT_TYPES).
+- Penalty-shootout events (period 5) are removed before any metric is counted.
 """
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from pathlib import Path
 
 import polars as pl
@@ -22,6 +29,8 @@ import polars as pl
 from eleveniq.metrics.minutes import compute_match_duration
 from eleveniq.metrics.positions import (
     POSITION_GROUP_COLUMNS,
+    UNKNOWN_POSITION_GROUP,
+    assign_position_group,
     compute_minutes_per_group,
     compute_minutes_per_raw_position,
     primary_position_group,
@@ -35,8 +44,8 @@ from eleveniq.metrics.entries import (
     is_box_entry_carry,
 )
 from eleveniq.metrics.progressive import is_progressive_pass, is_progressive_carry
-from eleveniq.metrics.shots import is_shot_on_target
-from eleveniq.metrics.tackles import is_tackle_won
+from eleveniq.metrics.shots import KNOWN_SHOT_OUTCOMES, is_shot_on_target
+from eleveniq.metrics.tackles import KNOWN_DUEL_TYPES, KNOWN_TACKLE_OUTCOMES, is_tackle_won
 from eleveniq.metrics.xg_assisted import compute_xg_assisted_per_player
 from eleveniq.config import (
     COMPETITION_SEASONS,
@@ -44,6 +53,7 @@ from eleveniq.config import (
     SOURCE_STATSBOMB,
     XG_ASSISTED_MAX_CARRY_UNITS,
     CompetitionSeason,
+    select_competition_seasons,
 )
 from eleveniq.pipeline.quality_report import (
     DISMISSAL_TOLERANCE_MINUTES,
@@ -72,6 +82,39 @@ class StarterCrossCheckError(RuntimeError):
 
 class MatchProcessingError(RuntimeError):
     """One or more matches of a competition-season raised during processing."""
+
+
+class DataQualityError(RuntimeError):
+    """A fail-loud data check found a value the pipeline would otherwise count silently."""
+
+
+# Event-level checks recorded by _aggregate_events. Each key is an issue name in
+# the quality report; the build fails when any of them occurs.
+EVENT_QUALITY_ISSUES = frozenset({
+    "unknown_shot_outcome",
+    "unknown_tackle_outcome",
+    "unknown_duel_type",
+    "pass_missing_location",
+    "carry_missing_location",
+})
+
+# Pass outcome StatsBomb records when the result is unknown. Such passes stay in
+# the attempted counts but leave the completion denominators (ADR 002 §14, §15, §19).
+UNKNOWN_PASS_OUTCOME = "Unknown"
+
+# Dropped events (a player.id with no output row) that do not fail the build:
+# cards shown to a bench player who never entered the pitch (empty positions
+# array). ADR 002 §3.
+ALLOWED_DROPPED_EVENT_TYPES = frozenset({"Bad Behaviour"})
+DROPPED_NOT_IN_LINEUP = "not_in_lineup"
+DROPPED_ZERO_MINUTES = "zero_minutes"
+
+# Quality-report issues that fail the build (DataQualityError).
+FAILING_QUALITY_ISSUES = EVENT_QUALITY_ISSUES | {
+    "minutes_unknown",
+    "dropped_event",
+    "dismissal_after_match_end",
+}
 
 _SCHEMA: dict[str, type] = {
     "match_id": pl.Int64,
@@ -118,6 +161,7 @@ _SCHEMA: dict[str, type] = {
     "minutes_unknown": pl.Float64,
     "crosses_attempted": pl.Int32,
     "crosses_completed": pl.Int32,
+    "crosses_unknown_outcome": pl.Int32,
     "dispossessed": pl.Int32,
     "miscontrols": pl.Int32,
     "pressures": pl.Int32,
@@ -128,6 +172,7 @@ _SCHEMA: dict[str, type] = {
     "aerials_lost": pl.Int32,
     "long_passes_attempted": pl.Int32,
     "long_passes_completed": pl.Int32,
+    "long_passes_unknown_outcome": pl.Int32,
     "passes_missing_length": pl.Int32,
     "switches": pl.Int32,
     "xg_assisted": pl.Float64,
@@ -162,8 +207,18 @@ def _primary_raw_position(
     return min(minutes_per_raw, key=lambda n: (-minutes_per_raw[n], n))
 
 
-def _aggregate_events(player_events: list[dict]) -> dict:
-    """Count raw metrics from one player's events in a single match."""
+def _aggregate_events(
+    player_events: list[dict],
+    issues: Counter[tuple[str, str | None]],
+) -> dict:
+    """
+    Count raw metrics from one player's events in a single match.
+
+    `issues` is incremented with (issue, offending value) for every
+    EVENT_QUALITY_ISSUES occurrence: a shot outcome, tackle outcome or duel
+    type outside the known lists, or a Pass/Carry missing location or
+    end_location. It is required so that no caller can skip these checks.
+    """
     goals = 0
     shots = 0
     shots_on_target = 0
@@ -177,6 +232,7 @@ def _aggregate_events(player_events: list[dict]) -> dict:
     assists = 0
     crosses_attempted = 0
     crosses_completed = 0
+    crosses_unknown_outcome = 0
     carries = 0
     progressive_carries = 0
     tackles_attempted = 0
@@ -198,6 +254,7 @@ def _aggregate_events(player_events: list[dict]) -> dict:
     aerials_lost = 0
     long_passes_attempted = 0
     long_passes_completed = 0
+    long_passes_unknown_outcome = 0
     passes_missing_length = 0
     switches = 0
     final_third_entries_pass = 0
@@ -219,11 +276,13 @@ def _aggregate_events(player_events: list[dict]) -> dict:
             outcome_name: str | None = (pass_data.get("outcome") or {}).get("name")
             if outcome_name is None:
                 passes_completed += 1
-            elif outcome_name == "Unknown":
+            elif outcome_name == UNKNOWN_PASS_OUTCOME:
                 passes_unknown_outcome += 1
 
             loc = event.get("location")
             end_loc = pass_data.get("end_location")
+            if not (loc and end_loc):
+                issues[("pass_missing_location", None)] += 1
             if loc and end_loc:
                 if is_progressive_pass(
                     (loc[0], loc[1]),
@@ -241,6 +300,8 @@ def _aggregate_events(player_events: list[dict]) -> dict:
                 crosses_attempted += 1
                 if outcome_name is None:
                     crosses_completed += 1
+                elif outcome_name == UNKNOWN_PASS_OUTCOME:
+                    crosses_unknown_outcome += 1
 
             pass_type_name: str | None = (pass_data.get("type") or {}).get("name")
             pass_length = pass_data.get("length")
@@ -251,6 +312,8 @@ def _aggregate_events(player_events: list[dict]) -> dict:
                     long_passes_attempted += 1
                     if outcome_name is None:
                         long_passes_completed += 1
+                    elif outcome_name == UNKNOWN_PASS_OUTCOME:
+                        long_passes_unknown_outcome += 1
 
             if outcome_name is None and loc and end_loc:
                 start = (loc[0], loc[1])
@@ -267,6 +330,8 @@ def _aggregate_events(player_events: list[dict]) -> dict:
             shots += 1
             shot_data = event.get("shot") or {}
             shot_outcome = (shot_data.get("outcome") or {}).get("name")
+            if shot_outcome not in KNOWN_SHOT_OUTCOMES:
+                issues[("unknown_shot_outcome", shot_outcome)] += 1
             if is_shot_on_target(shot_outcome):
                 shots_on_target += 1
             if shot_outcome == "Goal":
@@ -284,6 +349,8 @@ def _aggregate_events(player_events: list[dict]) -> dict:
             carry_data = event.get("carry") or {}
             loc = event.get("location")
             end_loc = carry_data.get("end_location")
+            if not (loc and end_loc):
+                issues[("carry_missing_location", None)] += 1
             if loc and end_loc:
                 start = (loc[0], loc[1])
                 end = (end_loc[0], end_loc[1])
@@ -297,9 +364,13 @@ def _aggregate_events(player_events: list[dict]) -> dict:
         elif event_type == "Duel":
             duel_data = event.get("duel") or {}
             duel_type_name = (duel_data.get("type") or {}).get("name")
+            if duel_type_name not in KNOWN_DUEL_TYPES:
+                issues[("unknown_duel_type", duel_type_name)] += 1
             if duel_type_name == "Tackle":
                 tackles_attempted += 1
                 duel_outcome = (duel_data.get("outcome") or {}).get("name")
+                if duel_outcome not in KNOWN_TACKLE_OUTCOMES:
+                    issues[("unknown_tackle_outcome", duel_outcome)] += 1
                 if is_tackle_won(duel_outcome):
                     tackles_won_count += 1
             elif is_aerial_lost(event):
@@ -372,6 +443,7 @@ def _aggregate_events(player_events: list[dict]) -> dict:
         "assists": assists,
         "crosses_attempted": crosses_attempted,
         "crosses_completed": crosses_completed,
+        "crosses_unknown_outcome": crosses_unknown_outcome,
         "dispossessed": dispossessed,
         "miscontrols": miscontrols,
         "pressures": pressures,
@@ -382,6 +454,7 @@ def _aggregate_events(player_events: list[dict]) -> dict:
         "aerials_lost": aerials_lost,
         "long_passes_attempted": long_passes_attempted,
         "long_passes_completed": long_passes_completed,
+        "long_passes_unknown_outcome": long_passes_unknown_outcome,
         "passes_missing_length": passes_missing_length,
         "switches": switches,
         "final_third_entries_pass": final_third_entries_pass,
@@ -432,17 +505,22 @@ def _process_match(
     events = load_events(match_id, data_root)
     lineups = load_lineups(match_id, data_root)
     match_duration = compute_match_duration(events)
+    # Penalty-shootout events (period 5) are not playing time and count toward
+    # no metric. Dismissal lookups use this list too: a shootout card clamps
+    # nothing, because every stint has ended by then (extra time, periods 3-4,
+    # still counts). The Starting XI lookup keeps the full list.
+    play_events = [e for e in events if e["period"] != 5]
 
     # Compute xg_assisted per player (requires full match event list for cross-player lookup)
     xga_by_player = compute_xg_assisted_per_player(
-        events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS
+        play_events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS
     )
 
     starting_xi = _starting_xi_by_team(events)
 
     # Build per-player event index
     player_events: dict[int, list[dict]] = {}
-    for event in events:
+    for event in play_events:
         pid = (event.get("player") or {}).get("id")
         if pid is not None:
             if pid not in player_events:
@@ -451,6 +529,7 @@ def _process_match(
 
     rows: list[dict] = []
     dismissal_report: list[dict] = []
+    event_issues: Counter[tuple[str, str | None]] = Counter()
 
     for team in lineups:
         team_id = team["team_id"]
@@ -464,7 +543,16 @@ def _process_match(
             player_name = player["player_name"]
             positions = player.get("positions") or []
 
-            dismissal_minute = find_dismissal_minute(events, player_id)
+            dismissal_minute = find_dismissal_minute(play_events, player_id)
+            if dismissal_minute is not None and dismissal_minute > match_duration:
+                # Never capped silently: fails the build (DataQualityError).
+                dismissal_report.append({
+                    "issue": "dismissal_after_match_end",
+                    "match_id": match_id,
+                    "player_id": player_id,
+                    "dismissal_minute": dismissal_minute,
+                    "match_duration": match_duration,
+                })
 
             # ONE shared call: compute_minutes_per_group drives both minutes_played
             # and position group.  compute_player_minutes is NOT called separately.
@@ -521,7 +609,7 @@ def _process_match(
                 # was not dismissed, or because the dismissal event has missing
                 # timestamp fields. Surface the second case to the report so it
                 # is not silently ignored.
-                quality_issue = check_dismissal_event_quality(events, player_id)
+                quality_issue = check_dismissal_event_quality(play_events, player_id)
                 if quality_issue is not None:
                     dismissal_report.append({
                         "match_id": match_id,
@@ -529,6 +617,20 @@ def _process_match(
                         "player_name": player_name,
                         **quality_issue,
                     })
+
+            unknown_minutes = group_minutes.get(UNKNOWN_POSITION_GROUP, 0.0)
+            if unknown_minutes > 0:
+                dismissal_report.append({
+                    "issue": "minutes_unknown",
+                    "match_id": match_id,
+                    "team_id": team_id,
+                    "player_id": player_id,
+                    "minutes_unknown": unknown_minutes,
+                    "position_raw": sorted({
+                        p["position"] for p in positions
+                        if assign_position_group(p["position"]) == UNKNOWN_POSITION_GROUP
+                    }),
+                })
 
             xga, xga_direct = xga_by_player.get(player_id, (0.0, 0.0))
             team_entries.append((
@@ -547,7 +649,7 @@ def _process_match(
                     "started": started,
                     "started_inferred": False,
                     **_group_minutes_to_columns(group_minutes),
-                    **_aggregate_events(player_events.get(player_id, [])),
+                    **_aggregate_events(player_events.get(player_id, []), event_issues),
                     "xg_assisted": xga,
                     "xg_assisted_direct": xga_direct,
                 },
@@ -627,7 +729,55 @@ def _process_match(
 
         rows.extend(row for row, _ in team_entries)
 
+    for (issue, value), count in sorted(event_issues.items(), key=str):
+        dismissal_report.append({
+            "issue": issue, "match_id": match_id, "value": value, "count": count,
+        })
+    dismissal_report.extend(_dropped_events(match_id, player_events, lineups, rows))
+
     return rows, dismissal_report
+
+
+def _dropped_events(
+    match_id: int,
+    player_events: dict[int, list[dict]],
+    lineups: list[dict],
+    rows: list[dict],
+) -> list[dict]:
+    """
+    One quality-report entry per event whose player has no output row.
+
+    reason is DROPPED_NOT_IN_LINEUP or DROPPED_ZERO_MINUTES. The entry's issue is
+    "dropped_event_allowed" only for a card event (ALLOWED_DROPPED_EVENT_TYPES)
+    by a lineup player with an empty positions array (a bench player who never
+    came on); every other drop is "dropped_event", which fails the build. A
+    player with stints whose minutes compute to 0 is not allow-listed: that
+    would be a minutes bug, not a bench card.
+    """
+    output_ids = {row["player_id"] for row in rows}
+    lineup_positions = {
+        p["player_id"]: p.get("positions") or []
+        for team in lineups for p in team["lineup"]
+    }
+    entries: list[dict] = []
+    for pid, pevents in player_events.items():
+        if pid in output_ids:
+            continue
+        in_lineup = pid in lineup_positions
+        bench = in_lineup and not lineup_positions[pid]
+        for event in pevents:
+            event_type = event["type"]["name"]
+            card = ((event.get("bad_behaviour") or {}).get("card") or {}).get("name")
+            allowed = bench and event_type in ALLOWED_DROPPED_EVENT_TYPES and card is not None
+            entries.append({
+                "issue": "dropped_event_allowed" if allowed else "dropped_event",
+                "match_id": match_id,
+                "player_id": pid,
+                "event_type": event_type,
+                "reason": DROPPED_ZERO_MINUTES if in_lineup else DROPPED_NOT_IN_LINEUP,
+                "card": card,
+            })
+    return entries
 
 
 def build_competition_season(
@@ -650,7 +800,9 @@ def build_competition_season(
         StarterCrossCheckError: if, for any team-match, the derived starters
             differ from the Starting XI event (or the event is missing or
             duplicated).
-        In both cases the parquet is not written.
+        DataQualityError: if any FAILING_QUALITY_ISSUES entry is in the report
+            or any shot lacks statsbomb_xg.
+        In every case the parquet is not written.
     """
     out_path = output_path or part_path(competition_id, season_id)
     matches = load_matches(competition_id, season_id, data_root)
@@ -695,6 +847,21 @@ def build_competition_season(
 
     df = pl.DataFrame(all_rows, schema=_SCHEMA)
 
+    quality_failures = [
+        d for d in all_dismissals if d.get("issue") in FAILING_QUALITY_ISSUES
+    ]
+    missing_xg = df.filter(pl.col("shots_missing_xg") > 0)
+    if quality_failures or missing_xg.height:
+        counts = Counter(d["issue"] for d in quality_failures)
+        if missing_xg.height:
+            counts["shots_missing_xg"] = int(missing_xg["shots_missing_xg"].sum())
+        raise DataQualityError(
+            f"competition={competition_id} season={season_id}: "
+            f"data-quality checks failed: {dict(sorted(counts.items()))}. "
+            f"First entries: {quality_failures[:5]}; "
+            f"shots missing xG in match_ids: {sorted(set(missing_xg['match_id'].to_list()))[:10]}"
+        )
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_path)
     logger.info("Wrote %d rows → %s", len(df), out_path)
@@ -722,6 +889,9 @@ def summarise_quality_report(report: list[dict]) -> dict[str, int]:
         ),
         "starter_count_mismatches": sum(
             1 for d in report if d.get("issue") == "starter_count_mismatch"
+        ),
+        "dropped_events_allowed": sum(
+            1 for d in report if d.get("issue") == "dropped_event_allowed"
         ),
     }
 
@@ -819,22 +989,6 @@ def build_all(
     return summaries
 
 
-def _select(
-    competition_id: int | None, season_id: int | None
-) -> tuple[CompetitionSeason, ...]:
-    selected = tuple(
-        cs for cs in COMPETITION_SEASONS
-        if (competition_id is None or cs.competition_id == competition_id)
-        and (season_id is None or cs.season_id == season_id)
-    )
-    if not selected:
-        raise SystemExit(
-            f"No configured competition-season matches "
-            f"competition_id={competition_id} season_id={season_id}"
-        )
-    return selected
-
-
 if __name__ == "__main__":
     import argparse
     import sys
@@ -853,10 +1007,14 @@ if __name__ == "__main__":
         help="Do not rebuild the combined player_match_stats.parquet",
     )
     args = parser.parse_args()
+    try:
+        only = select_competition_seasons(args.competition_id, args.season_id)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     summaries = build_all(
         COMPETITION_SEASONS,
-        only=_select(args.competition_id, args.season_id),
+        only=only,
         force=args.force,
         concat=not args.skip_concat,
     )
@@ -870,5 +1028,6 @@ if __name__ == "__main__":
             f"missing_ts={summary['missing_timestamp']} "
             f"fallback_players={summary['fallback_players']} "
             f"(team-matches={summary['fallback_team_matches']}) "
-            f"starter_count_mismatches={summary['starter_count_mismatches']}"
+            f"starter_count_mismatches={summary['starter_count_mismatches']} "
+            f"dropped_events_allowed={summary['dropped_events_allowed']}"
         )

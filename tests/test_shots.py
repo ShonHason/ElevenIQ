@@ -15,7 +15,7 @@ class TestIsOnTarget:
         assert is_shot_on_target("Saved") is True
 
     def test_saved_to_post_is_on_target(self):
-        assert is_shot_on_target("Saved To Post") is True
+        assert is_shot_on_target("Saved to Post") is True
 
     def test_blocked_is_not_on_target(self):
         # Blocked by a defender — never reached the goalkeeper
@@ -29,6 +29,15 @@ class TestIsOnTarget:
 
     def test_wayward_is_not_on_target(self):
         assert is_shot_on_target("Wayward") is False
+
+    def test_saved_off_target_is_not_on_target(self):
+        # StatsBomb: a save of a shot that was going wide or high.
+        assert is_shot_on_target("Saved Off Target") is False
+
+    def test_capitalised_saved_to_post_is_not_a_known_outcome(self):
+        # Exact-match casing: StatsBomb spells it "Saved to Post" (ADR 002 §30).
+        assert "Saved To Post" not in KNOWN_SHOT_OUTCOMES
+        assert is_shot_on_target("Saved To Post") is False
 
     def test_no_touch_is_not_on_target(self):
         assert is_shot_on_target("No Touch") is False
@@ -48,5 +57,6 @@ class TestOutcomeSets:
         assert len(SHOTS_ON_TARGET_OUTCOMES) == 3
 
     def test_known_outcomes_covers_all_expected(self):
-        expected = {"Goal", "Saved", "Saved To Post", "Blocked", "Post", "Off T", "Wayward", "No Touch"}
+        expected = {"Goal", "Saved", "Saved to Post", "Blocked", "Post", "Off T", "Wayward",
+                    "No Touch", "Saved Off Target"}
         assert expected == KNOWN_SHOT_OUTCOMES

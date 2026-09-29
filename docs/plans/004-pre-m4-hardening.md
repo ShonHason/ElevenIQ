@@ -75,6 +75,16 @@ definition, and H1.5 introduces an allow-list; CLAUDE.md requires the review bef
   the per-player effect** before changing anything. That would be a definition change, and it needs
   an ADR amendment and your sign-off.
   (ADR 002 §14: 0.7% of La Liga passes have an unknown outcome, so a non-zero count is plausible.)
+- **Outcome (2026-09-29):** the counts were above 0 in every league (crosses 139/64/182/101/3,
+  long passes 775/570/826/736/91). **Decided:** apply the fix. Unknown outcomes leave the
+  denominators, `*_unknown_outcome` columns are added (display-only), and the ratio is null
+  when the adjusted denominator is 0. ADR 002 §14/§15/§19 are amended, with before/after.
+
+### H1.2a Shot-outcome casing (decided 2026-09-29, found by the H1.2 measurement)
+- `"Saved to Post"` (StatsBomb casing) → on target. The code had `"Saved To Post"`, so
+  127 shots were counted as off target.
+- `"Saved Off Target"` → off target, and added to `KNOWN_SHOT_OUTCOMES`. See ADR 002 §30.
+- A scan of every categorical value matched in code found no other mismatch.
 
 ### H1.4 Shots with missing xG (R6)
 - Keep the existing `shots_missing_xg` column.
@@ -86,6 +96,9 @@ definition, and H1.5 introduces an allow-list; CLAUDE.md requires the review bef
 - **This counter is not expected to be 0.** ADR 002 §3 (L198-203) records bench players with
   Bad Behaviour red cards (3 in La Liga). Allow-list exactly that case: a `Bad Behaviour` event by
   a 0-minute lineup player. Any other dropped event fails the build.
+  **Decided 2026-09-29:** any card is allowed, yellows included. On the stats-reviewer's
+  condition, it applies only to a lineup player with an **empty** `positions` array.
+  Measured drops: La Liga 8, Serie A 1, Ligue 1 1.
   The stats-reviewer confirms the allow-list before implementation.
 - **Missing locations.** Count `Pass` and `Carry` events missing `location` or `end_location`.
   The build fails when the count is > 0.
@@ -97,8 +110,10 @@ definition, and H1.5 introduces an allow-list; CLAUDE.md requires the review bef
 
 ### H1.7 Period-5 filter (R15)
 - In `_process_match`, drop `period == 5` events before building the per-player index and before
-  `compute_xg_assisted_per_player`. Dismissal lookup keeps the full list, so a shootout card still
-  clamps nothing (all stints have ended).
+  `compute_xg_assisted_per_player`. ~~Dismissal lookup keeps the full list~~ **Amended
+  2026-09-29:** the dismissal lookup also ignores period 5, because a shootout card inflated
+  open-ended stints past the match duration (found by qa-tester). A dismissal minute past the
+  match duration fails the build (`dismissal_after_match_end`), never capped silently.
 - Add a unit test: a shootout Shot must not count in `shots` or `goals`.
 
 ### H1.8 Downloader CLI (decided 2026-09-29)
@@ -114,10 +129,23 @@ definition, and H1.5 introduces an allow-list; CLAUDE.md requires the review bef
 1. Run the fast suite, with new unit tests for every counter (fail when > 0; allow-list honoured).
 2. Rebuild all leagues with `build_player_match --force`, then run `build_player_season`.
 3. Every counter is 0, except the allow-listed bench-card drops. Report those per league.
-4. **Identical outputs:**
-   - Compare the new parquets with the baseline using `DataFrame.equals` on the same row order.
-     All `player_match` parts and the combined file must be equal.
-   - The season file must be equal once the new `is_outfield` column is dropped.
+4. **Column-level equality (amended 2026-09-29):** H1.2a and H1.3 change definitions, so
+   outputs are not fully identical. The rule:
+   - Every column except the fixed ones must be identical to the baseline (`DataFrame.equals`):
+     - every `player_match` part and the combined file;
+     - the season file, aligned on its unique key `(player_id, team_id, competition_id,
+       season_id, source)`. Its row order was not deterministic; from H1 it is sorted
+       on that key, and a unit test checks that two builds are identical row by row.
+   - The fixed columns are:
+     - `shots_on_target` (match + season);
+     - `shots_on_target_p90`;
+     - `cross_completion_pct`;
+     - `long_pass_completion_pct`.
+
+     Their before/after goes in ADR 002 §15, §19 and §30.
+   - The new columns are ignored: `is_outfield`, `crosses_unknown_outcome` and
+     `long_passes_unknown_outcome`.
+   - The volume columns (`crosses_*`, `long_passes_*` and their p90s) must be identical.
    - `sha256` is also compared for the `player_match` files, as secondary evidence only: parquet
      writer metadata can differ, so a byte mismatch that has frame equality is reported but not treated as a failure.
 5. Any value difference means STOP and report.

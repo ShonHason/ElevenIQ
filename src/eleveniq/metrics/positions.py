@@ -8,10 +8,11 @@ Groups used throughout the pipeline:
     DM-CM       Defensive and central midfielders
     AM-Winger   Attacking midfielders and wingers
     ST          Forwards / strikers
-    UNKNOWN     Any position name not in the map (surfaces in quality report)
+    UNKNOWN     Any position name not in the map (any UNKNOWN minutes fail the
+                build in build_player_match)
 
-GK is an explicit separate group.  Percentile calculations for outfield players
-must exclude GK rows.  Use OUTFIELD_GROUPS to filter.
+GK is an explicit separate group.  Cohorts filter on the season-level
+is_outfield column (position_group in OUTFIELD_GROUPS).
 
 Positions not listed below will be mapped to UNKNOWN_POSITION_GROUP.
 The map is kept here so position grouping is auditable and configurable

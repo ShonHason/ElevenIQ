@@ -465,3 +465,21 @@ def test_no_unknown_positions_in_pipeline_output():
     assert unknowns == [], (
         f"position_raw values mapping to UNKNOWN — add them to POSITION_GROUP_MAP: {unknowns}"
     )
+
+
+_PLAYER_SEASON_PARQUET = (
+    Path(__file__).resolve().parents[1] / "data" / "processed" / "player_season_stats.parquet"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not _PLAYER_SEASON_PARQUET.exists(),
+    reason="requires data/processed/player_season_stats.parquet (run build_player_season)",
+)
+def test_no_unknown_minutes_in_season_output():
+    """UNKNOWN minutes fail the build (plan 004 H1.1), so no season row carries any."""
+    import polars as pl
+    season = pl.read_parquet(_PLAYER_SEASON_PARQUET)
+    assert season["minutes_unknown"].sum() == 0
+    assert season.filter(pl.col("position_group") == "UNKNOWN").height == 0

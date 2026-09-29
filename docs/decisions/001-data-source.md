@@ -80,7 +80,7 @@ ElevenIQ needs per-player, per-season statistics covering at least 10 leagues (w
   | Interceptions | `type.name = "Interception"`; `interception.outcome` present (confirmed sample 15946 index 92) | Raw event count | Yes |
   | Pressures applied | `type.name = "Pressure"`; `counterpress` boolean also present (confirmed sample 15946 index 62) | Raw event count | Yes |
   | Shots (total) | `type.name = "Shot"` | Raw event count | Yes |
-  | Shots on target | Shot event where `shot.outcome.name` ∈ {"Goal", "Saved", "Saved To Post"} | Raw event count (filter by outcome) | Yes |
+  | Shots on target | Shot event where `shot.outcome.name` ∈ {"Goal", "Saved", "Saved to Post"} (exact StatsBomb casing; ADR 002 §30) | Raw event count (filter by outcome) | Yes |
   | Goals | Shot event where `shot.outcome.name = "Goal"` | Raw event count (filter by outcome) | Yes |
   | xG (per shot) | `shot.statsbomb_xg` (confirmed value 0.7835 in sample 22912) | Model output — per-shot float | Yes — one value per shot; sum gives season total; shot count also preserved |
   | Minutes played | No single field — computed from `positions[].from` / `positions[].to` timestamps in lineups JSON | Derived from timestamp arithmetic across lineup stints per match | Yes — start/end timestamps present per stint; calculation required |

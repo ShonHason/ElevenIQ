@@ -5,6 +5,10 @@ Files are cached locally under data/raw/statsbomb/ using the same path structure
 as the upstream repository. Any file that already exists on disk is skipped so
 the command is idempotent.
 
+Usage (CLI): every configured competition-season, or one with both ids:
+    .venv/bin/python -m eleveniq.statsbomb.downloader
+    .venv/bin/python -m eleveniq.statsbomb.downloader --competition-id 11 --season-id 27
+
 Usage (programmatic), for any configured competition-season:
     from eleveniq.config import COMPETITION_SEASONS
     from eleveniq.statsbomb.downloader import download_competition_season
@@ -114,3 +118,31 @@ def download_competition_season(
         counts["lineups_skipped"],
     )
     return counts
+
+
+def main(argv: list[str] | None = None) -> None:
+    """
+    CLI: download every entry in COMPETITION_SEASONS, or only those matching
+    --competition-id / --season-id. An unconfigured pair exits with an error.
+    """
+    import argparse
+
+    from eleveniq.config import select_competition_seasons
+
+    parser = argparse.ArgumentParser(description="Download StatsBomb open data.")
+    parser.add_argument("--competition-id", type=int, help="Download only this competition")
+    parser.add_argument("--season-id", type=int, help="Download only this season")
+    args = parser.parse_args(argv)
+    try:
+        selected = select_competition_seasons(args.competition_id, args.season_id)
+    except ValueError as exc:
+        parser.error(str(exc))
+    for cs in selected:
+        download_competition_season(cs.competition_id, cs.season_id)
+
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s", stream=sys.stdout)
+    main()

@@ -82,3 +82,26 @@ def validate_competition_seasons(competition_seasons: tuple[CompetitionSeason, .
 
 
 validate_competition_seasons(COMPETITION_SEASONS)
+
+
+def select_competition_seasons(
+    competition_id: int | None,
+    season_id: int | None,
+    competition_seasons: tuple[CompetitionSeason, ...] = COMPETITION_SEASONS,
+) -> tuple[CompetitionSeason, ...]:
+    """
+    Entries matching the given ids (None matches any). Used by the pipeline and
+    downloader CLIs. Raises ValueError when nothing matches, so an unconfigured
+    pair is never silently built or downloaded.
+    """
+    selected = tuple(
+        cs for cs in competition_seasons
+        if (competition_id is None or cs.competition_id == competition_id)
+        and (season_id is None or cs.season_id == season_id)
+    )
+    if not selected:
+        raise ValueError(
+            f"No configured competition-season matches "
+            f"competition_id={competition_id} season_id={season_id}"
+        )
+    return selected

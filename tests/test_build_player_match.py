@@ -1049,6 +1049,8 @@ class TestSummariseQualityReport:
             {"issue": "started_inferred_fallback", "match_id": 4, "players": ["d"]},
             {"issue": "starter_count_mismatch", "match_id": 5},
             {"issue": "starting_xi_mismatch", "match_id": 6},
+            {"issue": "dropped_event_allowed", "match_id": 7, "player_id": 13},
+            {"issue": "dropped_event_allowed", "match_id": 8, "player_id": 14},
         ]
         assert summarise_quality_report(report) == {
             "dismissals": 2,
@@ -1056,8 +1058,360 @@ class TestSummariseQualityReport:
             "fallback_team_matches": 2,
             "fallback_players": 4,
             "starter_count_mismatches": 1,
+            "dropped_events_allowed": 2,
         }
 
     def test_empty_report_all_zero(self):
         from eleveniq.pipeline.build_player_match import summarise_quality_report
         assert set(summarise_quality_report([]).values()) == {0}
+
+
+# ---------------------------------------------------------------------------
+# Fail-loud data checks (plan 004 H1.1, H1.2, H1.4, H1.5, H1.7)
+# ---------------------------------------------------------------------------
+
+from collections import Counter
+
+from eleveniq.pipeline.build_player_match import (
+    DataQualityError,
+    _aggregate_events,
+    summarise_quality_report,
+)
+
+_TEAM = 801
+_STARTER = 8001
+_BENCH = 8002
+
+
+def _ev(etype: str, pid: int | None = _STARTER, *, period: int = 1, minute: int = 10,
+        **extra) -> dict:
+    event = {"id": f"{etype}-{pid}-{minute}-{period}", "index": minute,
+             "type": {"name": etype}, "team": {"id": _TEAM},
+             "period": period, "minute": minute, "second": 0, **extra}
+    if pid is not None:
+        event["player"] = {"id": pid}
+    return event
+
+
+def _quality_lineups(starter_positions: list[dict] | None = None,
+                     bench_positions: list[dict] | None = None) -> list[dict]:
+    return [{
+        "team_id": _TEAM, "team_name": "Quality FC",
+        "lineup": [
+            {"player_id": _STARTER, "player_name": "Starter",
+             "positions": starter_positions or [_spell("00:00", None, "Starting XI")]},
+            {"player_id": _BENCH, "player_name": "Bench",
+             "positions": bench_positions or []},
+        ],
+    }]
+
+
+def _shot(outcome: str, *, xg: float | None = 0.1, **kw) -> dict:
+    shot = {"outcome": {"name": outcome}}
+    if xg is not None:
+        shot["statsbomb_xg"] = xg
+    return _ev("Shot", shot=shot, location=[110, 40], **kw)
+
+
+def _build(tmp_path, events, lineups=None):
+    """Write one synthetic match and build it; return (out_path, result-or-exc)."""
+    _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events, _HALF_END],
+                 lineups or _quality_lineups())
+    out = tmp_path / "out.parquet"
+    return out, build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+
+
+def _build_fails(tmp_path, events, lineups=None) -> str:
+    out = tmp_path / "out.parquet"
+    _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events, _HALF_END],
+                 lineups or _quality_lineups())
+    with pytest.raises(DataQualityError) as exc:
+        build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+    assert not out.exists()
+    return str(exc.value)
+
+
+class TestAggregateEventsQualityCounters:
+    def _issues(self, events: list[dict]) -> Counter:
+        issues: Counter = Counter()
+        _aggregate_events(events, issues)
+        return issues
+
+    def test_unknown_shot_outcome_recorded_with_value(self):
+        assert self._issues([_shot("Saved To Post")]) == Counter(
+            {("unknown_shot_outcome", "Saved To Post"): 1})
+
+    @pytest.mark.parametrize("outcome", ["Saved to Post", "Saved Off Target", "Goal", "Off T"])
+    def test_known_shot_outcome_not_recorded(self, outcome):
+        assert not self._issues([_shot(outcome)])
+
+    def test_saved_to_post_counts_on_target(self):
+        assert _aggregate_events([_shot("Saved to Post")], Counter())["shots_on_target"] == 1
+
+    def test_saved_off_target_not_on_target(self):
+        assert _aggregate_events([_shot("Saved Off Target")], Counter())["shots_on_target"] == 0
+
+    def test_unknown_tackle_outcome_recorded(self):
+        ev = _ev("Duel", duel={"type": {"name": "Tackle"}, "outcome": {"name": "Draw"}})
+        assert self._issues([ev]) == Counter({("unknown_tackle_outcome", "Draw"): 1})
+
+    def test_missing_tackle_outcome_recorded_as_none(self):
+        ev = _ev("Duel", duel={"type": {"name": "Tackle"}})
+        assert self._issues([ev]) == Counter({("unknown_tackle_outcome", None): 1})
+
+    def test_unknown_duel_type_recorded(self):
+        ev = _ev("Duel", duel={"type": {"name": "Aerial Won"}})
+        assert self._issues([ev]) == Counter({("unknown_duel_type", "Aerial Won"): 1})
+
+    def test_known_duels_not_recorded(self):
+        events = [
+            _ev("Duel", duel={"type": {"name": "Aerial Lost"}}),
+            _ev("Duel", duel={"type": {"name": "Tackle"}, "outcome": {"name": "Won"}}),
+        ]
+        assert not self._issues(events)
+
+    @pytest.mark.parametrize("missing", ["location", "end_location"])
+    def test_pass_missing_location_recorded(self, missing):
+        ev = _ev("Pass", location=[50, 40], **{"pass": {"end_location": [70, 40], "length": 20}})
+        if missing == "location":
+            del ev["location"]
+        else:
+            del ev["pass"]["end_location"]
+        assert self._issues([ev]) == Counter({("pass_missing_location", None): 1})
+
+    @pytest.mark.parametrize("missing", ["location", "end_location"])
+    def test_carry_missing_location_recorded(self, missing):
+        ev = _ev("Carry", location=[50, 40], carry={"end_location": [60, 40]})
+        if missing == "location":
+            del ev["location"]
+        else:
+            del ev["carry"]["end_location"]
+        assert self._issues([ev]) == Counter({("carry_missing_location", None): 1})
+
+    def test_issues_counter_is_required(self):
+        # No default: a caller cannot skip the fail-loud event checks by accident.
+        with pytest.raises(TypeError):
+            _aggregate_events([_shot("Saved")])  # type: ignore[call-arg]
+
+
+class TestAggregateEventsUnknownOutcomePasses:
+    def _pass(self, outcome: str | None, *, cross: bool = False, length: float = 20.0,
+              pass_type: str | None = None) -> dict:
+        data: dict = {"end_location": [70, 40], "length": length}
+        if outcome is not None:
+            data["outcome"] = {"name": outcome}
+        if cross:
+            data["cross"] = True
+        if pass_type is not None:
+            data["type"] = {"name": pass_type}
+        return _ev("Pass", location=[50, 40], **{"pass": data})
+
+    def test_unknown_cross_counted_attempted_and_unknown(self):
+        r = _aggregate_events([self._pass("Unknown", cross=True), self._pass(None, cross=True)], Counter())
+        assert (r["crosses_attempted"], r["crosses_completed"], r["crosses_unknown_outcome"]) \
+            == (2, 1, 1)
+
+    def test_incomplete_cross_not_unknown(self):
+        r = _aggregate_events([self._pass("Incomplete", cross=True)], Counter())
+        assert r["crosses_unknown_outcome"] == 0
+
+    def test_unknown_long_pass_counted_attempted_and_unknown(self):
+        r = _aggregate_events([self._pass("Unknown", length=40.0), self._pass(None, length=40.0)], Counter())
+        assert (r["long_passes_attempted"], r["long_passes_completed"],
+                r["long_passes_unknown_outcome"]) == (2, 1, 1)
+
+    def test_unknown_set_piece_long_pass_not_counted(self):
+        r = _aggregate_events([self._pass("Unknown", length=40.0, pass_type="Goal Kick")], Counter())
+        assert r["long_passes_unknown_outcome"] == 0
+
+    def test_unknown_short_pass_not_a_long_pass(self):
+        r = _aggregate_events([self._pass("Unknown", length=10.0)], Counter())
+        assert r["long_passes_unknown_outcome"] == 0
+        assert r["passes_unknown_outcome"] == 1
+
+
+class TestBuildFailsOnQualityIssues:
+    def test_clean_match_builds(self, tmp_path):
+        out, (df, _) = _build(tmp_path, [_shot("Saved to Post")])
+        assert out.exists()
+        assert df["shots_on_target"].sum() == 1
+
+    def test_new_unknown_outcome_columns_written(self, tmp_path):
+        _, (df, _) = _build(tmp_path, [])
+        assert {"crosses_unknown_outcome", "long_passes_unknown_outcome"} <= set(df.columns)
+
+    def test_unknown_shot_outcome_fails(self, tmp_path):
+        assert "unknown_shot_outcome" in _build_fails(tmp_path, [_shot("Saved To Post")])
+
+    def test_unknown_tackle_outcome_fails(self, tmp_path):
+        ev = _ev("Duel", duel={"type": {"name": "Tackle"}, "outcome": {"name": "Draw"}})
+        assert "unknown_tackle_outcome" in _build_fails(tmp_path, [ev])
+
+    def test_unknown_duel_type_fails(self, tmp_path):
+        ev = _ev("Duel", duel={"type": {"name": "Aerial Won"}})
+        assert "unknown_duel_type" in _build_fails(tmp_path, [ev])
+
+    def test_pass_missing_location_fails(self, tmp_path):
+        ev = _ev("Pass", **{"pass": {"end_location": [70, 40], "length": 20}})
+        assert "pass_missing_location" in _build_fails(tmp_path, [ev])
+
+    def test_carry_missing_location_fails(self, tmp_path):
+        ev = _ev("Carry", location=[50, 40], carry={})
+        assert "carry_missing_location" in _build_fails(tmp_path, [ev])
+
+    def test_shot_missing_xg_fails(self, tmp_path):
+        assert "shots_missing_xg" in _build_fails(tmp_path, [_shot("Saved", xg=None)])
+
+    def test_unknown_position_minutes_fail(self, tmp_path):
+        spell = {**_spell("00:00", None, "Starting XI"), "position": "Sweeper"}
+        msg = _build_fails(tmp_path, [], _quality_lineups(starter_positions=[spell]))
+        assert "minutes_unknown" in msg
+        assert "Sweeper" in msg
+
+
+class TestDroppedEvents:
+    def _card(self, pid: int, card: str = "Yellow Card") -> dict:
+        return _ev("Bad Behaviour", pid, minute=60, bad_behaviour={"card": {"name": card}})
+
+    @pytest.mark.parametrize("card", ["Yellow Card", "Red Card", "Second Yellow"])
+    def test_bench_card_allowed(self, tmp_path, card):
+        out, (_, report) = _build(tmp_path, [self._card(_BENCH, card)])
+        assert out.exists()
+        dropped = [d for d in report if d.get("issue") == "dropped_event_allowed"]
+        assert len(dropped) == 1
+        assert dropped[0]["reason"] == "zero_minutes"
+        assert dropped[0]["card"] == card
+        assert summarise_quality_report(report)["dropped_events_allowed"] == 1
+
+    def test_non_card_event_by_bench_player_fails(self, tmp_path):
+        ev = _ev("Pressure", _BENCH)
+        assert "dropped_event" in _build_fails(tmp_path, [ev])
+
+    def test_event_by_player_not_in_lineup_fails(self, tmp_path):
+        msg = _build_fails(tmp_path, [self._card(9999)])
+        assert "dropped_event" in msg
+        assert "not_in_lineup" in msg
+
+    def test_card_by_zero_minute_player_with_stints_fails(self, tmp_path):
+        # Stints that compute to 0 minutes are a minutes bug, not a bench card.
+        lineups = _quality_lineups(
+            bench_positions=[_spell("60:00", "60:00", "Substitution - On (Tactical)")])
+        msg = _build_fails(tmp_path, [self._card(_BENCH)], lineups)
+        assert "dropped_event" in msg
+
+    def test_player_with_minutes_has_no_dropped_events(self, tmp_path):
+        _, (_, report) = _build(tmp_path, [self._card(_STARTER)])
+        assert not [d for d in report if str(d.get("issue", "")).startswith("dropped_event")]
+
+
+class TestPenaltyShootoutExcluded:
+    """Period 5 (shootout) events count toward no metric (plan 004 H1.7)."""
+
+    def test_shootout_goal_not_counted(self, tmp_path):
+        events = [_shot("Goal", period=2, minute=50),
+                  _shot("Goal", period=5, minute=121)]
+        _, (df, _) = _build(tmp_path, events)
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["shots"] == 1
+        assert row["goals"] == 1
+        assert row["xg"] == pytest.approx(0.1)
+
+    def test_extra_time_red_card_still_cuts_minutes(self, tmp_path):
+        # Only period 5 is ignored: a period-3 red card ends an open stint.
+        events = [_ev("Bad Behaviour", period=3, minute=100,
+                      bad_behaviour={"card": {"name": "Red Card"}}),
+                  _ev("Pressure", _BENCH, period=4, minute=120)]
+        lineups = _quality_lineups(
+            bench_positions=[_spell("110:00", None, "Substitution - On (Tactical)")])
+        _, (df, _) = _build(tmp_path, events, lineups)
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["minutes_played"] == pytest.approx(100.0)
+
+    def test_dismissal_after_match_end_fails_build(self, tmp_path, monkeypatch):
+        # A dismissal minute past the match duration is never capped silently.
+        # Unreachable while the duration is the last period<=4 event (the card is
+        # one), so the duration is forced below the card minute here.
+        monkeypatch.setattr(
+            "eleveniq.pipeline.build_player_match.compute_match_duration", lambda _: 50.0)
+        card = _ev("Bad Behaviour", period=2, minute=60,
+                   bad_behaviour={"card": {"name": "Red Card"}})
+        assert "dismissal_after_match_end" in _build_fails(tmp_path, [card])
+
+    def test_shootout_event_by_bench_player_is_not_dropped_event(self, tmp_path):
+        # Filtered as a shootout event, so not reported as a dropped event.
+        _, (_, report) = _build(tmp_path, [_shot("Goal", pid=_BENCH, period=5, minute=121)])
+        assert not [d for d in report if str(d.get("issue", "")).startswith("dropped_event")]
+
+
+def test_build_competition_season_twice_identical_row_by_row(tmp_path):
+    first, _ = build_competition_season(
+        99, 1, data_root=_FIXTURE_ROOT, output_path=tmp_path / "a.parquet")
+    second, _ = build_competition_season(
+        99, 1, data_root=_FIXTURE_ROOT, output_path=tmp_path / "b.parquet")
+    assert first.equals(second)
+    assert pl.read_parquet(tmp_path / "a.parquet").equals(pl.read_parquet(tmp_path / "b.parquet"))
+
+
+# ---------------------------------------------------------------------------
+# Fail-loud edge cases not covered above (QA, plan 004 H1.1/H1.2/H1.5/H1.6/H1.7)
+# ---------------------------------------------------------------------------
+
+class TestFailLoudEdgeCases:
+    def test_shot_without_outcome_fails_build(self, tmp_path):
+        # A missing outcome must not be silently counted as "off target".
+        ev = _ev("Shot", location=[110, 40], shot={"statsbomb_xg": 0.1})
+        assert "unknown_shot_outcome" in _build_fails(tmp_path, [ev])
+
+    def test_small_unknown_stint_fails_even_when_primary_group_known(self, tmp_path):
+        # Multi-position player: 60 min CDM then 30 min in an unmapped position.
+        # Primary group is DM-CM, but any UNKNOWN minutes must still fail (H1.1).
+        spells = [
+            {**_spell("00:00", "60:00", "Starting XI"), "to_period": 2},
+            {**_spell("60:00", None, "Tactical Shift"), "position": "Sweeper",
+             "from_period": 2},
+        ]
+        msg = _build_fails(tmp_path, [], _quality_lineups(starter_positions=spells))
+        assert "minutes_unknown" in msg
+        assert "Sweeper" in msg
+
+    @pytest.mark.parametrize("event", [
+        # Bad Behaviour with no card is not a card: not allow-listed.
+        {"type": "Bad Behaviour", "extra": {}},
+        # A card on a Foul Committed event is not the allow-listed event type.
+        {"type": "Foul Committed", "extra": {"foul_committed": {"card": {"name": "Red Card"}}}},
+    ], ids=["bad_behaviour_no_card", "foul_committed_card"])
+    def test_bench_non_allowlisted_event_fails(self, tmp_path, event):
+        ev = _ev(event["type"], _BENCH, minute=60, **event["extra"])
+        assert "dropped_event" in _build_fails(tmp_path, [ev])
+
+    def test_event_missing_period_fails_league(self, tmp_path):
+        # H1.6: period is required, never defaulted to 1; the match fails the league.
+        ev = _ev("Pressure")
+        del ev["period"]
+        _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), ev, _HALF_END],
+                     _quality_lineups())
+        out = tmp_path / "out.parquet"
+        with pytest.raises(MatchProcessingError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+        assert not out.exists()
+
+    def test_shootout_red_card_does_not_cut_minutes(self, tmp_path):
+        # H1.7: the dismissal lookup ignores period 5, so a shootout card clamps nothing.
+        card = _ev("Bad Behaviour", period=5, minute=125,
+                   bad_behaviour={"card": {"name": "Red Card"}})
+        out, (df, _) = _build(tmp_path, [card])
+        assert out.exists()
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["minutes_played"] == pytest.approx(90.0)
+
+    def test_unknown_long_cross_counted_in_all_unknown_counters(self, tmp_path):
+        # One pass that is a cross, long and Unknown: excluded from all three
+        # completion denominators, still counted as attempted in each.
+        ev = _ev("Pass", location=[60, 5], **{"pass": {
+            "end_location": [110, 40], "length": 45.0, "cross": True,
+            "outcome": {"name": "Unknown"}}})
+        r = _aggregate_events([ev], Counter())
+        assert (r["passes_attempted"], r["passes_completed"], r["passes_unknown_outcome"]) == (1, 0, 1)
+        assert (r["crosses_attempted"], r["crosses_completed"], r["crosses_unknown_outcome"]) == (1, 0, 1)
+        assert (r["long_passes_attempted"], r["long_passes_completed"],
+                r["long_passes_unknown_outcome"]) == (1, 0, 1)

@@ -126,8 +126,18 @@ with `from_period=2` is only coherent as match-absolute, not within-period).
 ### Match duration
 
 `compute_match_duration(events)` = max of `event["minute"] + event["second"] / 60`
-across all events with `period ≤ 4`. Period 5 (shootout) excluded. Falls back to
-90.0 if no valid events exist.
+across all events with `period ≤ 4`. Period 5 (shootout) excluded. **Amended
+2026-09-29 (plan 004 H1.6):** there is no 90.0 fallback. The `period` key is required
+(a missing one raises `KeyError`), and a match with no `period ≤ 4` event raises
+`ValueError`, which fails the league build (`MatchProcessingError`).
+
+Period-5 events are also removed before any metric is counted
+(`_process_match`, plan 004 H1.7): a shootout shot is not a shot, goal or xG. The
+dismissal lookup ignores them too: a shootout card clamps nothing because every stint has
+ended (an extra-time card, periods 3-4, still clamps). A dismissal minute past the match
+duration is never capped silently; it is a `dismissal_after_match_end` quality issue that
+fails the build (`DataQualityError`). The five 2015/16 leagues have no period-5 events,
+so this changes no output.
 
 This captures stoppage time and extra time automatically. It represents the last
 *recorded* event timestamp, not the actual whistle — may undercount by 15–60
@@ -202,6 +212,24 @@ bench (empty `positions` arrays).  They are correctly excluded from
 `player_match_stats.parquet` as 0-minute entries.  Their card events are real;
 they represent genuine bench incidents (violent conduct, dissent).
 
+**Dropped-event check (amended 2026-09-29, plan 004 H1.5).** Every event with a
+`player.id` whose player has no output row is recorded in the quality report by
+`(event type, reason)`, where the reason is `not_in_lineup` or `zero_minutes`. The only
+allowed drop is a `Bad Behaviour` card (any card, yellows included) by a lineup player
+whose `positions` array is **empty**. A player with stints that compute to 0 minutes is
+not allow-listed, because that would be a minutes bug. Any other drop fails the build
+(`DataQualityError`). Allowed drops, 2015/16, after all fixes:
+
+| League | Bench cards | of which red |
+|--------|-------------|--------------|
+| La Liga | 8 | 3 |
+| Serie A | 1 | 1 |
+| Ligue 1 | 1 | 0 |
+| Premier League, Bundesliga | 0 | 0 |
+
+There are no events by players missing from the lineup. `Pass` and `Carry` events that lack
+`location` or `end_location` also fail the build; there are 0 in all five leagues.
+
 #### Verified result — La Liga 2015/16
 
 After both fixes:
@@ -239,13 +267,16 @@ Dismissal logic is tested in `tests/test_minutes.py::TestDismissalMinute` and
 | `AM-Winger` | Attacking Midfield, Center Attacking Midfield, Left/Right Midfield, Left/Right Wing, **Left/Right Attacking Midfield** |
 | `ST` | Center Forward, Left/Right Center Forward, Secondary Striker |
 
-`UNKNOWN` is the fallback for any unmapped position; unknown values surface in the
-quality report rather than crashing.
+`UNKNOWN` is the fallback for any unmapped position. **Amended 2026-09-29 (plan 004
+H1.1):** any team-match row with `minutes_unknown > 0` fails the build
+(`DataQualityError`, with the unmapped `position_raw` names), so no output row has
+UNKNOWN minutes.
 
 `OUTFIELD_GROUPS` = `{CB, FB-WB, DM-CM, AM-Winger, ST}` — **GK is explicitly
-excluded from all outfield player comparisons.** Percentile calculations must
-filter to `OUTFIELD_GROUPS` for outfield scouting. GK-vs-GK comparisons use only
-the `GK` group.
+excluded from all outfield player comparisons.** The season file carries
+`is_outfield = position_group ∈ OUTFIELD_GROUPS`. **One rule: cohorts filter on
+`is_outfield`; UNKNOWN minutes fail the build.** GK-vs-GK comparisons use only the
+`GK` group.
 
 ### Season-level position group
 
@@ -267,7 +298,8 @@ splits across different groups are rare.
 
 `tests/test_positions.py::test_no_unknown_positions_in_pipeline_output` is a
 post-run integration test that fails if `player_match_stats.parquet` contains any
-`position_group == "UNKNOWN"` rows. It is skipped until the pipeline has been run.
+`position_group == "UNKNOWN"` rows. `test_no_unknown_minutes_in_season_output` asserts
+`minutes_unknown == 0` on the season file. Both are skipped until the pipeline has been run.
 
 ---
 
@@ -597,8 +629,8 @@ rows with outfield rows in a percentile cohort or similarity distance would
 corrupt both groups.  A dedicated GK model is deferred to V2.
 
 **Implementation:** analytics functions that build percentile cohorts,
-similarity matrices, or rarity scores must filter `position_group != 'GK'`
-before computing.
+similarity matrices, or rarity scores must filter on `is_outfield` (§4) before
+computing. `is_outfield` excludes GK and UNKNOWN rows.
 
 ---
 
@@ -645,6 +677,10 @@ whose data happens to contain more unknown outcomes.
 `null` is returned when the adjusted denominator is zero (i.e. all recorded passes
 have unknown outcome).
 
+The same rule applies to `cross_completion_pct` (§15) and `long_pass_completion_pct`
+(§19) from 2026-09-29 (plan 004 H1.3). Before that, those two counted unknown outcomes as
+failures.
+
 ### Volume — La Liga 2015/16
 
 | Category | Count | Share |
@@ -674,6 +710,42 @@ incomplete, etc.).
 **Implementation:** `build_player_match._aggregate_events` checks
 `pass_data.get("cross")` and `outcome_name is None` for the cross-completed counter.
 
+### Unknown-outcome crosses (amended 2026-09-29, plan 004 H1.3)
+
+```
+cross_completion_pct = crosses_completed / (crosses_attempted − crosses_unknown_outcome)
+```
+
+A cross with `outcome.name == "Unknown"` is neither completed nor failed, so it is excluded
+from the denominator, as in §14. It still counts in `crosses_attempted` (volume), so
+`crosses_attempted_p90` is unchanged. `crosses_unknown_outcome` is stored at match and
+season level (display-only, no p90). The ratio is `null` when the adjusted denominator is 0.
+
+| League 2015/16 | Crosses | Unknown outcome |
+|----------------|---------|-----------------|
+| La Liga | 9,606 | 139 |
+| Premier League | 9,545 | 64 |
+| Serie A | 9,652 | 182 |
+| Ligue 1 | 9,253 | 101 |
+| Bundesliga (PARTIAL) | 701 | 3 |
+
+**Before/after:** these figures cover 1,250 pool rows (`in_percentile_pool` ∧
+`meets_min_minutes` ∧ `is_outfield`).
+- 297 rows rise, by a median of +0.79pp (mean +1.37pp, max +25.0pp on 4 attempts).
+- 1 row becomes `null`: its only cross has an unknown outcome.
+- Within-position-group percentile shift: mean 1.2 points, p95 3.5, max 20.4.
+- Pool mean by group, before → after:
+  - AM-Winger: 27.74% → 28.11%
+  - CB: 29.65% → 29.94%
+  - DM-CM: 27.32% → 27.77%
+  - FB-WB: 26.76% → 27.12%
+  - ST: 28.22% → 28.52%
+
+**M4 note (stats-reviewer):** a minutes gate does not protect ratio metrics: a player can
+reach an extreme percentile from a handful of crosses. M4 needs a minimum known-attempt gate
+on `cross_completion_pct`, like `MIN_AERIAL_CONTESTS` does for aerials. `dribble_success_pct`
+and `tackle_success_pct` need one too.
+
 ### Why `crosses_attempted` has a per-90 column but `crosses_completed` does not
 
 `crosses_attempted` is in `_COUNT_COLS` and therefore gets a `crosses_attempted_p90`
@@ -695,7 +767,7 @@ recalculated from raw counts without re-running the pipeline (CLAUDE.md requirem
 |--------|-------|
 | `crosses_attempted` total | 9,606 |
 | `crosses_completed` total | 2,651 |
-| Average `cross_completion_pct` (outfield, 900+ min) | ~27% |
+| Average `cross_completion_pct` (outfield, 900+ min) | ~27% (before the 2026-09-29 unknown-outcome amendment; see the before/after above) |
 
 ---
 
@@ -803,6 +875,44 @@ from the La Liga 2015/16 totals (0.1% of total).
 | `long_passes_completed` | 37,498 |
 | Completion rate | 57.6% |
 | Share of all passes | 17.8% |
+
+The completion rate above counts unknown outcomes as failures (the pre-amendment
+definition).
+
+### Unknown-outcome long passes (amended 2026-09-29, plan 004 H1.3)
+
+```
+long_pass_completion_pct = long_passes_completed / (long_passes_attempted − long_passes_unknown_outcome)
+```
+
+This follows the same rule as §14 and §15. `long_passes_attempted` and its p90 are unchanged.
+`long_passes_unknown_outcome` is display-only. The ratio is `null` when the adjusted
+denominator is 0.
+
+Unknown-outcome long passes, 2015/16:
+
+| League | Count |
+|--------|-------|
+| La Liga | 775 |
+| Premier League | 570 |
+| Serie A | 826 |
+| Ligue 1 | 736 |
+| Bundesliga | 91 |
+
+**Before/after:** these figures cover the same 1,250 pool rows as §15.
+- 791 rows rise, by a median of +0.68pp (mean +0.80pp, max +4.81pp). None become null.
+- Within-group percentile shift: mean 1.4 points, p95 3.7, max 13.5.
+- Pool mean by group, before → after:
+  - AM-Winger: 53.39% → 53.81%
+  - CB: 63.44% → 64.07%
+  - DM-CM: 66.00% → 66.47%
+  - FB-WB: 47.85% → 48.47%
+  - ST: 55.03% → 55.41%
+
+**M4 note (stats-reviewer):** `pass.outcome == "Injury Clearance"` (2,459 passes across the
+five leagues) is a deliberate kick out of play, but it is currently counted as incomplete. It
+lowers `pass_completion_pct` and probably `long_pass_completion_pct`, likely most for CBs.
+Measure it per position group and decide in an ADR before M4 percentiles.
 
 The 30-unit threshold is a conventional round number near the 78th percentile of
 open-play pass lengths.  No external definition is cited; the data-observed share
@@ -1282,3 +1392,56 @@ cohort question (ADR 003 §1).
   (3 rows: `multi_team_season` only on the two same-league rows,
   `multi_competition_season` on all three).
 - Integration: exactly one `is_primary_stint` per `(player_id, competition_id, season_id, source)`.
+
+---
+
+## 30. Shot Outcomes — Exact StatsBomb Strings; Unknown Values Fail the Build
+
+**Date:** 2026-09-29 (plan 004 H1.2; stats-reviewer approved)
+**File:** `src/eleveniq/metrics/shots.py`, `src/eleveniq/pipeline/build_player_match.py`
+
+### Bug
+`SHOTS_ON_TARGET_OUTCOMES` had `"Saved To Post"` (capital T). StatsBomb spells it
+`"Saved to Post"`. Exact matching meant 127 saved-onto-the-post shots were counted as off
+target.
+
+### Decision
+- `"Saved to Post"` is **on target** (with `"Goal"` and `"Saved"`).
+- `"Saved Off Target"` (146 shots) is **off target**, per StatsBomb's definition: the keeper
+  saved a shot that was going wide or high. It is added to `KNOWN_SHOT_OUTCOMES`.
+- Matching stays **exact**, never case-insensitive. The fail-loud check below catches any new
+  spelling instead of hiding it.
+- **Fail loud:** the build fails (`DataQualityError`) on:
+  - any shot outcome outside `KNOWN_SHOT_OUTCOMES`;
+  - any tackle outcome outside `KNOWN_TACKLE_OUTCOMES`;
+  - any duel type outside `KNOWN_DUEL_TYPES`;
+  - any shot missing `statsbomb_xg`.
+
+  The quality report records the offending values.
+
+### Categorical scan (5 leagues, 2015/16)
+Every categorical value the code matches on was compared with the observed data:
+- pass outcome and type;
+- shot outcome and type;
+- duel type and tackle outcome;
+- dribble outcome;
+- card names;
+- lineup and Starting XI position names.
+
+The only casing or spelling mismatch was `"Saved To Post"`. Some known values never occur in
+the data: `"No Touch"`, and the positions "Attacking Midfield", "Defensive Midfield" and
+"Secondary Striker". They are harmless and kept.
+
+### Before/after (`shots_on_target`)
+
+| League 2015/16 | Before | After | Δ |
+|----------------|--------|-------|---|
+| La Liga | 3,230 | 3,263 | +33 |
+| Premier League | 3,197 | 3,220 | +23 |
+| Serie A | 3,152 | 3,184 | +32 |
+| Ligue 1 | 3,073 | 3,103 | +30 |
+| Bundesliga (PARTIAL) | 308 | 317 | +9 |
+
+The fix changes `shots_on_target` in 127 player-match rows and 117 season rows. It also
+changes `shots_on_target_p90` in 100 of the 1,250 pool rows (median +0.040, max +0.153).
+No other column changed.

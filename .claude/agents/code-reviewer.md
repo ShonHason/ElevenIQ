@@ -33,6 +33,10 @@ Review ONLY the current changes: run `git diff` and `git status`
 - Broad `except Exception` that swallows errors without logging them.
 - Relative paths that depend on the current working directory.
 - Hard-coded thresholds (minutes, yards, tolerances) that belong in config.
+- Period-5 (penalty shootout) events reaching minutes, dismissals or
+  aggregates. Check every lookup over the match event list, not only the
+  metric counters: a shootout red card once extended a player's minutes
+  past the match duration.
 
 ## 3. Tests in the diff
 - Expected values changed in an existing test: flag it and ask whether

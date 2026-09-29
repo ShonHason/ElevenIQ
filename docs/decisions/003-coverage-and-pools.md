@@ -100,8 +100,10 @@ Consequences:
   population". The flag says nothing about the player's own minutes, position or other
   qualities.
 - **Independence from other gates:** the flag is deliberately separate from
-  `meets_min_minutes` (ADR 002 §5), `is_gk` and the UNKNOWN position exclusion. M4 combines
-  these gates in one place. Individually, none of them is sufficient.
+  `meets_min_minutes` (ADR 002 §5) and `is_outfield` (ADR 002 §4, §12; plan 004 H1.1).
+  `is_outfield` is the position gate: it excludes GK and UNKNOWN rows, and UNKNOWN minutes
+  fail the build anyway. M4 combines these gates in one place. Individually, none of them
+  is sufficient.
 - **Rows are still produced for PARTIAL seasons.** Leverkusen 2015/16 players get full
   player-season rows and can be looked up. Whether and how a non-pool row is ranked *against*
   a pool (e.g. showing a percentile relative to the FULL pools) is an M4 decision.

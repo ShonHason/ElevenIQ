@@ -76,6 +76,7 @@ def _match_row(
     assists: int = 0,
     crosses_attempted: int = 0,
     crosses_completed: int = 0,
+    crosses_unknown_outcome: int = 0,
     dispossessed: int = 0,
     miscontrols: int = 0,
     pressures: int = 0,
@@ -86,6 +87,7 @@ def _match_row(
     aerials_lost: int = 0,
     long_passes_attempted: int = 0,
     long_passes_completed: int = 0,
+    long_passes_unknown_outcome: int = 0,
     passes_missing_length: int = 0,
     switches: int = 0,
     xg_assisted: float = 0.0,
@@ -147,12 +149,14 @@ def _match_row(
         interceptions=interceptions, clearances=clearances, blocks=blocks,
         fouls_committed=fouls_committed, fouls_won=fouls_won, assists=assists,
         crosses_attempted=crosses_attempted, crosses_completed=crosses_completed,
+        crosses_unknown_outcome=crosses_unknown_outcome,
         dispossessed=dispossessed, miscontrols=miscontrols, pressures=pressures,
         ball_recoveries=ball_recoveries, ball_recoveries_failed=ball_recoveries_failed,
         dribbled_past=dribbled_past,
         aerials_won=aerials_won, aerials_lost=aerials_lost,
         long_passes_attempted=long_passes_attempted,
         long_passes_completed=long_passes_completed,
+        long_passes_unknown_outcome=long_passes_unknown_outcome,
         passes_missing_length=passes_missing_length, switches=switches,
         xg_assisted=xg_assisted, xg_assisted_direct=xg_assisted_direct,
         final_third_entries_pass=final_third_entries_pass,
@@ -994,6 +998,45 @@ class TestIntegration:
         assert season["crosses_attempted"].sum() == m["crosses_attempted"].sum()
         assert season["crosses_attempted"].sum() == ref["base"]["crosses_attempted"]
         assert season["crosses_completed"].sum() == ref["base"]["crosses_completed"]
+
+    # ADR 002 §15, §19, §30 (2026-09-29): per-league unknown-outcome crosses,
+    # unknown-outcome long passes and post-fix shots_on_target.
+    _ADR_H1_COUNTS = {
+        (11, 27): (139, 775, 3263),
+        (2, 27): (64, 570, 3220),
+        (12, 27): (182, 826, 3184),
+        (7, 27): (101, 736, 3103),
+        (9, 27): (3, 91, 317),
+    }
+
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_h1_counts_match_adr_and_ratios_recompute(self, frames, ref):
+        """Regression test, not independent verification: unknown-outcome counts and
+        shots_on_target equal the ADR figures at match and season level, and completion
+        ratios recompute from stored counts with unknown outcomes excluded from the
+        denominator. The ADR figures were measured by this same pipeline and the
+        recompute uses the pipeline's formula; independent verification against raw
+        JSON is plan 004 H2."""
+        match_df, season_df = frames
+        m, season = _league(match_df, ref), _league(season_df, ref)
+        crosses_unk, long_unk, sot = self._ADR_H1_COUNTS[(ref["competition_id"], ref["season_id"])]
+        for df in (m, season):
+            assert df["crosses_unknown_outcome"].sum() == crosses_unk
+            assert df["long_passes_unknown_outcome"].sum() == long_unk
+            assert df["shots_on_target"].sum() == sot
+        # An unknown outcome is never also a completion.
+        assert season.filter(
+            pl.col("crosses_completed") + pl.col("crosses_unknown_outcome")
+            > pl.col("crosses_attempted")).height == 0
+        assert season.filter(
+            pl.col("long_passes_completed") + pl.col("long_passes_unknown_outcome")
+            > pl.col("long_passes_attempted")).height == 0
+        known = season.filter(pl.col("crosses_attempted") - pl.col("crosses_unknown_outcome") > 0)
+        expected = known["crosses_completed"] / (known["crosses_attempted"] - known["crosses_unknown_outcome"])
+        assert (known["cross_completion_pct"] - expected).abs().max() < 1e-9
+        assert season.filter(
+            (pl.col("crosses_attempted") == pl.col("crosses_unknown_outcome"))
+            & pl.col("cross_completion_pct").is_not_null()).height == 0
 
     @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
     def test_chunk_a_metrics_reconcile(self, frames, ref):
@@ -2329,3 +2372,130 @@ class TestMultiCompetitionSeason:
         )
         flags = result.filter(pl.col("player_id") == 2)["multi_competition_season"].to_list()
         assert flags == [False]
+
+
+# ---------------------------------------------------------------------------
+# Unknown-outcome crosses / long passes (plan 004 H1.3, ADR 002 §15, §19)
+# ---------------------------------------------------------------------------
+
+class TestUnknownOutcomeDenominators:
+    """An Unknown-outcome cross or long pass is neither completed nor failed: it
+    stays in *_attempted (volume) but leaves the completion denominator."""
+
+    def _row(self, **kw):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0, **kw)]
+        return aggregate_player_season(_df(rows)).row(0, named=True)
+
+    def test_unknown_cross_excluded_from_denominator(self):
+        row = self._row(crosses_attempted=5, crosses_completed=2, crosses_unknown_outcome=1)
+        assert row["cross_completion_pct"] == pytest.approx(2 / 4)
+
+    def test_unknown_cross_still_counted_as_attempted(self):
+        row = self._row(crosses_attempted=5, crosses_completed=2, crosses_unknown_outcome=1)
+        assert row["crosses_attempted"] == 5
+        assert row["crosses_attempted_p90"] == pytest.approx(5.0)
+        assert row["crosses_unknown_outcome"] == 1
+
+    def test_all_crosses_unknown_gives_null_not_nan(self):
+        row = self._row(crosses_attempted=1, crosses_completed=0, crosses_unknown_outcome=1)
+        assert row["cross_completion_pct"] is None
+
+    def test_unknown_long_pass_excluded_from_denominator(self):
+        row = self._row(long_passes_attempted=10, long_passes_completed=6,
+                        long_passes_unknown_outcome=2)
+        assert row["long_pass_completion_pct"] == pytest.approx(6 / 8)
+
+    def test_unknown_long_pass_still_counted_as_attempted(self):
+        row = self._row(long_passes_attempted=10, long_passes_completed=6,
+                        long_passes_unknown_outcome=2)
+        assert row["long_passes_attempted"] == 10
+        assert row["long_passes_attempted_p90"] == pytest.approx(10.0)
+
+    def test_all_long_passes_unknown_gives_null_not_nan(self):
+        row = self._row(long_passes_attempted=2, long_passes_completed=0,
+                        long_passes_unknown_outcome=2)
+        assert row["long_pass_completion_pct"] is None
+
+    def test_unknown_outcome_columns_summed_across_matches(self):
+        rows = [
+            _match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                       crosses_attempted=2, crosses_unknown_outcome=1,
+                       long_passes_attempted=3, long_passes_unknown_outcome=1),
+            _match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0,
+                       crosses_attempted=2, crosses_unknown_outcome=1,
+                       long_passes_attempted=3, long_passes_unknown_outcome=2),
+        ]
+        row = aggregate_player_season(_df(rows)).row(0, named=True)
+        assert row["crosses_unknown_outcome"] == 2
+        assert row["long_passes_unknown_outcome"] == 3
+
+    def test_unknown_outcome_columns_have_no_p90(self):
+        rows = [_match_row(player_id=1, minutes_played=90.0, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        assert "crosses_unknown_outcome_p90" not in result.columns
+        assert "long_passes_unknown_outcome_p90" not in result.columns
+
+
+# ---------------------------------------------------------------------------
+# is_outfield (plan 004 H1.1): cohorts filter on it
+# ---------------------------------------------------------------------------
+
+class TestIsOutfield:
+    _COL = {"CB": "minutes_cb", "FB-WB": "minutes_fb_wb", "DM-CM": "minutes_dm_cm",
+            "AM-Winger": "minutes_am_winger", "ST": "minutes_st", "GK": "minutes_gk"}
+
+    def _flag(self, group: str) -> bool:
+        rows = [_match_row(player_id=1, position_group=group, minutes_played=90.0,
+                           **{self._COL[group]: 90.0})]
+        return aggregate_player_season(_df(rows))["is_outfield"][0]
+
+    @pytest.mark.parametrize("group", ["CB", "FB-WB", "DM-CM", "AM-Winger", "ST"])
+    def test_outfield_groups_true(self, group):
+        assert self._flag(group) is True
+
+    def test_gk_false(self):
+        assert self._flag("GK") is False
+
+    def test_unknown_group_false(self):
+        rows = [_match_row(player_id=1, position_group="UNKNOWN", minutes_played=90.0,
+                           minutes_unknown=90.0)]
+        result = aggregate_player_season(_df(rows))
+        assert result["position_group"][0] == "UNKNOWN"
+        assert result["is_outfield"][0] is False
+
+
+# ---------------------------------------------------------------------------
+# Deterministic output order
+# ---------------------------------------------------------------------------
+
+class TestDeterministicRowOrder:
+    """The season frame is sorted by its unique key, so two builds of the same
+    input are identical row by row, whatever the input row order."""
+
+    _KEY = ["player_id", "team_id", "competition_id", "season_id", "source"]
+
+    def _rows(self) -> list[dict]:
+        rows = []
+        for pid in range(1, 41):
+            for team_id in (10, 20) if pid % 3 == 0 else (10,):
+                for comp in (11, 2) if pid % 5 == 0 else (11,):
+                    rows.append(_match_row(player_id=pid, team_id=team_id,
+                                           team_name=f"Team {team_id}",
+                                           competition_id=comp, minutes_dm_cm=90.0,
+                                           shots=pid % 4))
+        return rows
+
+    def test_two_builds_identical_row_by_row(self):
+        first = aggregate_player_season(_df(self._rows()))
+        second = aggregate_player_season(_df(self._rows()))
+        assert first.equals(second)
+
+    def test_shuffled_input_gives_identical_frame(self):
+        rows = self._rows()
+        shuffled = _df(rows).sample(fraction=1.0, shuffle=True, seed=7)
+        assert aggregate_player_season(_df(rows)).equals(aggregate_player_season(shuffled))
+
+    def test_rows_sorted_by_unique_key(self):
+        result = aggregate_player_season(_df(self._rows()))
+        assert result.select(self._KEY).is_unique().all()
+        assert result.select(self._KEY).equals(result.select(self._KEY).sort(self._KEY))

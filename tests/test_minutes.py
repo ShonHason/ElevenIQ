@@ -60,12 +60,15 @@ class TestComputeMatchDuration:
         ]
         assert compute_match_duration(events) == pytest.approx(120.0)
 
-    def test_empty_events_returns_90(self):
-        assert compute_match_duration([]) == pytest.approx(90.0)
+    def test_empty_events_raises(self):
+        # No playing-time events: no 90-minute default (plan 004 H1.6).
+        with pytest.raises(ValueError, match="period <= 4"):
+            compute_match_duration([])
 
-    def test_all_shootout_events_returns_90(self):
+    def test_all_shootout_events_raises(self):
         events = [self._make_event(0, 0, 5), self._make_event(0, 30, 5)]
-        assert compute_match_duration(events) == pytest.approx(90.0)
+        with pytest.raises(ValueError, match="period <= 4"):
+            compute_match_duration(events)
 
     def test_stoppage_captured(self):
         events = [self._make_event(95, 45, 2)]
@@ -81,11 +84,11 @@ class TestComputeMatchDuration:
         ]
         assert compute_match_duration(events) == pytest.approx(120 + 30 / 60)
 
-    def test_period_missing_defaults_to_1_and_is_included(self):
-        # Events without a period field default to period=1 (via .get("period", 1)).
-        # get() returns 1, which is ≤ 4, so the event is included.
+    def test_period_missing_raises(self):
+        # The period key is required; a missing one is not defaulted to 1.
         event = {"minute": 88, "second": 15}  # no "period" key
-        assert compute_match_duration([event]) == pytest.approx(88 + 15 / 60)
+        with pytest.raises(KeyError):
+            compute_match_duration([event])
 
 
 class TestComputePlayerMinutes:

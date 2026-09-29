@@ -19,6 +19,8 @@ Design notes
   columns (exact, no approximation from per-match primary group).
 - Season position_group = argmax of per-group season minute totals.
 - Rows are never dropped; meets_min_minutes flags eligibility (ADR 002 §5).
+- Output rows are sorted by the unique key (player_id, team_id, competition_id,
+  season_id, source), so the season file is deterministic row by row.
 - GK rows are kept but is_gk=True marks them ineligible for DNA/similarity/gems
   in V1 (ADR 002 §12).
 - One row per (player, team, competition, season). multi_team_season,
@@ -56,7 +58,7 @@ from eleveniq.pipeline.coverage import (
     check_season_ids_unique,
 )
 from eleveniq.statsbomb.loader import load_competitions
-from eleveniq.metrics.positions import POSITION_GROUP_COLUMNS
+from eleveniq.metrics.positions import OUTFIELD_GROUPS, POSITION_GROUP_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +109,9 @@ _DISPLAY_ONLY_COLS: list[str] = [
     "shots_missing_xg",
     "passes_unknown_outcome",
     "crosses_completed",
+    "crosses_unknown_outcome",
     "long_passes_completed",
+    "long_passes_unknown_outcome",
     "passes_missing_length",
     "ball_recoveries_failed",
 ]
@@ -317,6 +321,8 @@ def aggregate_player_season(
     # Step 4: Derived ratio columns (null when denominator == 0)
     # ------------------------------------------------------------------
     known_attempts = pl.col("passes_attempted") - pl.col("passes_unknown_outcome")
+    known_crosses = pl.col("crosses_attempted") - pl.col("crosses_unknown_outcome")
+    known_long_passes = pl.col("long_passes_attempted") - pl.col("long_passes_unknown_outcome")
     season = season.with_columns([
         pl.when(known_attempts > 0)
         .then(pl.col("passes_completed").cast(pl.Float64) / known_attempts.cast(pl.Float64))
@@ -338,8 +344,10 @@ def aggregate_player_season(
         .otherwise(None)
         .alias("tackle_success_pct"),
 
-        pl.when(pl.col("crosses_attempted") > 0)
-        .then(pl.col("crosses_completed").cast(pl.Float64) / pl.col("crosses_attempted").cast(pl.Float64))
+        # Unknown-outcome crosses / long passes are neither completed nor failed:
+        # excluded from the denominator, like pass_completion_pct (ADR 002 §15, §19).
+        pl.when(known_crosses > 0)
+        .then(pl.col("crosses_completed").cast(pl.Float64) / known_crosses.cast(pl.Float64))
         .otherwise(None)
         .alias("cross_completion_pct"),
 
@@ -348,8 +356,8 @@ def aggregate_player_season(
         .otherwise(None)
         .alias("aerial_win_pct"),
 
-        pl.when(pl.col("long_passes_attempted") > 0)
-        .then(pl.col("long_passes_completed").cast(pl.Float64) / pl.col("long_passes_attempted").cast(pl.Float64))
+        pl.when(known_long_passes > 0)
+        .then(pl.col("long_passes_completed").cast(pl.Float64) / known_long_passes.cast(pl.Float64))
         .otherwise(None)
         .alias("long_pass_completion_pct"),
     ])
@@ -360,6 +368,7 @@ def aggregate_player_season(
     season = season.with_columns([
         (pl.col("minutes_played") >= min_minutes).alias("meets_min_minutes"),
         (pl.col("position_group") == "GK").alias("is_gk"),
+        pl.col("position_group").is_in(sorted(OUTFIELD_GROUPS)).alias("is_outfield"),
     ])
 
     # ------------------------------------------------------------------
@@ -436,7 +445,9 @@ def aggregate_player_season(
         (pl.col("_comp_count") > 1).alias("multi_competition_season")
     ).drop("_comp_count")
 
-    return season
+    # group_by does not keep row order, so sort on the unique key: the same
+    # input always gives the same frame, row by row.
+    return season.sort(_GROUP_KEY)
 
 
 def build_player_season(

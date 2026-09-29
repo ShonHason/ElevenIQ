@@ -52,10 +52,15 @@ def compute_match_duration(events: list[dict]) -> float:
     Note: this is the timestamp of the last *recorded* event, not the final
     whistle itself. It may undercount the true match duration by 15–60 seconds
     in matches where the last StatsBomb event precedes the whistle.
+
+    Raises:
+        KeyError:   if an event has no "period" key.
+        ValueError: if no event has period <= 4 (a match with no playing-time
+                    events cannot be given a duration; no 90-minute default).
     """
-    valid = [e for e in events if e.get("period", 1) <= 4]
+    valid = [e for e in events if e["period"] <= 4]
     if not valid:
-        return 90.0
+        raise ValueError("no events with period <= 4: cannot compute match duration")
     return max(e["minute"] + e["second"] / 60 for e in valid)
 
 

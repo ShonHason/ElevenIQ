@@ -14,9 +14,10 @@ Lost:   "Lost In Play", "Lost Out"
 
 Unknown/unobserved outcomes are NOT silently classified as won or lost.
 is_tackle_won() returns False for any outcome not in TACKLE_WON_OUTCOMES,
-including None and any newly seen string. The quality report surfaces
-outcome values not in KNOWN_TACKLE_OUTCOMES so we can decide how to
-classify them explicitly.
+including None and any newly seen string. build_player_match fails the
+build on any tackle outcome not in KNOWN_TACKLE_OUTCOMES and any duel type
+not in KNOWN_DUEL_TYPES, so a new value is classified explicitly, never
+silently.
 
 Do not add new outcomes here without verifying their semantics in the
 StatsBomb event data specification.
