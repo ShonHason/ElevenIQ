@@ -7,7 +7,8 @@
     "goals": 988,
     "own_goals": 38,
     "crosses_attempted": 9545,
-    "crosses_completed": 2624
+    "crosses_completed": 2624,
+    "dismissals": 59
   },
   "chunk_a": {
     "dispossessed": 10520,
@@ -30,5 +31,27 @@
     "final_third_entries_carry": 12624,
     "box_entries_pass": 6211,
     "box_entries_carry": 4078
+  },
+  "core": {
+    "minutes_played": 786724.5833,
+    "shots": 9908,
+    "shots_on_target": 3220,
+    "xg": 971.3813,
+    "passes_attempted": 368619,
+    "passes_completed": 282379,
+    "progressive_passes": 40041,
+    "progressive_carries": 59049,
+    "key_passes": 7175,
+    "assists": 669,
+    "tackles_attempted": 15445,
+    "tackles_won": 9300,
+    "dribbles_attempted": 13721,
+    "dribbles_completed": 8050,
+    "interceptions": 8920,
+    "clearances": 21645,
+    "blocks": 14475,
+    "fouls_committed": 9512,
+    "fouls_won": 9112,
+    "carries": 276949
   }
 }

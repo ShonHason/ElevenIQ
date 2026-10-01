@@ -203,7 +203,141 @@ compute_player_minutes(...)`.
 timestamp of the last recorded event, which may be a few seconds before the
 real final whistle.  Clamping explicit `to` values against it could silently
 truncate a legitimate substitution recorded 1–2 seconds after the last event.
-The clamp is therefore applied **only when a dismissal_minute is known**.
+The clamp is therefore applied **only when an exit cap is known**: a dismissal
+minute or, from 2026-09-29, the player's own substitution (below).
+
+#### Substitution-off cap (amended 2026-09-29, plan 004 H2)
+
+**Finding.** The H2 spike's structural check (per team-match, summed minutes
+≤ 11 × match duration) failed in all five leagues. In 33 player-matches the player
+is the subject of a `Substitution` event, but his last lineup stint still runs to
+"Final Whistle". Usually he left for treatment ("Player Off"), came back ("Player
+On"), and was replaced at that instant, so both he and his replacement were credited
+to the whistle. Example: match 3825707, Willian José, Player On 37:02 → Final Whistle,
+replaced at 37:02, +56 min. The pipeline and the spike's independent re-implementation
+agreed exactly, so both overcounted.
+
+**Decision.** The player's own `Substitution` event is authoritative.
+- **Cap.** Every stint end, explicit `to` included, is capped at
+  `stint_end_cap(dismissal_minute, substitution_minute)`, the earlier of the two
+  (`metrics/minutes.py`). It is the same mechanism as the dismissal cap and is
+  shared by `compute_player_minutes` and `_iter_stint_contributions`.
+- **Impossible stint.** A stint that starts after the player's own substitution
+  fails the build (`stint_after_substitution`, `DataQualityError`). The order is
+  `(from_period, from)` vs `(substitution period, minute)`, not the match-absolute
+  minute. Period 2 restarts at 45:00, so first-half stoppage (e.g. 46:01, period 1)
+  comes before a half-time substitution (45:00, period 2). A raw-minute comparison
+  would flag 9 legal half-time subs (e.g. Bale, 3825739). A stint that starts at the
+  substitution instant is allowed and gets 0 minutes. `from_period` is required.
+- **Fail-loud checks.**
+  - More than one substitution off for a player fails the build
+    (`multiple_substitutions_off`; 0 occur).
+  - Per team-match, summed minutes above `11 × match_duration + 1e-6` fail the build
+    (`team_minutes_exceed_ceiling`). After the cap, the measured maximum excess is 0.0.
+    No stint with an explicit `to` ends after the last event (the closest is 18 s
+    before it), so any wider tolerance would only hide bugs.
+- **Report-only counts.**
+  - `substitution_capped` lists each capped player and the minutes removed (33).
+  - `reversed_period_stint` counts stints with `from_period > to_period` (9: PL 3,
+    Serie A 4, Ligue 1 2; e.g. Rodrigo Ely, 3879549, "45:00 p2 → 45:51 p1"). Under
+    match-absolute arithmetic each one adds a spurious 0.8–2.5 min. This is part of
+    the known limit below and does not fail the build.
+
+**Known limits.**
+- **First-half stoppage time cannot be represented.** Period 2 always starts at
+  45:00. In the Bale-type cases the treatment-return stint (e.g. 46:01, period 1)
+  becomes 0 min, although the player really played 1–2 min. This is consistent with
+  how every player's minutes are computed.
+- **Ligue 1 residual (not fixed).** A lineup stint can also run on after a
+  "Player Off (Permanent)" with no Substitution event: Sofiane Boufal (3901155,
+  ~14.4 min) and Florent Balmont (3901151, ~8.7 min). No check can see these, because
+  the team really was down to 10. The "Permanent" label is unreliable: Anthony Weber
+  (3900512) has it, then returns and has 94 events. So it must not become a cap rule.
+
+The stats-reviewer approved the change, with conditions. Across all 8,922 Substitution
+events: the subject is always a lineup player of the event's team, and the replacement
+is always a lineup player of the same team. No explicit `to` is later than the player's
+own substitution, so the cap changes no row outside the 33. After the cap, the
+on-pitch count per team never exceeds 11 at any instant.
+
+**Before/after (H1 output → H2 output), per league:**
+
+| League 2015/16 | Player-matches capped | Minutes removed | League minutes before | After |
+|---|---|---|---|---|
+| La Liga | 8 | 336.92 | 776,915.75 | 776,578.83 |
+| Premier League | 6 | 213.58 | 786,938.17 | 786,724.58 |
+| Serie A | 10 | 496.45 | 782,488.20 | 781,991.75 |
+| Ligue 1 | 8 | 322.55 | 773,130.97 | 772,808.42 |
+| Bundesliga (PARTIAL) | 1 | 23.37 | 69,679.90 | 69,656.53 |
+| **Total** | **33** | **1,392.87** | **3,189,152.98** | **3,187,760.12** |
+
+**The 33 player-matches (minutes):**
+
+| League | Match | Player | Before | After | Removed |
+|---|---|---|---|---|---|
+| La Liga | 3825565 | Álvaro González Soberón | 93.65 | 76.42 | 17.23 |
+| La Liga | 3825667 | Eric Bertrand Bailly | 93.43 | 32.68 | 60.75 |
+| La Liga | 3825684 | Jaume Vicent Costa Jordá | 90.08 | 45.00 | 45.08 |
+| La Liga | 3825699 | Francisco José Molinero Calderón | 92.32 | 81.75 | 10.57 |
+| La Liga | 3825707 | Willian José da Silva | 89.40 | 33.45 | 55.95 |
+| La Liga | 3825729 | Bernardo José Espinosa Zúñiga | 91.53 | 37.28 | 54.25 |
+| La Liga | 3825739 | Gareth Frank Bale | 90.60 | 44.58 | 46.02 |
+| La Liga | 3825901 | Aymen Abdennour | 91.07 | 44.00 | 47.07 |
+| Premier League | 3754099 | Saido Berahino | 94.05 | 45.00 | 49.05 |
+| Premier League | 3754148 | Ryan Mason | 93.25 | 82.77 | 10.48 |
+| Premier League | 3754217 | Francis Joseph Coquelin (match group CB → DM-CM) | 92.58 | 44.62 | 47.97 |
+| Premier League | 3754274 | Marc Muniesa Martínez | 93.37 | 45.00 | 48.37 |
+| Premier League | 3754336 | Séamus Coleman | 93.30 | 75.67 | 17.63 |
+| Premier League | 3754339 | Xherdan Shaqiri | 85.08 | 45.00 | 40.08 |
+| Serie A | 3878610 | Rafael Márquez Álvarez | 97.18 | 69.18 | 28.00 |
+| Serie A | 3879547 | Francesco Totti | 44.07 | 6.75 | 37.32 |
+| Serie A | 3879622 | Lorenzo Pasciuti | 94.63 | 45.00 | 49.63 |
+| Serie A | 3879639 | Gervais Lombe Yao Kouassi | 93.73 | 23.52 | 70.22 |
+| Serie A | 3879690 | Marcos Alonso Mendoza | 93.97 | 73.48 | 20.48 |
+| Serie A | 3879731 | Lorenzo Pasciuti | 92.15 | 10.43 | 81.72 |
+| Serie A | 3879772 | Giuseppe Vives | 92.40 | 84.43 | 7.97 |
+| Serie A | 3879831 | Gregoire Defrel | 91.85 | 27.85 | 64.00 |
+| Serie A | 3879863 | Molla Wagué | 89.63 | 17.08 | 72.55 |
+| Serie A | 3879874 | Marcos Alonso Mendoza | 90.87 | 26.30 | 64.57 |
+| Ligue 1 | 3829420 | Grégory Sertic | 92.82 | 22.83 | 69.98 |
+| Ligue 1 | 3900519 | Benjamin André | 95.25 | 45.00 | 50.25 |
+| Ligue 1 | 3900529 | Ronaël Pierre-Gabriel | 94.55 | 58.73 | 35.82 |
+| Ligue 1 | 3900539 | Edson André Sitoe | 92.43 | 61.20 | 31.23 |
+| Ligue 1 | 3900588 | Jérémy Toulalan | 92.43 | 67.32 | 25.12 |
+| Ligue 1 | 3900628 | Éderzito António Macedo Lopes | 91.72 | 45.00 | 46.72 |
+| Ligue 1 | 3901163 | Mouhamadou Dabo | 92.18 | 47.35 | 44.83 |
+| Ligue 1 | 3901259 | Matthieu Saunier | 93.50 | 74.90 | 18.60 |
+| Bundesliga | 3890382 | Sebastian Boenisch | 91.28 | 67.92 | 23.37 |
+
+**What changed in the outputs:**
+- **Match level:** only these 33 rows changed, and only in `minutes_played`, the
+  `minutes_<group>` columns, `position_group` and `position_raw`. Coquelin's match
+  group changed. Every other row and column is identical to the H1 output.
+- **Season level:** 31 rows changed (Pasciuti and Marcos Alonso have two capped
+  matches each), only in `minutes_played`, `minutes_<group>`,
+  `player_season_minutes_total` and the `*_p90` columns.
+- **Flags and cohorts unchanged:**
+  - **`meets_min_minutes` changes for no player.** The closest rows to 900 min were
+    already below it: Ryan Mason 871.05 → 860.57, Rafael Márquez 811.10 → 783.10.
+  - No `is_primary_stint`, season `position_group`, `is_outfield` or
+    `in_percentile_pool` flip.
+  - Cohort sizes (`meets_min_minutes ∧ is_outfield`, per league and group) are
+    unchanged.
+- **Per-90 effect.**
+  - In 25 pool rows (`in_percentile_pool ∧ meets_min_minutes ∧ is_outfield`), every
+    `*_p90` rises by the factor before/after minutes: median +2.8%, max +8.2%
+    (Pasciuti, 1,741.78 → 1,610.43).
+  - The largest change outside the pool is Sertic: 92.82 → 22.83 season minutes
+    (×4.07 per-90 values), below the gate.
+- **Spike agreement.** After the fix, the spike (re-implementing this rule) and the
+  pipeline agree on all 20 core columns in every match. The league minutes gap to
+  Σ(11 × duration − dismissal losses) is 0.02–0.06%, within the spike's 0.1%
+  tolerance. The gap is mostly players who left injured with no substitutes left,
+  plus the Ligue 1 residual above.
+
+Totals quoted elsewhere in this ADR that predate this amendment (e.g. §28's
+3,189,152.98 minutes) are historical; current totals are in the table above and in
+`tests/fixtures/reference_totals/*.json` (`core`).
 
 #### Bench dismissals
 

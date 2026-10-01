@@ -26,7 +26,7 @@ from pathlib import Path
 
 import polars as pl
 
-from eleveniq.metrics.minutes import compute_match_duration
+from eleveniq.metrics.minutes import compute_match_duration, parse_mm_ss
 from eleveniq.metrics.positions import (
     POSITION_GROUP_COLUMNS,
     UNKNOWN_POSITION_GROUP,
@@ -59,6 +59,7 @@ from eleveniq.pipeline.quality_report import (
     DISMISSAL_TOLERANCE_MINUTES,
     check_dismissal_event_quality,
     find_dismissal_minute,
+    find_substitutions_off,
 )
 from eleveniq.statsbomb.loader import load_events, load_lineups, load_matches
 
@@ -109,11 +110,29 @@ ALLOWED_DROPPED_EVENT_TYPES = frozenset({"Bad Behaviour"})
 DROPPED_NOT_IN_LINEUP = "not_in_lineup"
 DROPPED_ZERO_MINUTES = "zero_minutes"
 
+# Substitution-off checks (ADR 002 §3). The player's own Substitution event caps
+# his stints; these quality issues guard that rule.
+MULTIPLE_SUBSTITUTIONS_OFF = "multiple_substitutions_off"
+STINT_AFTER_SUBSTITUTION = "stint_after_substitution"
+TEAM_MINUTES_EXCEED_CEILING = "team_minutes_exceed_ceiling"
+# Informational (do not fail the build): a stint shortened by the substitution
+# cap, and a stint whose from_period is later than its to_period.
+SUBSTITUTION_CAPPED = "substitution_capped"
+REVERSED_PERIOD_STINT = "reversed_period_stint"
+
+# Per team-match, summed minutes may not exceed 11 × match_duration by more
+# than float noise (ADR 002 §3: measured maximum after the cap is 0.0).
+TEAM_MINUTES_TOLERANCE: float = 1e-6
+PLAYERS_ON_PITCH: int = 11
+
 # Quality-report issues that fail the build (DataQualityError).
 FAILING_QUALITY_ISSUES = EVENT_QUALITY_ISSUES | {
     "minutes_unknown",
     "dropped_event",
     "dismissal_after_match_end",
+    MULTIPLE_SUBSTITUTIONS_OFF,
+    STINT_AFTER_SUBSTITUTION,
+    TEAM_MINUTES_EXCEED_CEILING,
 }
 
 _SCHEMA: dict[str, type] = {
@@ -554,14 +573,45 @@ def _process_match(
                     "match_duration": match_duration,
                 })
 
+            substitution_minute = _substitution_off_minute(
+                match_id, player_id, positions, play_events, dismissal_report
+            )
+
             # ONE shared call: compute_minutes_per_group drives both minutes_played
             # and position group.  compute_player_minutes is NOT called separately.
             group_minutes = compute_minutes_per_group(
                 positions,
                 match_duration,
                 dismissal_minute=dismissal_minute,
+                substitution_minute=substitution_minute,
             )
             minutes_played = sum(group_minutes.values())
+
+            if substitution_minute is not None:
+                uncapped = sum(compute_minutes_per_group(
+                    positions, match_duration, dismissal_minute=dismissal_minute
+                ).values())
+                if uncapped > minutes_played:
+                    dismissal_report.append({
+                        "issue": SUBSTITUTION_CAPPED,
+                        "match_id": match_id,
+                        "team_id": team_id,
+                        "player_id": player_id,
+                        "player_name": player_name,
+                        "substitution_minute": substitution_minute,
+                        "minutes_removed": uncapped - minutes_played,
+                    })
+            for stint in positions:
+                if stint.get("to_period") is not None and stint["from_period"] > stint["to_period"]:
+                    dismissal_report.append({
+                        "issue": REVERSED_PERIOD_STINT,
+                        "match_id": match_id,
+                        "player_id": player_id,
+                        "from": stint["from"],
+                        "from_period": stint["from_period"],
+                        "to": stint["to"],
+                        "to_period": stint["to_period"],
+                    })
 
             if minutes_played == 0.0:
                 continue  # unused substitute
@@ -573,6 +623,7 @@ def _process_match(
                 positions,
                 match_duration,
                 dismissal_minute=dismissal_minute,
+                substitution_minute=substitution_minute,
             )
             position_raw = _primary_raw_position(raw_minutes)
 
@@ -727,6 +778,17 @@ def _process_match(
                 "extra_in_derived": sorted(derived - expected),
             })
 
+        team_minutes = sum(row["minutes_played"] for row, _ in team_entries)
+        ceiling = PLAYERS_ON_PITCH * match_duration
+        if team_minutes > ceiling + TEAM_MINUTES_TOLERANCE:
+            dismissal_report.append({
+                "issue": TEAM_MINUTES_EXCEED_CEILING,
+                "match_id": match_id,
+                "team_id": team_id,
+                "team_minutes": team_minutes,
+                "ceiling": ceiling,
+            })
+
         rows.extend(row for row, _ in team_entries)
 
     for (issue, value), count in sorted(event_issues.items(), key=str):
@@ -736,6 +798,50 @@ def _process_match(
     dismissal_report.extend(_dropped_events(match_id, player_events, lineups, rows))
 
     return rows, dismissal_report
+
+
+def _substitution_off_minute(
+    match_id: int,
+    player_id: int,
+    positions: list[dict],
+    play_events: list[dict],
+    report: list[dict],
+) -> float | None:
+    """
+    Minute of the Substitution event that took this player off, or None.
+
+    Appends a failing issue to `report` when the player was substituted off
+    more than once, or has a stint that starts after his own substitution.
+    The order is (period, minute), not the match-absolute minute alone:
+    period 2 restarts at 45:00, so first-half stoppage (e.g. 46:01 in period 1)
+    precedes a half-time substitution (45:00 in period 2). A stint starting at
+    the substitution instant is allowed; the cap gives it 0 minutes.
+    `from_period` is required on every stint (KeyError otherwise, never
+    defaulted, or the check would silently become period-naive).
+    """
+    subs = find_substitutions_off(play_events, player_id)
+    if not subs:
+        return None
+    if len(subs) > 1:
+        report.append({
+            "issue": MULTIPLE_SUBSTITUTIONS_OFF,
+            "match_id": match_id,
+            "player_id": player_id,
+            "substitutions": subs,
+        })
+    sub_period, sub_minute = subs[0]
+    for stint in positions:
+        if (stint["from_period"], parse_mm_ss(stint["from"])) > (sub_period, sub_minute):
+            report.append({
+                "issue": STINT_AFTER_SUBSTITUTION,
+                "match_id": match_id,
+                "player_id": player_id,
+                "stint_from": stint["from"],
+                "stint_from_period": stint["from_period"],
+                "substitution_period": sub_period,
+                "substitution_minute": sub_minute,
+            })
+    return sub_minute
 
 
 def _dropped_events(
@@ -893,6 +999,12 @@ def summarise_quality_report(report: list[dict]) -> dict[str, int]:
         "dropped_events_allowed": sum(
             1 for d in report if d.get("issue") == "dropped_event_allowed"
         ),
+        "substitution_capped": sum(
+            1 for d in report if d.get("issue") == SUBSTITUTION_CAPPED
+        ),
+        "reversed_period_stints": sum(
+            1 for d in report if d.get("issue") == REVERSED_PERIOD_STINT
+        ),
     }
 
 
@@ -1029,5 +1141,7 @@ if __name__ == "__main__":
             f"fallback_players={summary['fallback_players']} "
             f"(team-matches={summary['fallback_team_matches']}) "
             f"starter_count_mismatches={summary['starter_count_mismatches']} "
-            f"dropped_events_allowed={summary['dropped_events_allowed']}"
+            f"dropped_events_allowed={summary['dropped_events_allowed']} "
+            f"substitution_capped={summary['substitution_capped']} "
+            f"reversed_period_stints={summary['reversed_period_stints']}"
         )

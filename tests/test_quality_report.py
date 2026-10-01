@@ -4,6 +4,7 @@ import pytest
 from eleveniq.config import COMPETITION_SEASONS
 from eleveniq.pipeline.quality_report import (
     find_dismissal_minute,
+    find_substitutions_off,
     check_dismissal_event_quality,
     check_dismissed_player_minutes,
     DISMISSAL_CARDS,
@@ -449,3 +450,41 @@ def test_no_dismissed_player_minutes_above_card_minute(cs):
         f"{len(violations)} dismissed player(s) with overcounted minutes:\n"
         + "\n".join(violations)
     )
+
+
+# ---------------------------------------------------------------------------
+# find_substitutions_off (ADR 002 §3)
+# ---------------------------------------------------------------------------
+
+def _substitution_event(player_id: int, replacement_id: int, *, period: int,
+                        minute: int, second: int = 0) -> dict:
+    return {
+        "type": {"name": "Substitution"},
+        "player": {"id": player_id},
+        "substitution": {"replacement": {"id": replacement_id}},
+        "period": period,
+        "minute": minute,
+        "second": second,
+    }
+
+
+class TestFindSubstitutionsOff:
+    def test_only_the_player_leaving_matches_not_the_replacement(self):
+        events = [_substitution_event(10, 20, period=2, minute=60, second=30)]
+        assert find_substitutions_off(events, 10) == [(2, pytest.approx(60.5))]
+        assert find_substitutions_off(events, 20) == []
+
+    def test_other_event_types_and_playerless_events_ignored(self):
+        events = [
+            {"type": {"name": "Half End"}, "period": 1, "minute": 45, "second": 0},
+            {**_other_event(10, "Player Off"), "period": 1},
+            {**_other_event(10, "Pass"), "period": 1},
+        ]
+        assert find_substitutions_off(events, 10) == []
+
+    def test_all_substitutions_returned_in_event_order(self):
+        # More than one entry is the caller's data-quality failure; the finder must
+        # return all of them, not just the first.
+        events = [_substitution_event(10, 20, period=1, minute=30),
+                  _substitution_event(10, 21, period=2, minute=70)]
+        assert find_substitutions_off(events, 10) == [(1, 30.0), (2, 70.0)]

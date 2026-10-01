@@ -358,6 +358,29 @@ class TestMinutesConsistency:
             compute_player_minutes(positions, duration, dismissal_minute=d_min)
         )
 
+    def test_with_substitution_off(self):
+        """Own substitution caps explicit and open-ended stints alike (ADR 002 §3)."""
+        positions = [
+            self._stint("Center Forward", "00:00", "31:29"),
+            self._stint("Center Forward", "37:02", None),
+        ]
+        duration, s_min = 93.0, 37 + 2 / 60
+        group_total = sum(
+            compute_minutes_per_group(positions, duration, substitution_minute=s_min).values()
+        )
+        player_total = compute_player_minutes(positions, duration, substitution_minute=s_min)
+        assert group_total == pytest.approx(player_total)
+        assert group_total == pytest.approx(31 + 29 / 60)
+
+    def test_dismissal_and_substitution_use_the_earlier_cap(self):
+        positions = [self._stint("Left Back", "00:00", "80:00")]
+        for d_min, s_min in ((40.0, 60.0), (60.0, 40.0)):
+            group_total = sum(compute_minutes_per_group(
+                positions, 90.0, dismissal_minute=d_min, substitution_minute=s_min).values())
+            player_total = compute_player_minutes(
+                positions, 90.0, dismissal_minute=d_min, substitution_minute=s_min)
+            assert group_total == pytest.approx(player_total) == pytest.approx(40.0)
+
     def test_unused_sub_both_zero(self):
         group_total = sum(compute_minutes_per_group([], 90.0).values())
         assert group_total == pytest.approx(compute_player_minutes([], 90.0))

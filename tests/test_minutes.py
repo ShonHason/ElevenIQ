@@ -1,6 +1,8 @@
 """Tests for src/metrics/minutes.py"""
 import pytest
-from eleveniq.metrics.minutes import parse_mm_ss, compute_match_duration, compute_player_minutes
+from eleveniq.metrics.minutes import (
+    parse_mm_ss, compute_match_duration, compute_player_minutes, stint_end_cap,
+)
 
 
 class TestParseMmSs:
@@ -191,3 +193,33 @@ class TestDismissalMinute:
         stints = [self._stint("00:00", "90:05")]
         minutes = compute_player_minutes(stints, match_duration=90.0)
         assert minutes == pytest.approx(90 + 5 / 60)
+
+
+class TestSubstitutionMinuteCap:
+    """Exit cap from the player's own substitution (ADR 002 §3)."""
+
+    @pytest.mark.parametrize("dismissal,substitution,expected", [
+        (None, None, None),
+        (40.0, None, 40.0),
+        (None, 40.0, 40.0),
+        (40.0, 60.0, 40.0),
+        (60.0, 40.0, 40.0),
+        (0.0, 30.0, 0.0),   # a 0.0 cap is a cap, not "missing"
+    ])
+    def test_stint_end_cap_is_earlier_exit(self, dismissal, substitution, expected):
+        assert stint_end_cap(dismissal, substitution) == expected
+
+    def test_explicit_to_before_substitution_unchanged(self):
+        # The cap only shortens: an explicit `to` earlier than the sub stands.
+        stints = [{"from": "00:00", "to": "59:50"}]
+        assert compute_player_minutes(
+            stints, match_duration=92.0, substitution_minute=60.0
+        ) == pytest.approx(59 + 50 / 60)
+
+    def test_explicit_to_past_match_duration_kept_when_sub_is_later(self):
+        # match_duration can lag the real whistle; a sub cap later than `to` must
+        # not clamp `to` down to match_duration.
+        stints = [{"from": "00:00", "to": "90:05"}]
+        assert compute_player_minutes(
+            stints, match_duration=90.0, substitution_minute=90 + 10 / 60
+        ) == pytest.approx(90 + 5 / 60)

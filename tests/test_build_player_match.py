@@ -1051,6 +1051,9 @@ class TestSummariseQualityReport:
             {"issue": "starting_xi_mismatch", "match_id": 6},
             {"issue": "dropped_event_allowed", "match_id": 7, "player_id": 13},
             {"issue": "dropped_event_allowed", "match_id": 8, "player_id": 14},
+            {"issue": "substitution_capped", "match_id": 9, "player_id": 15},
+            {"issue": "reversed_period_stint", "match_id": 9, "player_id": 16},
+            {"issue": "reversed_period_stint", "match_id": 9, "player_id": 17},
         ]
         assert summarise_quality_report(report) == {
             "dismissals": 2,
@@ -1059,6 +1062,8 @@ class TestSummariseQualityReport:
             "fallback_players": 4,
             "starter_count_mismatches": 1,
             "dropped_events_allowed": 2,
+            "substitution_capped": 1,
+            "reversed_period_stints": 2,
         }
 
     def test_empty_report_all_zero(self):
@@ -1415,3 +1420,184 @@ class TestFailLoudEdgeCases:
         assert (r["crosses_attempted"], r["crosses_completed"], r["crosses_unknown_outcome"]) == (1, 0, 1)
         assert (r["long_passes_attempted"], r["long_passes_completed"],
                 r["long_passes_unknown_outcome"]) == (1, 0, 1)
+
+
+# ---------------------------------------------------------------------------
+# Substitution-off cap and team minutes ceiling (plan 004 H2, ADR 002 §3)
+# ---------------------------------------------------------------------------
+
+def _sub_off(pid: int, *, period: int, minute: int, second: int = 0) -> dict:
+    ev = _ev("Substitution", pid, period=period, minute=minute,
+             substitution={"replacement": {"id": _BENCH}})
+    ev["second"] = second
+    return ev
+
+
+class TestSubstitutionOffCap:
+    def test_player_on_stint_after_treatment_capped_at_own_substitution(self, tmp_path):
+        # Match 3825707 pattern: Player Off for treatment, Player On at the
+        # instant he is replaced; the lineup still runs his stint to the whistle.
+        spells = [
+            {**_spell("00:00", "31:29", "Starting XI"), "end_reason": "Player Off"},
+            {**_spell("37:02", None, "Player On"), "end_reason": "Final Whistle"},
+        ]
+        lineups = _quality_lineups(
+            starter_positions=spells,
+            bench_positions=[_spell("37:02", None, "Substitution - On (Injury)")])
+        _, (df, report) = _build(
+            tmp_path, [_sub_off(_STARTER, period=1, minute=37, second=2)], lineups)
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["minutes_played"] == pytest.approx(31 + 29 / 60)
+        capped = [d for d in report if d.get("issue") == "substitution_capped"]
+        assert len(capped) == 1
+        assert capped[0]["minutes_removed"] == pytest.approx(90 - (37 + 2 / 60))
+
+    def test_explicit_to_past_own_substitution_is_capped(self, tmp_path):
+        lineups = _quality_lineups(starter_positions=[_spell("00:00", "80:00", "Starting XI")])
+        _, (df, _) = _build(tmp_path, [_sub_off(_STARTER, period=1, minute=30)], lineups)
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["minutes_played"] == pytest.approx(30.0)
+
+    def test_first_half_stoppage_stint_before_half_time_substitution_is_allowed(self, tmp_path):
+        # Bale, 3825739: back on at 46:01 in period 1, replaced at the period-2
+        # restart (45:00). (1, 46:01) precedes (2, 45:00): no failure.
+        spells = [
+            {**_spell("00:00", "44:00", "Starting XI")},
+            {**_spell("46:01", None, "Player On")},
+        ]
+        _, (df, report) = _build(
+            tmp_path, [_sub_off(_STARTER, period=2, minute=45)],
+            _quality_lineups(starter_positions=spells))
+        assert not [d for d in report if d.get("issue") == "stint_after_substitution"]
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["minutes_played"] == pytest.approx(44.0)
+
+    def test_stint_starting_after_own_substitution_fails_build(self, tmp_path):
+        spells = [
+            {**_spell("00:00", "30:00", "Starting XI")},
+            {**_spell("50:00", None, "Player On"), "from_period": 2},
+        ]
+        msg = _build_fails(tmp_path, [_sub_off(_STARTER, period=1, minute=30)],
+                           _quality_lineups(starter_positions=spells))
+        assert "stint_after_substitution" in msg
+
+    def test_stint_starting_at_substitution_instant_is_allowed(self, tmp_path):
+        spells = [{**_spell("00:00", "30:00", "Starting XI")},
+                  {**_spell("30:00", None, "Player On")}]
+        _, (df, _) = _build(tmp_path, [_sub_off(_STARTER, period=1, minute=30)],
+                            _quality_lineups(starter_positions=spells))
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["minutes_played"] == pytest.approx(30.0)
+
+    def test_substituted_off_twice_fails_build(self, tmp_path):
+        events = [_sub_off(_STARTER, period=1, minute=30),
+                  _sub_off(_STARTER, period=2, minute=60)]
+        assert "multiple_substitutions_off" in _build_fails(tmp_path, events)
+
+    def test_team_minutes_above_eleven_times_duration_fails_build(self, tmp_path):
+        # 12 overlapping full-match stints: 12 × 90 > 11 × 90.
+        spells = [_spell("00:00", None, "Starting XI") for _ in range(12)]
+        msg = _build_fails(tmp_path, [], _quality_lineups(starter_positions=spells))
+        assert "team_minutes_exceed_ceiling" in msg
+
+    def test_team_minutes_at_ceiling_passes(self, tmp_path):
+        spells = [_spell("00:00", None, "Starting XI") for _ in range(11)]
+        _, (df, _) = _build(tmp_path, [], _quality_lineups(starter_positions=spells))
+        assert df["minutes_played"].sum() == pytest.approx(11 * 90.0)
+
+    def test_reversed_period_stint_reported_not_failed(self, tmp_path):
+        # 3879549 pattern: "45:00 p2 → 45:51 p1".
+        spells = [{**_spell("00:00", "45:00", "Starting XI")},
+                  {**_spell("45:00", "45:51", "Tactical Shift"), "from_period": 2}]
+        _, (_, report) = _build(tmp_path, [], _quality_lineups(starter_positions=spells))
+        assert [d for d in report if d.get("issue") == "reversed_period_stint"]
+
+
+class TestSubstitutionOffPipelineEdges:
+    """ADR 002 §3 edge cases not covered by TestSubstitutionOffCap: the replacement,
+    a substitute who is himself replaced, shootout/extra-time periods, and a
+    bench card after the substitution."""
+
+    _THIRD = 8003
+
+    @staticmethod
+    def _row(df, pid):
+        return df.filter(pl.col("player_id") == pid).row(0, named=True)
+
+    def test_ordinary_substitution_replacement_keeps_minutes_and_nothing_reported(self, tmp_path):
+        # The replacement is substitution.replacement, not the event's player: he must
+        # not be capped at his own on-minute. A clean sub must not be reported as
+        # substitution_capped (ADR: 33 capped of 8,922 subs, not every sub).
+        lineups = _quality_lineups(
+            starter_positions=[_spell("00:00", "60:00", "Starting XI")],
+            bench_positions=[{**_spell("60:00", None, "Substitution - On"), "from_period": 2}])
+        _, (df, report) = _build(tmp_path, [_sub_off(_STARTER, period=2, minute=60)], lineups)
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(60.0)
+        assert self._row(df, _BENCH)["minutes_played"] == pytest.approx(30.0)
+        assert not [d for d in report if d.get("issue") == "substitution_capped"]
+
+    def test_substitute_who_is_later_substituted_off(self, tmp_path):
+        # Sub-of-a-sub: on at 30:00 (p1), replaced at 70:00 (p2); lineup leaves to=None.
+        lineups = [{
+            "team_id": _TEAM, "team_name": "Quality FC",
+            "lineup": [
+                {"player_id": _STARTER, "player_name": "Starter",
+                 "positions": [_spell("00:00", "30:00", "Starting XI")]},
+                {"player_id": _BENCH, "player_name": "Bench",
+                 "positions": [_spell("30:00", None, "Substitution - On")]},
+                {"player_id": self._THIRD, "player_name": "Third",
+                 "positions": [{**_spell("70:00", None, "Substitution - On"),
+                                "from_period": 2}]},
+            ],
+        }]
+        events = [
+            _sub_off(_STARTER, period=1, minute=30),
+            _ev("Substitution", _BENCH, period=2, minute=70,
+                substitution={"replacement": {"id": self._THIRD}}),
+        ]
+        _, (df, report) = _build(tmp_path, events, lineups)
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(30.0)
+        assert self._row(df, _BENCH)["minutes_played"] == pytest.approx(40.0)
+        assert self._row(df, self._THIRD)["minutes_played"] == pytest.approx(20.0)
+        assert df["minutes_played"].sum() == pytest.approx(90.0)
+
+    def test_second_half_stoppage_time_substitution(self, tmp_path):
+        # Replaced at 93:20 (p2), lineup to=None, match runs to 95:00.
+        events = [_sub_off(_STARTER, period=2, minute=93, second=20),
+                  _ev("Half End", None, period=2, minute=95)]
+        lineups = _quality_lineups(
+            bench_positions=[{**_spell("93:20", None, "Substitution - On"), "from_period": 2}])
+        _, (df, _) = _build(tmp_path, events, lineups)
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(93 + 20 / 60)
+        assert self._row(df, _BENCH)["minutes_played"] == pytest.approx(95 - (93 + 20 / 60))
+
+    def test_second_half_stoppage_stint_before_extra_time_substitution_is_allowed(self, tmp_path):
+        # Same ordering rule as the Bale case, one half later: period 3 restarts at
+        # 90:00, so (2, 92:30) precedes a substitution at (3, 91:00).
+        spells = [{**_spell("00:00", "88:00", "Starting XI"), "to_period": 2},
+                  {**_spell("92:30", None, "Player On"), "from_period": 2}]
+        events = [_sub_off(_STARTER, period=3, minute=91),
+                  _ev("Half End", None, period=4, minute=120)]
+        _, (df, report) = _build(tmp_path, events, _quality_lineups(starter_positions=spells))
+        assert not [d for d in report if d.get("issue") == "stint_after_substitution"]
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(88.0)
+
+    def test_shootout_substitution_does_not_extend_minutes(self, tmp_path):
+        # A Substitution in period 5 (shootout) is not playing time: it must neither
+        # cap nor extend the stint past the 120:00 match duration.
+        events = [_ev("Half End", None, period=4, minute=120),
+                  _sub_off(_STARTER, period=5, minute=125)]
+        _, (df, report) = _build(tmp_path, events)
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(120.0)
+        assert not [d for d in report if d.get("issue") == "substitution_capped"]
+
+    def test_card_on_bench_after_substitution_uses_earlier_substitution_cap(self, tmp_path):
+        # Replaced at 60:00, then a red card on the bench at 80:00. The exit cap is
+        # the earlier of the two; the open stint must stop at 60, not 80.
+        events = [
+            _sub_off(_STARTER, period=2, minute=60),
+            _ev("Bad Behaviour", _STARTER, period=2, minute=80,
+                bad_behaviour={"card": {"name": "Red Card"}}),
+        ]
+        _, (df, _) = _build(tmp_path, events)
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(60.0)

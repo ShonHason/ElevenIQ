@@ -187,6 +187,18 @@ If a spike total and the pipeline disagree in any league, **STOP and report** th
 values and a sample of the differing matches. Do not change the spike or the pipeline to make them agree.
 The resolution is your call.
 
+### Outcome (2026-09-29)
+- **Columns.** The spike and the pipeline agreed on all 20 columns, plus
+  `shots_on_target`. The structural minutes check failed: 33 player-matches kept a
+  stint past their own Substitution event.
+- **Decided:** the Substitution event is authoritative. Stints are capped at the
+  player's own substitution. A stint starting after it, a second substitution off, or
+  a team-match above 11 × duration fails the build. The stats-reviewer approved this
+  with conditions. ADR 002 §3 has the before/after: 1,392.87 min removed, and no
+  `meets_min_minutes` flip.
+- **After the fix,** the structural check passes and all 20 columns agree in every
+  match. The `core` section and `base.dismissals` are written.
+
 ### H2 verification
 Run the spike for all 5 leagues (the goals reconciliation must pass), then the integration suite
 (green), then `/finish-chunk`.
@@ -233,6 +245,23 @@ Run the spike for all 5 leagues (the goals reconciliation must pass), then the i
   - 68 `multi_team_season` player_ids (ADR 002 §28);
   - 47 `multi_competition_season` player_ids / 94 rows (ADR 003 §7);
   - 2,279 pool rows (ADR 003 §5).
+
+### H1 review follow-ups (code-reviewer, 2026-09-29), in this order
+1. **Issue-name constants (first):** `"minutes_unknown"`, `"dropped_event"`,
+   `"dismissal_after_match_end"` (and the other quality-issue names) are string literals both
+   where they are emitted and in `FAILING_QUALITY_ISSUES`. A typo on either side silently
+   disables a fail-loud check. Define them as module constants, like `DROPPED_*`.
+2. **One shootout-period definition:** `e["period"] != 5` in `_process_match` and `period <= 4`
+   in `compute_match_duration` should share one constant (or an `is_playing_time(event)` helper
+   in metrics/minutes.py).
+3. **Rename `dismissal_report` / `all_dismissals`** (and the `_process_match` docstring) to
+   `quality_report`: they carry every quality issue, not only dismissals.
+4. **Test:** a period-5 pass with `shot_assist` / `goal_assist` counts toward neither
+   `xg_assisted` nor `key_passes`.
+
+### H2 follow-ups
+- **Store `match_duration` in the match-level parquet** so `TestIntegration` can check the team
+  minutes sum against 11 × duration exactly, instead of an inferred bound.
 
 ### H3 verification
 Run the fast and integration suites (green), grep the old stale phrases (expect no hits), then

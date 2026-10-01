@@ -64,3 +64,28 @@ class TestReferenceTotalsFixtures:
         must balance (holds in all five 2015/16 leagues)."""
         a = _load(cs)["chunk_a"]
         assert a["aerials_won"] == a["aerials_lost"]
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_core_section_present(self, cs):
+        """Plan 004 H2: every reference file has the core section from
+        spikes/verify_core_metrics.py, and base carries the dismissal count."""
+        ref = _load(cs)
+        assert set(ref["core"]) == {
+            "minutes_played", "shots", "shots_on_target", "xg", "passes_attempted",
+            "passes_completed", "progressive_passes", "progressive_carries", "key_passes",
+            "assists", "tackles_attempted", "tackles_won", "dribbles_attempted",
+            "dribbles_completed", "interceptions", "clearances", "blocks",
+            "fouls_committed", "fouls_won", "carries",
+        }
+        assert isinstance(ref["base"]["dismissals"], int)
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_core_subsets_never_exceed_their_totals(self, cs):
+        core = _load(cs)["core"]
+        assert core["shots_on_target"] <= core["shots"]
+        assert core["passes_completed"] <= core["passes_attempted"]
+        assert core["progressive_passes"] <= core["passes_completed"]
+        assert core["assists"] <= core["key_passes"] <= core["passes_attempted"]
+        assert core["tackles_won"] <= core["tackles_attempted"]
+        assert core["dribbles_completed"] <= core["dribbles_attempted"]
+        assert core["progressive_carries"] <= core["carries"]

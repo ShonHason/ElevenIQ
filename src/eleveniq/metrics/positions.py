@@ -32,7 +32,7 @@ primary_position_group() to resolve the season-level assignment.
 """
 from __future__ import annotations
 from collections.abc import Iterator
-from eleveniq.metrics.minutes import parse_mm_ss
+from eleveniq.metrics.minutes import parse_mm_ss, stint_end_cap
 
 POSITION_GROUP_MAP: dict[str, str] = {
     # Goalkeeper
@@ -97,6 +97,7 @@ def _iter_stint_contributions(
     positions: list[dict],
     match_duration: float,
     dismissal_minute: float | None,
+    substitution_minute: float | None = None,
 ) -> Iterator[tuple[str, float]]:
     """
     Yield (raw_position_name, duration_minutes) for every non-zero stint.
@@ -104,26 +105,28 @@ def _iter_stint_contributions(
     This is the single shared function underlying both compute_minutes_per_group
     and compute_minutes_per_raw_position, ensuring they can never diverge.
 
-    Dismissal clamping
-    ------------------
-    When dismissal_minute is provided, ALL stint end-times are clamped to
-    min(end, dismissal_minute) — including stints with explicit `to` values.
-    StatsBomb sometimes sets explicit `to` timestamps that run past the card
-    minute (a known data-quality issue where the lineup was not corrected after
-    an early dismissal).  Without this clamp those stints would overcount minutes.
+    Exit clamping (ADR 002 §3)
+    --------------------------
+    The exit cap is the earlier of dismissal_minute and substitution_minute
+    (stint_end_cap). When there is one, ALL stint end-times are clamped to
+    min(end, cap) — including stints with explicit `to` values. StatsBomb
+    sometimes keeps a stint running past the card minute or past the player's
+    own Substitution event (lineup not corrected). Without this clamp those
+    stints would overcount minutes.
 
-    When dismissal_minute is None, explicit `to` values are used as-is.
+    Without an exit cap, explicit `to` values are used as-is.
     match_duration is derived from the last event timestamp and can be a few
     seconds earlier than the real final whistle, so clamping against it would
     risk truncating a legitimate substitution timestamp.
     """
-    effective_end = dismissal_minute if dismissal_minute is not None else match_duration
+    cap = stint_end_cap(dismissal_minute, substitution_minute)
+    effective_end = cap if cap is not None else match_duration
     for stint in positions:
         start = parse_mm_ss(stint["from"])
         if stint.get("to"):
             raw_end = parse_mm_ss(stint["to"])
-            # Clamp only when a dismissal minute was supplied (see docstring).
-            end = min(raw_end, effective_end) if dismissal_minute is not None else raw_end
+            # Clamp only when there is an exit cap (see docstring).
+            end = min(raw_end, cap) if cap is not None else raw_end
         else:
             end = effective_end
         duration = max(0.0, end - start)
@@ -144,12 +147,14 @@ def compute_minutes_per_group(
     match_duration: float,
     *,
     dismissal_minute: float | None = None,
+    substitution_minute: float | None = None,
 ) -> dict[str, float]:
     """
     Return a mapping of position_group → minutes played in that group for
     one match.
 
-    Handles multi-stint appearances (tactical shifts) and dismissals.
+    Handles multi-stint appearances (tactical shifts), dismissals and the
+    player's own substitution off (the exit cap, ADR 002 §3).
     The `position` field in each stint may be a plain string (confirmed in
     StatsBomb open data) or a dict with a 'name' key (schema robustness).
     A null/None position is treated as UNKNOWN and included in the result.
@@ -159,7 +164,9 @@ def compute_minutes_per_group(
     if not positions:
         return {}
     result: dict[str, float] = {}
-    for pos_name, duration in _iter_stint_contributions(positions, match_duration, dismissal_minute):
+    for pos_name, duration in _iter_stint_contributions(
+        positions, match_duration, dismissal_minute, substitution_minute
+    ):
         group = assign_position_group(pos_name)
         result[group] = result.get(group, 0.0) + duration
     return result
@@ -170,6 +177,7 @@ def compute_minutes_per_raw_position(
     match_duration: float,
     *,
     dismissal_minute: float | None = None,
+    substitution_minute: float | None = None,
 ) -> dict[str, float]:
     """
     Return a mapping of StatsBomb position name → minutes for one match.
@@ -181,7 +189,9 @@ def compute_minutes_per_raw_position(
     if not positions:
         return {}
     result: dict[str, float] = {}
-    for pos_name, duration in _iter_stint_contributions(positions, match_duration, dismissal_minute):
+    for pos_name, duration in _iter_stint_contributions(
+        positions, match_duration, dismissal_minute, substitution_minute
+    ):
         result[pos_name] = result.get(pos_name, 0.0) + duration
     return result
 

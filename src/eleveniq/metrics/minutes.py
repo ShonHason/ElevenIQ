@@ -9,13 +9,15 @@ Key confirmed facts (from StatsBomb open data schema probe, match 3788741):
 - event.minute is also match-absolute (same coordinate system).
 - Period 5 (penalty shootout) is excluded from match duration.
 
-Red card / dismissal handling
-------------------------------
-StatsBomb should set positions[].to to the dismissal minute for a sent-off
-player. If that field is missing (to=None for a dismissed player), minutes
-will be overcounted. The optional `dismissal_minute` parameter to
-`compute_player_minutes` guards against this: if provided, any open-ended
-stint (to=None) is capped at the dismissal minute instead of match_duration.
+Exit cap: dismissal and own substitution
+----------------------------------------
+StatsBomb lineups sometimes keep a stint running after the player left the
+pitch: past a red card / second yellow, or past his own Substitution event
+(e.g. a "Player On" stint after treatment that runs to "Final Whistle" although
+he was replaced at that instant). When a player has a dismissal minute and/or
+a substitution-off minute, every stint end (explicit `to` included) is capped
+at the earlier of the two (stint_end_cap). Without either, explicit `to` values
+are used as-is. ADR 002 §3.
 
 The quality report verifies, per match, that no dismissed player's computed
 minutes significantly exceed their card minute (see
@@ -64,17 +66,30 @@ def compute_match_duration(events: list[dict]) -> float:
     return max(e["minute"] + e["second"] / 60 for e in valid)
 
 
+def stint_end_cap(
+    dismissal_minute: float | None, substitution_minute: float | None
+) -> float | None:
+    """
+    The minute after which a player cannot be on the pitch: the earlier of his
+    dismissal and his own substitution off, or None when neither happened.
+    """
+    caps = [m for m in (dismissal_minute, substitution_minute) if m is not None]
+    return min(caps) if caps else None
+
+
 def compute_player_minutes(
     positions: list[dict],
     match_duration: float,
     *,
     dismissal_minute: float | None = None,
+    substitution_minute: float | None = None,
 ) -> float:
     """
     Sum of all playing stints for a player in one match, in decimal minutes.
 
     - Stints with to=None ran to the actual final whistle → use match_duration,
-      or dismissal_minute if provided (red card / second yellow override).
+      or the exit cap (stint_end_cap) if the player was dismissed or substituted.
+    - With an exit cap, every stint end (explicit `to` included) is clamped at it.
     - An empty positions list means the player never took the field → 0 minutes.
     - Negative stint durations are clamped to 0 (data-quality guard).
 
@@ -88,21 +103,23 @@ def compute_player_minutes(
         positions:        player's positions array from the StatsBomb lineup.
         match_duration:   output of compute_match_duration() for this match.
         dismissal_minute: decimal-minute of a red card / second yellow for this
-                          player, if one occurred. Used as the cap for any
-                          open-ended (to=None) stint instead of match_duration.
+                          player, if one occurred.
+        substitution_minute: decimal-minute of the Substitution event that took
+                          this player off, if one occurred.
     """
     if not positions:
         return 0.0
-    effective_end = dismissal_minute if dismissal_minute is not None else match_duration
+    cap = stint_end_cap(dismissal_minute, substitution_minute)
+    effective_end = cap if cap is not None else match_duration
     total = 0.0
     for stint in positions:
         start = parse_mm_ss(stint["from"])
         if stint.get("to"):
             raw_end = parse_mm_ss(stint["to"])
             # Mirror the clamping in _iter_stint_contributions: clamp explicit
-            # to-values at the dismissal minute, but leave them as-is for normal
-            # matches (match_duration may lag the real whistle by a few seconds).
-            end = min(raw_end, effective_end) if dismissal_minute is not None else raw_end
+            # to-values at the exit cap, but leave them as-is otherwise
+            # (match_duration may lag the real whistle by a few seconds).
+            end = min(raw_end, cap) if cap is not None else raw_end
         else:
             end = effective_end
         total += max(0.0, end - start)

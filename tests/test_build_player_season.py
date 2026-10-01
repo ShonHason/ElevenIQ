@@ -1062,6 +1062,36 @@ class TestIntegration:
             )
 
     @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_core_metrics_reconcile(self, frames, ref):
+        """Core DNA totals must match spikes/verify_core_metrics.py (plan 004 H2), which
+        re-derives them from raw StatsBomb JSON without importing eleveniq, and equal
+        match-level totals. Exact for counts; abs=0.001 for xg and minutes_played."""
+        match_df, season_df = frames
+        m, season = _league(match_df, ref), _league(season_df, ref)
+        for col, expected in ref["core"].items():
+            if col in ("xg", "minutes_played"):
+                assert season[col].sum() == pytest.approx(expected, abs=0.001), col
+                assert season[col].sum() == pytest.approx(m[col].sum(), abs=0.001), (
+                    f"{col}: season sum != match sum"
+                )
+            else:
+                assert season[col].sum() == expected, f"{col}: {season[col].sum()} != {expected}"
+                assert season[col].sum() == m[col].sum(), f"{col}: season sum != match sum"
+
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_team_minutes_within_eleven_times_duration(self, frames, ref):
+        """ADR 002 §3 structural check, on the output: per team-match, summed minutes
+        never exceed 11 x match duration. The duration is not stored, so the bound used
+        is 11 x the longest player's minutes in that match (<= 11 x duration)."""
+        match_df, _ = frames
+        m = _league(match_df, ref)
+        per_team = m.group_by("match_id", "team_id").agg(pl.col("minutes_played").sum().alias("team"))
+        longest = m.group_by("match_id").agg(pl.col("minutes_played").max().alias("longest"))
+        over = per_team.join(longest, on="match_id").filter(
+            pl.col("team") > 11 * pl.col("longest") + 1e-6)
+        assert over.height == 0, over
+
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
     def test_chunk_b_xg_assisted_shot_side_reconcile(self, frames, ref):
         """Independent shot-side xGA (from raw StatsBomb JSON) must equal season xg_assisted total."""
         import json as _json

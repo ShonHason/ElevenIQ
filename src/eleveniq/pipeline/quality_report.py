@@ -79,6 +79,24 @@ def find_dismissal_minute(events: list[dict], player_id: int) -> float | None:
     return None
 
 
+def find_substitutions_off(events: list[dict], player_id: int) -> list[tuple[int, float]]:
+    """
+    Return (period, match-absolute minute) of every Substitution event that took
+    `player_id` off (the event's player is the one leaving; the replacement is
+    substitution.replacement), in event order.
+
+    The player's own Substitution event is authoritative for when he left the
+    pitch (ADR 002 §3). Callers pass period 1-4 events only, and treat more than
+    one entry as a data-quality failure (a player cannot be replaced twice).
+    """
+    return [
+        (event["period"], event["minute"] + event["second"] / 60)
+        for event in events
+        if event.get("type", {}).get("name") == "Substitution"
+        and (event.get("player") or {}).get("id") == player_id
+    ]
+
+
 def check_dismissal_event_quality(events: list[dict], player_id: int) -> dict | None:
     """
     Return a data-quality issue dict if a dismissal event is missing
