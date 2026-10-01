@@ -482,6 +482,23 @@ class TestMultiTeamFlags:
         assert p2["multi_team_season"] is False
         assert p2["is_primary_stint"] is True
 
+    def test_mid_season_transfer_totals_per_team(self):
+        """A mid-season transfer gives one row per team, each with its own
+        totals (moved from test_aggregation.py, plan 004 H3b R12)."""
+        rows = [
+            _match_row(player_id=1, team_id=10, goals=5, minutes_played=900.0,
+                       minutes_dm_cm=900.0),
+            _match_row(player_id=1, team_id=10, goals=3, minutes_played=810.0,
+                       minutes_dm_cm=810.0),
+            _match_row(player_id=1, team_id=20, goals=2, minutes_played=450.0,
+                       minutes_dm_cm=450.0),
+        ]
+        result = aggregate_player_season(_df(rows)).sort("team_id")
+        assert result["team_id"].to_list() == [10, 20]
+        assert result["goals"].to_list() == [8, 2]
+        assert result["minutes_played"].to_list() == pytest.approx([1710.0, 450.0])
+        assert result["appearances"].to_list() == [2, 1]
+
 
 # ---------------------------------------------------------------------------
 # TestPlayerSeasonMinutesTotal

@@ -453,6 +453,53 @@ def test_no_dismissed_player_minutes_above_card_minute(cs):
     )
 
 
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not _PLAYER_MATCH_PARQUET.exists(),
+    reason="requires pipeline output",
+)
+@pytest.mark.parametrize(
+    "cs", COMPETITION_SEASONS, ids=[cs.label for cs in COMPETITION_SEASONS]
+)
+def test_dismissed_players_in_parquet_match_spike_count(cs):
+    """
+    Plan 004 R12: the number of dismissed players with a player_match row
+    equals base.dismissals in the reference file. Only the expected count is
+    independent: spikes/verify_core_metrics.py counts it from raw cards
+    (players who took the field). The observed side uses the pipeline's own
+    find_dismissal_minute, so a dismissal with missing timestamps (None) shows
+    up here as a count mismatch, not as a named error.
+    La Liga 2015/16: 109 cards, 3 on the bench, so 106 (ADR 002 §3).
+    test_no_dismissed_player_minutes_above_card_minute is the secondary check.
+    """
+    import json
+    import polars as pl
+    from eleveniq.metrics.minutes import is_playing_time
+    from eleveniq.statsbomb.loader import load_events, load_matches
+
+    ref_path = (
+        Path(__file__).parent / "fixtures" / "reference_totals"
+        / f"{cs.competition_id}_{cs.season_id}.json"
+    )
+    expected = json.loads(ref_path.read_text())["base"]["dismissals"]
+    df = pl.read_parquet(_PLAYER_MATCH_PARQUET).filter(
+        (pl.col("competition_id") == cs.competition_id)
+        & (pl.col("season_id") == cs.season_id)
+    )
+    in_parquet = {}
+    for row in df.select("match_id", "player_id").iter_rows():
+        in_parquet.setdefault(row[0], set()).add(row[1])
+
+    dismissed = 0
+    for m in load_matches(cs.competition_id, cs.season_id):
+        events = [e for e in load_events(m["match_id"]) if is_playing_time(e)]
+        dismissed += sum(
+            1 for pid in in_parquet.get(m["match_id"], ())
+            if find_dismissal_minute(events, pid) is not None
+        )
+    assert dismissed == expected
+
+
 # ---------------------------------------------------------------------------
 # find_substitutions_off (ADR 002 §3)
 # ---------------------------------------------------------------------------

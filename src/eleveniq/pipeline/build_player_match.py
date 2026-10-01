@@ -591,7 +591,7 @@ def _process_match(
         # Collect (row, positions) tuples for the team before the started check
         # so the team-level fallback can inspect positions in a second pass.
         team_entries: list[tuple[dict, list]] = []
-        # (player_id, positions, period-aware exit, dismissal) for the on-pitch count.
+        # (player_id, positions, dismissal, substitution off) for the on-pitch count.
         on_pitch_input: list[OnPitchPlayer] = []
 
         for player in team["lineup"]:
@@ -615,10 +615,7 @@ def _process_match(
                 match_id, player_id, positions, play_events, quality_report
             )
             substitution_minute = None if substitution is None else substitution[1]
-            exits = [e for e in (dismissal, substitution) if e is not None]
-            on_pitch_input.append(
-                (player_id, positions, min(exits) if exits else None, dismissal)
-            )
+            on_pitch_input.append((player_id, positions, dismissal, substitution))
 
             # ONE shared call: compute_minutes_per_group drives both minutes_played
             # and position group.  compute_player_minutes is NOT called separately.
@@ -915,11 +912,55 @@ def _substitution_off(
     return subs[0]
 
 
-# (player_id, positions, exit, dismissal); exit and dismissal are (period, minute).
+# (player_id, positions, dismissal, substitution off), each as (period, minute) or None.
 OnPitchPlayer = tuple[int, list[dict], tuple[int, float] | None, tuple[int, float] | None]
 
-# Order of changes at one instant: cards, then exits, then entries.
+# Order of changes at one instant (only for a deterministic sort: the count is
+# taken after every change at the instant, and whether a card lowers the
+# allowed number is decided before the sweep).
 _CARD, _EXIT, _ENTRY = 0, 1, 2
+
+
+def _stint_end(stint: dict, match_end: tuple[int, float]) -> tuple[int, float]:
+    """(to_period, to) of a stint, or match_end when it is open (no `to`).
+
+    Raises ValueError for a stint with a `to` but no `to_period`: without the
+    period the end cannot be ordered against period-aware instants.
+    """
+    if not stint.get("to"):
+        return match_end
+    if stint.get("to_period") is None:
+        raise ValueError(
+            f"stint {stint.get('from')!r}-{stint['to']!r} has a 'to' but no "
+            "'to_period'; the on-pitch count needs both"
+        )
+    return (stint["to_period"], parse_mm_ss(stint["to"]))
+
+
+def _card_lowers_allowed(
+    positions: list[dict],
+    dismissal: tuple[int, float],
+    substitution: tuple[int, float] | None,
+    match_end: tuple[int, float],
+) -> bool:
+    """
+    Whether a dismissal leaves the team a player short (ADR 002 §3).
+
+    True when the player has taken the field by the card (a non-empty stint
+    starting at or before it) and was not substituted off before or at it.
+    A player off for treatment ("Player Off" / "Player On") who is sent off
+    in that window counts: he is dismissed and cannot be replaced. A card on
+    the bench, before entering or after his own substitution, does not count.
+    A substitution at the card's instant counts as first: a dismissed player
+    cannot be substituted, so the Substitution event proves it came first.
+    """
+    if substitution is not None and substitution <= dismissal:
+        return False
+    for stint in positions:
+        start = (stint["from_period"], parse_mm_ss(stint["from"]))
+        if start <= dismissal and _stint_end(stint, match_end) > start:
+            return True
+    return False
 
 
 def _on_pitch_excess(
@@ -931,30 +972,40 @@ def _on_pitch_excess(
     team has the most players above the allowed number, or None when it
     never exceeds it.
 
-    allowed starts at 11 and drops by one at each dismissal of a player who is
-    on the pitch at his card. A card shown to a player who is off the pitch
-    (e.g. on the bench after his substitution) does not change it.
+    allowed starts at 11 and drops by one at each dismissal that leaves the
+    team a player short (_card_lowers_allowed): the player had taken the field
+    and was not substituted off before or at his card, so a player off for
+    treatment counts but a card on the bench does not.
 
-    `players` holds (player_id, positions, exit, dismissal): exit is the earlier
-    of the player's dismissal and substitution off, dismissal his red card or
-    second yellow, each as (period, minute) or None.
+    `players` holds (player_id, positions, dismissal, substitution): the
+    player's red card or second yellow and his own substitution off, each as
+    (period, minute) or None. His exit is the earlier of the two.
     Instants are ordered by (period, minute), not by the match-absolute minute,
     so first-half stoppage (46:01 in period 1) precedes the second-half kick-off
-    (45:00 in period 2). A stint ends at its (to_period, to), at match_end when
-    open, and never after the player's exit, so a dismissed player stops
-    counting at his card. A stint whose end does not follow its start (e.g. a
-    reversed-period stint) contributes nothing. A player counts once even when
-    his own stints overlap. The count is taken after every change at an
-    instant, so a substitution or a dismissal is never a moment with one
-    player too many.
+    (45:00 in period 2). Note this differs from minutes.stint_end_cap, which
+    picks the earlier exit by match-absolute minute; the two disagree only when
+    one exit is in first-half stoppage and the other in period 2 (0 cases in
+    the 2015/16 data; ADR 002 §3). A stint ends at its (to_period, to), at
+    match_end when open, and never after the player's exit, so a dismissed
+    player stops counting at his card. A stint whose end does not follow its
+    start (e.g. a reversed-period stint) contributes nothing. A player counts
+    once even when his own stints overlap. The count is taken after every
+    change at an instant, so a substitution or a dismissal is never a moment
+    with one player too many.
+
+    Raises ValueError for a stint with a `to` but no `to_period`.
     """
     changes: list[tuple[tuple[int, float], int, int]] = []
-    for player_id, positions, exit_at, dismissal in players:
-        if dismissal is not None:
+    for player_id, positions, dismissal, substitution in players:
+        exits = [e for e in (dismissal, substitution) if e is not None]
+        exit_at = min(exits) if exits else None
+        if dismissal is not None and _card_lowers_allowed(
+            positions, dismissal, substitution, match_end
+        ):
             changes.append((dismissal, _CARD, player_id))
         for stint in positions:
             start = (stint["from_period"], parse_mm_ss(stint["from"]))
-            end = (stint["to_period"], parse_mm_ss(stint["to"])) if stint.get("to") else match_end
+            end = _stint_end(stint, match_end)
             if exit_at is not None:
                 end = min(end, exit_at)
             if end > start:
@@ -967,8 +1018,7 @@ def _on_pitch_excess(
     worst: tuple[int, int, tuple[int, float]] | None = None
     for i, (at, kind, player_id) in enumerate(changes):
         if kind == _CARD:
-            if active[player_id] > 0:
-                allowed -= 1
+            allowed -= 1
         else:
             was_on = active[player_id] > 0
             active[player_id] += 1 if kind == _ENTRY else -1

@@ -69,8 +69,10 @@ and end are inside the box are judged only by the 10-unit distance rule.
 
 `outcome` is a **required keyword argument** with no default. Callers that omit it
 receive a `TypeError` at call time rather than silently counting incomplete passes.
-`build_player_match.py` passes `outcome=event.get("pass", {}).get("outcome", {}).get("name")`
-— which is `None` for completed passes and a string for any other outcome.
+`build_player_match._aggregate_events` passes
+`outcome=(pass_data.get("outcome") or {}).get("name")`, where `pass_data` is the
+event's `pass` object. It is `None` for completed passes and a string for any other
+outcome; the `or {}` also covers an explicit `"outcome": null`.
 
 ### Key constants
 ```python
@@ -145,8 +147,11 @@ seconds in edge cases (systematic but negligible per match).
 
 ### Player minutes
 
-`compute_player_minutes(positions, match_duration, *, dismissal_minute=None)`:
-- `to = None` → use `dismissal_minute` if set, else `match_duration`.
+`compute_player_minutes(positions, match_duration, *, dismissal_minute, substitution_minute)`:
+- Both keywords are **required, with no default** (plan 004 H3a): a forgotten argument
+  would silently give uncapped minutes. Pass `None` when the player was not dismissed
+  or not substituted off.
+- `to = None` → use the exit cap (`stint_end_cap`, below) if set, else `match_duration`.
 - Negative stint durations clamped to 0.
 - Empty `positions` array → `0.0` (unused substitute).
 - Tactical shifts: multiple stints summed correctly.
@@ -239,15 +244,62 @@ agreed exactly, so both overcounted.
 - **Report-only counts.**
   - `substitution_capped` lists each capped player and the minutes removed (33).
   - `reversed_period_stint` counts stints with `from_period > to_period` (9: PL 3,
-    Serie A 4, Ligue 1 2; e.g. Rodrigo Ely, 3879549, "45:00 p2 → 45:51 p1"). Under
-    match-absolute arithmetic each one adds a spurious 0.8–2.5 min. This is part of
-    the known limit below and does not fail the build.
+    Serie A 4, Ligue 1 2; e.g. Rodrigo Ely, 3879549, "45:00 p2 → 45:51 p1"). It does
+    not fail the build. The stints are **not spurious**: on the match-absolute axis
+    each one fills the gap between its neighbours, so the player's stints sum to the
+    same total as any teammate's. Removing them would cut 0.5–2.5 min more. Each stint
+    is classified below (plan 004 H3b).
+
+**The 9 reversed-period stints, one by one.** "Real" is the player's time on a
+period-aware clock (same stints and exit caps, each period ending at its last event).
+"Lost" is real − credited. Source: `spikes/measure_first_half_stoppage.py`.
+
+| Match | Player | Kind | Credited | Real | Lost |
+|---|---|---|---|---|---|
+| 3754217 | Mesut Özil | Position change across half-time | 74.55 | 78.18 | 3.63 |
+| 3754217 | Aaron Ramsey | Position change across half-time | 95.63 | 99.27 | 3.63 |
+| 3754217 | Gabriel Armando de Abreu | Sent off at (1, 45:44); capped at the card | 45.73 | 45.73 | 0.00 |
+| 3879602 | Paolo Sammarco | Position change, ends at "Player Off" (treatment) | 73.85 | 75.57 | 1.72 |
+| 3879549 | Rodrigo Ely | **Phantom start**: from (2, 45:00), before his Substitution-On at (1, 45:51) | 50.60 | 52.15 | 1.55 |
+| 3879549 | Giacomo Bonaventura | Position change across half-time | 79.78 | 82.18 | 2.40 |
+| 3879549 | Andrea Bertolacci | Position change across half-time | 95.27 | 97.67 | 2.40 |
+| 3829416 | Alassane Pléa | Position change across half-time | 91.85 | 95.90 | 4.05 |
+| 3829416 | Hatem Ben Arfa | Position change across half-time | 62.77 | 66.82 | 4.05 |
+
+- **The total lost is 23.43 min, and none of it is caused by the reversed stints.**
+  Each loss equals the first-half stoppage the player was on the pitch for, the same as
+  every teammate's (e.g. 3754217's first half ends at 48:38, so 3.63). Sammarco's figure is
+  the exception: it is 0.3 min above his match's stoppage (1.42), but that is an
+  artefact, not lost time. His lineup stint "31:21 p1 → 45:11 p2" spans the end of
+  period 1 on the period-aware clock, so it credits his treatment window,
+  (1, 46:07)–(1, 46:25), when the events show him off ("Player Off" / "Player On").
+  The period-aware figure overstates his real time by 0.3 min. A period-aware
+  conversion must therefore subtract treatment windows, not only reorder by period
+  (plan 004 H4).
+- **Only Ely's stint is phantom.** Its start comes before he entered the pitch. It
+  still gives him exactly his second half (50.6). His real (1, 45:51)–(1, 47:24) is lost,
+  like every other player's first-half stoppage.
+- **Gabriel loses nothing.** He left before half-time, so his time never overlaps
+  period 2 on the match-absolute axis.
+- Decision (2026-10-01): docs only, no code change. The limit is systematic (below).
 
 **Known limits.**
 - **First-half stoppage time cannot be represented.** Period 2 always starts at
-  45:00. In the Bale-type cases the treatment-return stint (e.g. 46:01, period 1)
-  becomes 0 min, although the player really played 1–2 min. This is consistent with
-  how every player's minutes are computed.
+  45:00, so on the match-absolute axis every player on the pitch at the end of the
+  first half loses its stoppage time. In the Bale-type cases the treatment-return
+  stint (e.g. 46:01, period 1) becomes 0 min, although the player really played 1–2
+  min. **Measured (plan 004 H3b, `spikes/measure_first_half_stoppage.py`):**
+  - 44,769 min in total, net (1.40% of league minutes; La Liga 0.89% to PL 2.17%).
+    The gross loss is 44,889 min: the net figure includes −120.6 min from 30 matches
+    whose first half's last event is before 45:00.
+  - A full-match player loses a mean of 1.32 min per match; a second-half substitute
+    loses 0.
+  - Per-90 values of the 1,250 gated pool rows are overstated by 0.33–3.32%. The bias
+    depends on the league and also differs between players within a league: percentile
+    shifts have a local mean of about 0.2–0.3 pts and a local max of about 5–6 pts.
+  - 11 pool rows would cross the 900-minute gate upward, and none downward.
+  Whether to move to period-aware minutes is an **M4 pre-condition**: docs/milestones.md,
+  Milestone 4, "Pre-condition from Plan 004 H3b".
 - **Ligue 1 residual (not fixed).** A lineup stint can also run on after a
   "Player Off (Permanent)" with no Substitution event: Sofiane Boufal (3901155,
   ~14.4 min) and Florent Balmont (3901151, ~8.7 min). No check can see these, because
@@ -258,17 +310,72 @@ The stats-reviewer approved the change, with conditions. Across all 8,922 Substi
 events: the subject is always a lineup player of the event's team, and the replacement
 is always a lineup player of the same team. No explicit `to` is later than the player's
 own substitution, so the cap changes no row outside the 33. After the cap, the
-on-pitch count per team never exceeds 11 at any instant.
+on-pitch count per team never exceeds 11 at any instant **in period-aware time**
+(`(period, minute)` order, the on-pitch check below). On the match-absolute axis the
+stored minutes use, it reaches 12 once: AC Milan 3879549, 45:00–45:51, with
+Romagnoli's card ignored (11 with it, against 10 allowed). The cause is Ely's reversed
+stint overlapping de Jong's first-half stoppage, a case of the first-half-stoppage limit
+above.
 
-#### On-pitch count check (added 2026-10-01, plan 004 H3a; H3b finalizes the wording)
+#### Per-player ceiling and the `match_duration` column (added 2026-10-01, plan 004 H3a)
+
+- **`match_duration` column.** Every `player_match_stats` row carries its match's
+  `match_duration` (Float64, decimal minutes, `compute_match_duration`). It lets the
+  integration suite check team minutes against `11 × match_duration` exactly, and lets
+  later stages recompute shares of the match without the raw events. It is not
+  aggregated into the season file.
+- **`player_minutes_exceed_duration` (fails the build).** A player's minutes in one
+  match above `match_duration + 1e-6` (`PLAYER_MINUTES_TOLERANCE`) fail the build
+  (`DataQualityError`). An explicit `to` is not clamped against `match_duration`
+  (above), so this guard is what stops an uncapped `to` past the last event from
+  reaching the data. 2015/16: 0 rows; the largest excess is 1.4e-14 (float noise).
+  **The guard is expected to trigger on a new source** (e.g. a provider whose last event
+  precedes the whistle by more than StatsBomb's). The response is to investigate the
+  stint and record a decision here, **not** to widen the tolerance silently.
+- **Summary and CLI counts.** `summarise_quality_report` and the per-league CLI line
+  print `on_pitch_count_exceeded` and `player_minutes_exceed_duration` (both 0 in all
+  five leagues), next to `substitution_capped` and `reversed_period_stints`.
+
+#### On-pitch count check (added 2026-10-01, plan 004 H3a; card rule amended in H3b)
 
 **Rule.** Report-only issue `on_pitch_count_exceeded` (`_on_pitch_excess`). Per
 team-match, the number of distinct players on the pitch may not exceed **11 minus the
 team's dismissals so far**. Time is ordered by `(period, minute)`. Every stint is capped
-at the player's exit (the earlier of his dismissal and substitution). The allowed number
-drops only when the dismissed player is **on the pitch at his card**. All changes at one
+at the player's exit (the earlier of his dismissal and substitution). All changes at one
 instant are applied before the count is taken. Measured on all five leagues: **0**
-team-matches exceed it.
+team-matches exceed it (also after the H3b amendment below). The check is report-only,
+so it changes no parquet value.
+
+**When a card lowers the allowed number (amended 2026-10-01, plan 004 H3b).**
+`_card_lowers_allowed`: the dismissed player **has taken the field** by his card (a
+non-empty stint starting at or before it) **and was not substituted off before or at
+it**. H3a used "on the pitch at the card", which got two cases wrong:
+- **Dismissed while off for treatment** ("Player Off" / "Player On" window). Under the
+  Laws he is still dismissed and cannot be replaced, so the team is down to 10. H3a kept
+  11 allowed and would miss a replacement coming on.
+- **Substituted off and booked at the same second.** H3a sorted the card first, so the
+  player was still on and the team dropped to 10 while his replacement came on: a false
+  excess. A dismissed player cannot be substituted, so the Substitution event proves it
+  came first; the card does not lower the number.
+A card on the bench (before entering, or after his own substitution, e.g. Bordeaux
+below) still does not lower it. A stint with a `to` but no `to_period` raises
+`ValueError` (a match failure), because its end cannot be ordered.
+
+**Assumption: the Substitution event is complete.** The rule cannot tell "off for
+treatment" from "substituted off" except through the player's own Substitution event.
+A player whose stint ended with no Substitution event counts as still on the team's
+side of the count. If a source drops a Substitution event, a later card shown to that
+player on the bench lowers the allowed number. A replacement already on the pitch then
+gives a false `on_pitch_count_exceeded`. This is report-only and 0 in 2015/16, and it is
+pinned by `test_stint_end_without_substitution_event_then_card_lowers_allowed`. On a
+new source, investigate any `on_pitch_count_exceeded` for this pattern first.
+
+**Exit order differs from `stint_end_cap` (pinned, not aligned).** The check takes the
+earlier exit by `(period, minute)`; `stint_end_cap`, which caps the stored minutes, takes
+it by match-absolute minute. They disagree only when one exit is in first-half stoppage
+(e.g. 46:30, period 1) and the other in period 2 before 46:30. That is 0 cases in
+2015/16. Aligning would change the `compute_*` signatures for no measured effect, so both
+behaviours are pinned by `TestOnPitchExcessEdges`.
 
 **Scope (what the check does and does not prove).**
 - It catches what the 11 × duration ceiling cannot: a team down to 10 **through a
@@ -295,11 +402,11 @@ team-matches exceed it.
 
 Only the match-absolute minute axis shows an extra player at 45:00–45:51. There, de
 Jong's period-1 stoppage (to 45:51) and Ely's period-2 start collide on the same numbers:
-11 with Romagnoli capped, 12 without his cap. This collision is the known
-first-half-stoppage limit above, not a phantom stint. Ely's match-absolute stints sum to
-exactly his second half (50.6 min); his real (1, 45:51)–(1, 47:24) is the part that is
-lost. H3b should reword the L261 sentence and the "spurious" note on reversed-period
-stints accordingly (plan 004, H2 review follow-up 7).
+11 with Romagnoli capped, 12 without his cap. This collision comes from the
+first-half-stoppage limit above. Ely's stint is the one phantom among the 9
+reversed-period stints, but it adds no minutes: his match-absolute stints sum to
+exactly his second half (50.6 min). His real (1, 45:51)–(1, 47:24) is the part that is
+lost (classification table above).
 
 **Bordeaux, 3900519: not an excess.** This team-match was a false positive in a first
 measurement that lowered the ceiling for every dismissed player with stints.
@@ -469,8 +576,8 @@ excluded from all outfield player comparisons.** The season file carries
 At season aggregation, position group is determined by **most minutes played per
 group**, not by most appearances.
 
-`compute_minutes_per_group(positions, match_duration, *, dismissal_minute=None)`
-returns a `dict[str, float]` of group → minutes for one match, respecting
+`compute_minutes_per_group(positions, match_duration, *, dismissal_minute, substitution_minute)`
+(both keywords required, as in §3) returns a `dict[str, float]` of group → minutes for one match, respecting
 multi-stint tactical shifts and dismissals.
 
 `primary_position_group(minutes_per_group)` returns the group with the highest
@@ -508,10 +615,10 @@ infinity (safe division enforced in `build_player_season.py`).
 
 ---
 
-## 6. Season Aggregation Principles (to be implemented in build_player_season.py)
+## 6. Season Aggregation Principles
 
-These principles are recorded here now so they are not re-debated during
-implementation. None of this is in the current code.
+Recorded before implementation so they were not re-debated. Implemented in
+`build_player_season.py` (§6a–§6d) and `build_player_match.py` (§6e).
 
 ### 6a. Per-90 computation from season totals
 
@@ -558,9 +665,9 @@ most positions. xG and xA are better representations of attacking contribution
 because they are continuous, higher-volume, and less dependent on finishing luck
 or final-touch attribution.
 
-xA is not currently extracted from the pipeline (it requires the `shot.statsbomb_xg`
-value of the *shot* that followed a key pass, not a pre-computed field). This
-metric is noted here for Milestone 4 scoping; it is out of scope for Milestone 1.
+xA is extracted as `xg_assisted` (with `xg_assisted_direct`), from the
+`shot.statsbomb_xg` of the shot that followed the pass; see §25 and §26. Goals and
+assists are stored with `_p90` columns for display, but are not DNA metrics.
 
 ### 6d. Cards excluded from DNA and similarity
 
@@ -587,14 +694,23 @@ by the display layer (appearances vs. starts breakdown).
 
 **Step 2 — team-level fallback** (applied only when step 1 gives < 11 starters
 for a team):  a player who was not already marked started is also counted as
-started if **any** of their position stints has `from == "00:00"` and
-`from_period == 1` (or `from_period` absent, defaulted to 1).  These players
-receive `started_inferred = True`.
+started if **any** of their position stints has `from == "00:00"`,
+`from_period == 1` and non-zero length (`to != "00:00"`, `_is_kickoff_spell`).
+`from_period` is required: an absent one raises `KeyError` (plan 004 H1; it is no
+longer defaulted to 1). These players receive `started_inferred = True`.
 
 **After fallback:** if a team still does not have exactly 11 starters, or has
 more than 11, no further guessing is applied.  Both cases are recorded in the
 quality report under `issue = "starter_count_mismatch"`.  Fallback applications
 are recorded under `issue = "started_inferred_fallback"`.
+
+**Starting XI cross-check (fails the build; plan 003).** Per team-match, the set
+of starters derived above must equal the player set in the team's `Starting XI`
+event (`tactics.lineup`). A missing, duplicate or mismatching Starting XI event
+(`starting_xi_missing`, `starting_xi_duplicate`, `starting_xi_mismatch`) raises
+`StarterCrossCheckError`, and the league part is not written. Covered by tests on
+3754047 (Swansea: 10 of 11 starters inferred) and 3825596 (Sporting Gijón: 3).
+2015/16: 0 failures in all five leagues.
 
 #### StatsBomb data-quality finding — match 3825596
 
@@ -688,7 +804,8 @@ counted exactly once.  A separate `assists` column (see below) lets downstream
 consumers split the two signals if needed.
 
 **`assists` column:** a separate `assists` column counts only `goal_assist`
-passes (display-only; not used in DNA or similarity calculations in V1).
+passes. It is **stored with a `_p90` column (`assists_p90`) and excluded from DNA
+per §6c**, the same treatment as `goals` (decided 2026-09-29, plan 004).
 In La Liga 2015/16: `assists` total = 722.
 
 **Implementation:** `build_player_match._aggregate_events` increments
@@ -723,8 +840,23 @@ events only.  Own goals are not captured in any column.  The `goals` column in
 the *opponent's* net.
 
 **Implications for downstream use:**
-- Season-level goal totals summed from the parquet will be 29 short of the
-  official total.  This is expected and documented.
+- Season-level goal totals summed from the parquet are short of the score sum of
+  the covered matches by exactly the league's own goals. This is expected, not
+  missing data.
+  2015/16 (`base.own_goals` in the reference files; the spike reconciles
+  `goals + own_goals` with the `matches.json` scores):
+
+  | League | Matches | `goals` | Own goals | `matches.json` score sum |
+  |---|---|---|---|---|
+  | La Liga | 380 | 1,014 | 29 | 1,043 |
+  | Premier League | 380 | 988 | 38 | 1,026 |
+  | Serie A | 380 | 951 | 28 | 979 |
+  | Ligue 1 | 377 of 380 | 916 | 33 | 949 |
+  | Bundesliga (PARTIAL) | 34 | 90 | 6 | 96 |
+
+  The last column is the sum of `home_score + away_score` over the matches StatsBomb
+  provides. It is not the official season total: Ligue 1 is missing 3 of its 380
+  matches, and the Bundesliga covers only Leverkusen's 34 (ADR 003 §5).
 - Own goals must never be added to the attacking player's `goals` count (they
   are not attacking actions).
 - Own goals should not appear in DNA or similarity calculations (per §6d).
@@ -1308,8 +1440,10 @@ La Liga 2015/16: shot-side == pass-side to 8 decimal places; zero contamination.
 Logged at `INFO` level by the pipeline.
 
 **Missing shooter identity:** If a shot event is missing `player.id` or `possession`,
-the carry window cannot be determined.  These are credited as direct (conservative
-fallback: cannot prove the shot was indirect).  Logged at `WARNING` level.
+the carry window cannot be determined.  These are credited as direct. This is a
+**permissive** fallback, not a conservative one: it can only raise
+`xg_assisted_direct`, crediting a shot that cannot be proved direct. Accepted because
+it has 0 occurrences in all five 2015/16 leagues.  Logged at `WARNING` level.
 La Liga 2015/16: zero occurrences.
 
 **Missing `statsbomb_xg`:** If a shot event has no `statsbomb_xg` value (`None`),

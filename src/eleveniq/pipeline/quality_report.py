@@ -19,8 +19,11 @@ The two sources have zero overlap (each dismissal appears in exactly one
 type).  ``find_dismissal_minute`` checks both sources in a single pass so
 whichever fires first (chronologically) is returned.
 
-When a mismatch is detected the quality report lists it and the build-match
-stage must re-run with dismissal_minute supplied to compute_player_minutes().
+The fix is applied in build_player_match: every dismissed player's stints are
+capped at the card minute (dismissal_minute, ADR 002 §3), and the quality
+report records, per dismissed player, the minutes with and without that cap.
+check_dismissed_player_minutes() is a standalone check (not called by the
+pipeline) that flags computed minutes still exceeding the card minute.
 
 Missing timestamp handling
 --------------------------
@@ -176,9 +179,8 @@ def check_dismissed_player_minutes(
     Return a mismatch report if a dismissed player's computed minutes
     significantly exceed their card minute, or None if no problem found.
 
-    A non-None return means the pipeline credited too much playing time.
-    The pipeline should re-compute their minutes using the returned
-    `dismissal_minute` value.
+    A non-None return means the computed minutes credit too much playing
+    time, i.e. the dismissal cap (ADR 002 §3) was not applied.
 
     Returns None (no mismatch reported) if find_dismissal_minute() returns
     None — either no dismissal occurred or the event has missing timestamps

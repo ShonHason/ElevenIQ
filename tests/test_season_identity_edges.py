@@ -238,6 +238,18 @@ class TestSeasonIdentityIntegration:
         )
         assert (expected["_exp"] == expected["multi_team_season"]).all()
 
+    def test_flag_and_pool_counts_match_adrs(self, season_df):
+        """Independent of the flag definitions above: the 2015/16 counts recorded
+        in ADR 002 §28 (68 multi-team player_ids), ADR 003 §7 (47 multi-competition
+        player_ids, 94 rows) and ADR 003 §5 (2,279 pool rows)."""
+        df = season_df.filter((pl.col("season_id") == 27) & (pl.col("source") == "statsbomb"))
+        multi_team = df.filter(pl.col("multi_team_season"))
+        multi_comp = df.filter(pl.col("multi_competition_season"))
+        assert multi_team["player_id"].n_unique() == 68
+        assert multi_comp["player_id"].n_unique() == 47
+        assert multi_comp.height == 94
+        assert df["in_percentile_pool"].sum() == 2279
+
     def test_no_team_in_two_competitions(self, season_df):
         assert find_teams_in_multiple_competitions(season_df).height == 0
 

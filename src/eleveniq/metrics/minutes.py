@@ -87,6 +87,12 @@ def stint_end_cap(
     """
     The minute after which a player cannot be on the pitch: the earlier of his
     dismissal and his own substitution off, or None when neither happened.
+
+    "Earlier" is by match-absolute minute. The on-pitch count in
+    build_player_match orders exits by (period, minute) instead; the two
+    disagree only when one exit is in first-half stoppage (e.g. 46:30, period
+    1) and the other in period 2 before 46:30. That does not occur in the
+    2015/16 data and is pinned by tests, not aligned (ADR 002 §3).
     """
     caps = [m for m in (dismissal_minute, substitution_minute) if m is not None]
     return min(caps) if caps else None
@@ -107,7 +113,12 @@ def iter_stint_bounds(
       match_duration (the final whistle).
     - An explicit `to` is clamped at the exit cap, but used as-is otherwise:
       match_duration is the last event timestamp and may lag the real whistle,
-      so clamping against it could truncate a legitimate substitution time.
+      so it is not a clamp. A `to` past match_duration is not silently
+      accepted either: if it gives the player more than match_duration minutes,
+      the pipeline's player_minutes_exceed_duration check fails the build
+      (tolerance 1e-6; the 2015/16 data has 0 such rows). On a new source the
+      response is to investigate the stint, not to widen the tolerance
+      (ADR 002 §3).
     """
     effective_end = cap if cap is not None else match_duration
     for stint in positions:

@@ -32,14 +32,16 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
 - Use per-90 metrics and percentiles for player comparisons, not raw totals.
 - Always preserve numerators, denominators, and minutes alongside derived figures so
   metrics can be recalculated without re-downloading source data.
-- Percentiles are calculated within position groups (GK,CB, FB/WB, DM/CM, AM/Winger, ST —
-  configurable), not across all positions.
-- A configurable minimum-minutes threshold (default ~600–900 min) must gate all
-  percentile calculations; low-sample players must not appear as elite profiles.
+- Percentiles are calculated within position groups (`GK`, `CB`, `FB-WB`, `DM-CM`,
+  `AM-Winger`, `ST`; the names used in the data, configurable), not across all positions.
+- A configurable minimum-minutes threshold (default 900 min, `MIN_MINUTES_THRESHOLD` in
+  config.py) must gate all percentile calculations; low-sample players must not appear as
+  elite profiles.
 - Expose league-local and global percentiles as separate columns; do NOT build a
   league-strength adjustment model before the data clearly supports it.
-- Stats are stored at the player-season level. Never merge a player's career into one
-  profile.
+- Season stats are stored at the player-team-competition-season grain (one row per
+  `player_id, team_id, competition_id, season_id, source`). Never merge a player's career
+  into one profile.
 
 ### Data
 - Never scrape websites or use data in a way that violates a source's terms of service.
@@ -112,6 +114,10 @@ Always use the project virtualenv, not the system Python.
 # Setup (once)
 python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
+# Download raw StatsBomb data into data/raw/ (all configured leagues; existing files skipped)
+.venv/bin/python -m eleveniq.statsbomb.downloader
+.venv/bin/python -m eleveniq.statsbomb.downloader --competition-id 11 --season-id 27
+
 # Run the pipeline: all leagues in COMPETITION_SEASONS (existing parts skipped; --force rebuilds)
 .venv/bin/python -m eleveniq.pipeline.build_player_match
 
@@ -122,10 +128,14 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # After pipeline code changes, rebuild with --force: existing parts are reused, not checked
 .venv/bin/python -m eleveniq.pipeline.build_player_match --force
 
+# Season aggregation: data/interim/player_match_stats.parquet → data/processed/player_season_stats.parquet
+.venv/bin/python -m eleveniq.pipeline.build_player_season
+
 # Fast unit tests (default — no I/O, sub-second)
 .venv/bin/python -m pytest tests/ -q -m "not integration"
 
-# Integration tests (require pipeline output in data/interim/)
+# Integration tests (require data/raw/, data/interim/ and data/processed/: download, then
+# run both pipeline stages; tests whose inputs are missing are skipped)
 .venv/bin/python -m pytest tests/ -q -m integration
 
 # Tests with coverage

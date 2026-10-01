@@ -96,9 +96,10 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
 - Guard `stint.get("to")` against empty string `""` in `minutes.py` and
   `positions.py` — the current code treats `""` as a truthy to-value and calls
   `parse_mm_ss("")`, which will raise a `ValueError`.
-- Replace `test_aggregation.py` inline expressions with tests against the actual
-  `build_player_season.py` module once it exists (currently tests Polars logic
-  in isolation with no reference to the real pipeline code).
+- ~~Replace `test_aggregation.py` inline expressions with tests against the actual
+  `build_player_season.py` module once it exists~~ — resolved in Plan 004 H3b: the
+  inline classes were removed; their contracts are tested against
+  `aggregate_player_season` in `test_build_player_season.py`.
 - Add a cross-consistency test confirming that `sum(compute_minutes_per_group(...).values())`
   equals `compute_player_minutes(...)` for the same positions array and match duration.
 - If the real pipeline run finds dismissal events with missing `minute`/`second`,
@@ -242,6 +243,41 @@ in ADR 002 §6 or a new ADR.
   - Pressures per 1,000 events: 88–107.
 
   Whether this reflects playing style or differences in how StatsBomb collected the data is unknown. League-local percentiles are unaffected. Global percentiles on defensive metrics (interceptions, 50/50s, pressures, ball recoveries) may be distorted. The stats-reviewer must decide whether these metrics get global percentiles at all, a caveat, or league-local only.
+
+**Pre-condition from Plan 004 H3b (first-half stoppage minutes) — stats-reviewer must decide before computing percentiles:**
+
+- **Minutes are on the match-absolute axis, so first-half stoppage is lost.** Lineup times are match-absolute and period 2 restarts at 45:00, so a player on the pitch at the end of the first half is not credited its stoppage time (ADR 002 §3, "Known limits"). This is systematic, not limited to the 9 reversed-period stints. Measured on the H3b output against a period-aware clock: same stints, same exit caps, each period ending at its last event (the `match_duration` convention), measurement only. The pipeline is unchanged. Every figure below comes from `spikes/measure_first_half_stoppage.py`.
+  - **Per league** (net minutes lost / % of league minutes; median first-half stoppage per match). Net means it includes the −120.6 min from the 30 early-half-end matches below; the gross loss is 44,889 min:
+
+    | League 2015/16 | Minutes lost | % of minutes | Median stoppage |
+    |---|---|---|---|
+    | La Liga | 6,892 | 0.89% | 0.98 |
+    | Premier League | 17,100 | 2.17% | 2.02 |
+    | Serie A | 10,283 | 1.31% | 1.03 |
+    | Ligue 1 | 9,877 | 1.28% | 1.05 |
+    | Bundesliga (PARTIAL) | 617 | 0.89% | 0.92 |
+    | **Total** | **44,769** | **1.40%** | |
+
+  - **Per player-match.** Full-match players (24,854): mean 1.32 min lost, median 1.07, max 9.25. In 99.996% of them the loss equals the match's first-half stoppage exactly. By league, the full-match mean ranges from 0.82 (La Liga) to 2.04 (PL). Second-half substitutes (8,529) lose 0.00 (max |diff| 3e-14). Other player-matches (subs before half-time, players off in the second half; 9,661): mean 1.25, median 1.05.
+  - **Edge cases.** In 30 matches the first half's last event is before 45:00 (by up to 1.2 min). There the period-aware clock credits *less*, so 659 player-matches show −120.6 min in total. This comes from the last-event convention, not from real time. **H4 must define the half-end rule explicitly, for both halves**, before any period-aware minutes are built:
+    - which instant ends a period: the `Half End` event or the last event of the period;
+    - what to do when that instant is before the period's nominal end (45:00 for period 1, 90:00 for period 2). For example: clamp, keep the recorded time, or fail the build.
+    - The same last-event convention gives `match_duration`, which ends every open stint. So second-half and full-match minutes may also be understated wherever the last event comes before the whistle. Compare `Half End` against the last event for period 2 as well as period 1.
+    - Confirm the largest first-half stoppages against the raw `Half End` events (or an injury stoppage) before trusting them: PL 3754339 (9.25 min) and Ligue 1 3829452 (9.03 min), then 3901214 (6.90), 3754340 (6.47) and 3879666 (6.43). These matches give the largest per-match swings if minutes become period-aware.
+  - **Per-90 effect.** The current per-90 values are overstated by the ratio of period-aware to credited minutes. This was measured on the 1,250 rows with `in_percentile_pool ∧ is_outfield ∧ meets_min_minutes`: overall 0.33–3.32% (median 1.29%). By league: PL 1.11–3.32% (median 2.19%), Serie A 0.46–2.19% (1.33%), Ligue 1 0.46–2.62% (1.27%), La Liga 0.33–1.43% (0.87%). The largest is Obiang (West Ham) at 3.32%. The bias also differs between players *within* a league: starters lose stoppage time and second-half substitutes lose none. So it reorders league-local cohorts too, not only global ones.
+  - **Percentile shift.** This is the shift in percentile points per gated row when per-90 uses period-aware minutes. Local means league × position group; global means position group only.
+
+    | Metric | Local mean | Local max | Local rows ≥ 1 pt | Global mean | Global max | Global rows ≥ 1 pt |
+    |---|---|---|---|---|---|---|
+    | pressures | 0.29 | 5.71 | 206 | 0.54 | 4.37 | 250 |
+    | interceptions | 0.22 | 5.08 | 162 | 0.31 | 3.04 | 104 |
+    | xg | 0.15 | 4.26 | 107 | 0.23 | 2.48 | 60 |
+    | tackles_won | 0.22 | 4.76 | 172 | 0.36 | 3.11 | 113 |
+    | progressive_passes | 0.22 | 3.39 | 166 | 0.41 | 3.57 | 157 |
+
+    The global mean shift is about 1.5–2× the local one; in a global cohort, PL per-90 values are overstated about 2.5× more than La Liga's. The local maximum is larger, because local cohorts are small (about 50–70 rows, so one rank is about 1.5–2 pts).
+  - **900-minute gate.** 11 `in_percentile_pool ∧ is_outfield` rows would cross it: PL 5, Serie A 4, Ligue 1 2. Examples: Grealish 882.2 → 900.2, Distin 892.6 → 920.2. No GK row crosses. **The gate moves in one direction only:** 0 rows that pass it today would fall below 900. So the current definition only ever excludes borderline players, never admits extra ones. Erdinç and Klose also appear in the combined-gate note below. Their gate status depends on both decisions, so decide them together, not separately.
+  - **Decide:** keep match-absolute minutes and document the bias, or move to period-aware minutes (a definition change for nearly every row, with a new ADR and a full before/after). Make the decision before any global percentile or before the gate is applied. Period-aware time would also make the reversed-period stints and the AC Milan 3879549 collision (ADR 002 §3) disappear.
 
 **Pre-conditions from Plan 003 C3 (multi-league flags) — stats-reviewer must decide before computing percentiles:**
 

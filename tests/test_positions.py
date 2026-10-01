@@ -474,7 +474,7 @@ class TestComputeMinutesPerRawPosition:
 @pytest.mark.integration
 @pytest.mark.skipif(
     not _PLAYER_MATCH_PARQUET.exists(),
-    reason="requires pipeline output — run 'python -m src.cli build-match' first",
+    reason="requires pipeline output — run 'python -m eleveniq.pipeline.build_player_match' first",
 )
 def test_no_unknown_positions_in_pipeline_output():
     """After the pipeline runs, every position_raw in the output must map to a known group."""

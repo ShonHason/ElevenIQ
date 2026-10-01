@@ -48,7 +48,8 @@ def compute_xg_assisted_per_player(
     Data-quality logging (all at INFO or WARNING level):
         - Assisted shots with missing statsbomb_xg: WARNING, excluded from total.
         - Assisted shots with missing shooter id or possession: WARNING, credited
-          as direct (conservative; no window to check).
+          as direct (a permissive fallback: no window to check, so the shot
+          cannot be proved indirect; 0 occurrences in 2015/16, ADR 002 §26).
         - Assisted shots with no "Ball Receipt*" before the shot: INFO, counted
           as direct. Expected to be rare: 6 in La Liga 2015/16 and 0 in the
           other 2015/16 leagues, so a large count points at a linkage problem.
@@ -112,8 +113,9 @@ def compute_xg_assisted_per_player(
         shooter_team_id = shot_ev.get("possession_team", {}).get("id")
 
         if shooter_id is None or shot_poss is None:
-            # Cannot locate the shooter's possession window; credit as direct
-            # (conservative: we cannot rule out that it was a first-touch shot).
+            # Cannot locate the shooter's possession window; credit as direct.
+            # Permissive, not conservative: it can only raise xg_assisted_direct
+            # (0 occurrences in 2015/16; ADR 002 §26).
             missing_shooter_count += 1
             xga_direct[assister_id] += xg
             continue
@@ -165,7 +167,7 @@ def compute_xg_assisted_per_player(
     if missing_shooter_count:
         logger.warning(
             "xg_assisted: %d assisted shot(s) had no shooter id or possession "
-            "(credited as direct; conservative fallback).",
+            "(credited as direct; permissive fallback).",
             missing_shooter_count,
         )
     if no_receipt_count:

@@ -336,6 +336,32 @@ Run the fast and integration suites (green), grep the old stale phrases (expect 
 
 ---
 
+## H4: open decisions (queued 2026-10-01 from the H3b reviews)
+Not started. Each item needs a decision before code.
+- **`check_dismissed_player_minutes`** (quality_report.py): only tests call it; the
+  pipeline applies the dismissal cap itself and records minutes with and without it.
+  Either wire it into the integration suite as a second check of the cap, or remove
+  it (and its unit tests) so it cannot drift from the cap logic.
+- **Half-end rule** (docs/milestones.md, Milestone 4, "Pre-condition from Plan 004 H3b"):
+  `Half End` event vs last event for both halves, and what to do when the end is before
+  the nominal 45:00 / 90:00. Needed before any period-aware minutes.
+- **Period-aware minutes must subtract treatment windows** (stats-reviewer C1, H3b).
+  Lineup stints that cross periods can include a "Player Off" / "Player On" window
+  (Sammarco, 3879602: 0.3 min credited while off). Reordering by period alone would
+  credit it; ADR 002 §3.
+- **New-source audit checklist** (stats-reviewer C3, H3b): add to the data-auditor
+  checklist that Substitution events must be complete. The on-pitch card rule
+  assumes so, and a dropped Substitution event gives a false
+  `on_pitch_count_exceeded` (ADR 002 §3, "Assumption: the Substitution event is
+  complete").
+- **Percentile shift on the full metric set** (stats-reviewer C4, H3b): the
+  first-half-stoppage measurement covers only 5 volume metrics (pressures,
+  interceptions, xg, tackles_won, progressive_passes). Extend
+  spikes/measure_first_half_stoppage.py to every per-90 DNA metric before M4 treats
+  the 5.7-point local maximum as the worst case.
+
+---
+
 ## Risks
 - **H1.3 may not be output-neutral.** It has a stop condition.
 - **H1.5 allow-list scope.** If other dropped-event types show up (e.g. events by a player missing from

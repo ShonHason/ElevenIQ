@@ -37,6 +37,13 @@ Review ONLY the current changes: run `git diff` and `git status`
   aggregates. Check every lookup over the match event list, not only the
   metric counters: a shootout red card once extended a player's minutes
   past the match duration.
+- Minutes taken from lineup stints without checking them against the
+  Substitution (and card) events. Lineups can keep a stint running after the
+  player's own substitution: 33 player-matches were credited to the whistle
+  until the H2 cap (ADR 002 §3).
+- Time compared by match-absolute minute where the period matters. Period 2
+  restarts at 45:00, so first-half stoppage (46:01, period 1) comes before
+  45:00 of period 2. Order by (period, minute) or say why not.
 
 ## 3. Tests in the diff
 - Expected values changed in an existing test: flag it and ask whether

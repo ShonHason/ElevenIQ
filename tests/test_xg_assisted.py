@@ -451,7 +451,7 @@ class TestXgAssistedEdgeCases:
             compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
 
     def test_shot_missing_shooter_id_credited_as_direct(self):
-        """Shot with no player.id → assister is credited as direct (conservative fallback)."""
+        """Shot with no player.id → assister is credited as direct (permissive fallback)."""
         shot_id = "s-no-shooter"
         events = [
             _pass(1, shot_id, idx=1),
@@ -573,7 +573,7 @@ class TestXgAssistedEdgeCases:
         assert xga == pytest.approx(0.4)
         assert xga_d == pytest.approx(0.4), (
             "Shot with missing possession cannot have its carry window located; "
-            "must be credited as direct (conservative fallback per ADR 002 §26)"
+            "must be credited as direct (permissive fallback per ADR 002 §26)"
         )
 
     def test_passer_without_player_id_not_credited(self):

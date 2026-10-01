@@ -22,7 +22,17 @@ import polars as pl
 import pytest
 
 from eleveniq.pipeline.build_player_match import (
+    DROPPED_EVENT_ALLOWED,
+    ON_PITCH_COUNT_EXCEEDED,
+    PLAYER_MINUTES_EXCEED_DURATION,
+    REVERSED_PERIOD_STINT,
+    STARTED_INFERRED_FALLBACK,
+    STARTER_COUNT_MISMATCH,
     STARTING_XI_ISSUES,
+    STARTING_XI_MISMATCH,
+    STARTING_XI_MISSING,
+    STINT_AFTER_SUBSTITUTION,
+    SUBSTITUTION_CAPPED,
     MatchProcessingError,
     StarterCrossCheckError,
     _group_minutes_to_columns,
@@ -185,7 +195,7 @@ class TestStartedInferred:
         _, report = process_match_result
         entries = [
             e for e in report
-            if e.get("issue") == "started_inferred_fallback" and e.get("team_id") == 102
+            if e.get("issue") == STARTED_INFERRED_FALLBACK and e.get("team_id") == 102
         ]
         assert len(entries) == 1
 
@@ -193,14 +203,14 @@ class TestStartedInferred:
         _, report = process_match_result
         entry = next(
             e for e in report
-            if e.get("issue") == "started_inferred_fallback" and e.get("team_id") == 102
+            if e.get("issue") == STARTED_INFERRED_FALLBACK and e.get("team_id") == 102
         )
         assert "Grace" in entry["players"]
 
     def test_quality_report_mismatch_reported_for_fixture_teams(self, process_match_result):
         _, report = process_match_result
         mismatch_team_ids = {
-            e["team_id"] for e in report if e.get("issue") == "starter_count_mismatch"
+            e["team_id"] for e in report if e.get("issue") == STARTER_COUNT_MISMATCH
         }
         # Fixture teams each have fewer than 11 players → both trigger mismatch
         assert 101 in mismatch_team_ids
@@ -733,14 +743,14 @@ class TestStartingXiCrossCheck:
     def test_mismatch_recorded_with_player_ids(self, tmp_path):
         _write_match(tmp_path, 7002, [_xi_event(601, [6002]), _HALF_END], self._lineups())
         _, report = _process_match(7002, 99, 1, data_root=tmp_path)
-        entry = next(d for d in report if d.get("issue") == "starting_xi_mismatch")
+        entry = next(d for d in report if d.get("issue") == STARTING_XI_MISMATCH)
         assert entry["missing_from_derived"] == [6002]
         assert entry["extra_in_derived"] == [6001]
 
     def test_missing_starting_xi_event_recorded(self, tmp_path):
         _write_match(tmp_path, 7003, [_HALF_END], self._lineups())
         _, report = _process_match(7003, 99, 1, data_root=tmp_path)
-        assert any(d.get("issue") == "starting_xi_missing" for d in report)
+        assert any(d.get("issue") == STARTING_XI_MISSING for d in report)
 
     def test_mismatch_fails_build_and_writes_nothing(self, tmp_path):
         _write_match(tmp_path, 7002, [_xi_event(601, [6002]), _HALF_END], self._lineups())
@@ -1287,7 +1297,7 @@ class TestDroppedEvents:
     def test_bench_card_allowed(self, tmp_path, card):
         out, (_, report) = _build(tmp_path, [self._card(_BENCH, card)])
         assert out.exists()
-        dropped = [d for d in report if d.get("issue") == "dropped_event_allowed"]
+        dropped = [d for d in report if d.get("issue") == DROPPED_EVENT_ALLOWED]
         assert len(dropped) == 1
         assert dropped[0]["reason"] == "zero_minutes"
         assert dropped[0]["card"] == card
@@ -1491,7 +1501,7 @@ class TestSubstitutionOffCap:
             tmp_path, [_sub_off(_STARTER, period=1, minute=37, second=2)], lineups)
         row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
         assert row["minutes_played"] == pytest.approx(31 + 29 / 60)
-        capped = [d for d in report if d.get("issue") == "substitution_capped"]
+        capped = [d for d in report if d.get("issue") == SUBSTITUTION_CAPPED]
         assert len(capped) == 1
         assert capped[0]["minutes_removed"] == pytest.approx(90 - (37 + 2 / 60))
 
@@ -1511,7 +1521,7 @@ class TestSubstitutionOffCap:
         _, (df, report) = _build(
             tmp_path, [_sub_off(_STARTER, period=2, minute=45)],
             _quality_lineups(starter_positions=spells))
-        assert not [d for d in report if d.get("issue") == "stint_after_substitution"]
+        assert not [d for d in report if d.get("issue") == STINT_AFTER_SUBSTITUTION]
         row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
         assert row["minutes_played"] == pytest.approx(44.0)
 
@@ -1546,14 +1556,14 @@ class TestSubstitutionOffCap:
     def test_team_minutes_at_ceiling_passes(self, tmp_path):
         df, report = _build_team(tmp_path, [[_spell("00:00", None, "Starting XI")]] * 11)
         assert df["minutes_played"].sum() == pytest.approx(11 * 90.0)
-        assert not [d for d in report if d.get("issue") == "on_pitch_count_exceeded"]
+        assert not [d for d in report if d.get("issue") == ON_PITCH_COUNT_EXCEEDED]
 
     def test_reversed_period_stint_reported_not_failed(self, tmp_path):
         # 3879549 pattern: "45:00 p2 → 45:51 p1".
         spells = [{**_spell("00:00", "45:00", "Starting XI")},
                   {**_spell("45:00", "45:51", "Tactical Shift"), "from_period": 2}]
         _, (_, report) = _build(tmp_path, [], _quality_lineups(starter_positions=spells))
-        assert [d for d in report if d.get("issue") == "reversed_period_stint"]
+        assert [d for d in report if d.get("issue") == REVERSED_PERIOD_STINT]
 
 
 class TestSubstitutionOffPipelineEdges:
@@ -1577,7 +1587,7 @@ class TestSubstitutionOffPipelineEdges:
         _, (df, report) = _build(tmp_path, [_sub_off(_STARTER, period=2, minute=60)], lineups)
         assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(60.0)
         assert self._row(df, _BENCH)["minutes_played"] == pytest.approx(30.0)
-        assert not [d for d in report if d.get("issue") == "substitution_capped"]
+        assert not [d for d in report if d.get("issue") == SUBSTITUTION_CAPPED]
 
     def test_substitute_who_is_later_substituted_off(self, tmp_path):
         # Sub-of-a-sub: on at 30:00 (p1), replaced at 70:00 (p2); lineup leaves to=None.
@@ -1622,7 +1632,7 @@ class TestSubstitutionOffPipelineEdges:
         events = [_sub_off(_STARTER, period=3, minute=91),
                   _ev("Half End", None, period=4, minute=120)]
         _, (df, report) = _build(tmp_path, events, _quality_lineups(starter_positions=spells))
-        assert not [d for d in report if d.get("issue") == "stint_after_substitution"]
+        assert not [d for d in report if d.get("issue") == STINT_AFTER_SUBSTITUTION]
         assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(88.0)
 
     def test_shootout_substitution_does_not_extend_minutes(self, tmp_path):
@@ -1632,7 +1642,7 @@ class TestSubstitutionOffPipelineEdges:
                   _sub_off(_STARTER, period=5, minute=125)]
         _, (df, report) = _build(tmp_path, events)
         assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(120.0)
-        assert not [d for d in report if d.get("issue") == "substitution_capped"]
+        assert not [d for d in report if d.get("issue") == SUBSTITUTION_CAPPED]
 
     def test_card_on_bench_after_substitution_uses_earlier_substitution_cap(self, tmp_path):
         # Replaced at 60:00, then a red card on the bench at 80:00. The exit cap is
@@ -1664,8 +1674,12 @@ def test_quality_issue_names_are_constants_not_literals():
         for node in ast.walk(tree):
             if isinstance(node, ast.Dict):
                 for key, value in zip(node.keys, node.values):
-                    if (isinstance(key, ast.Constant) and key.value == "issue"
-                            and not isinstance(value, ast.Name | ast.IfExp)):
+                    if isinstance(key, ast.Constant) and key.value == "issue" and not (
+                        isinstance(value, ast.Name)
+                        or (isinstance(value, ast.IfExp)
+                            and isinstance(value.body, ast.Name)
+                            and isinstance(value.orelse, ast.Name))
+                    ):
                         literals.append((module.__name__, ast.unparse(value)))
             # issues[("name", value)] in _aggregate_events
             if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Tuple):
@@ -1724,7 +1738,7 @@ class TestPlayerMinutesGuard:
     def test_full_match_equals_duration_passes(self, tmp_path):
         _, (df, report) = _build(tmp_path, [])
         assert df.filter(pl.col("player_id") == _STARTER)["minutes_played"][0] == pytest.approx(90.0)
-        assert not [d for d in report if d.get("issue") == "player_minutes_exceed_duration"]
+        assert not [d for d in report if d.get("issue") == PLAYER_MINUTES_EXCEED_DURATION]
 
 
 class TestOnPitchCount:
@@ -1739,7 +1753,7 @@ class TestOnPitchCount:
         positions += [[_spell("10:00", "15:00", "Substitution - On")]]
         df, report = _build_team(tmp_path, positions)
         assert df["minutes_played"].sum() == pytest.approx(965.0)
-        entries = [d for d in report if d.get("issue") == "on_pitch_count_exceeded"]
+        entries = [d for d in report if d.get("issue") == ON_PITCH_COUNT_EXCEEDED]
         assert [(e["on_pitch"], e["allowed"], e["period"], e["minute"]) for e in entries] == [
             (12, 11, 1, 10.0)]
 
@@ -1751,7 +1765,7 @@ class TestOnPitchCount:
         card = {**_ev("Bad Behaviour", _TEAM_BASE, minute=30,
                       bad_behaviour={"card": {"name": "Red Card"}})}
         _, report = _build_team(tmp_path, positions, [card])
-        entries = [d for d in report if d.get("issue") == "on_pitch_count_exceeded"]
+        entries = [d for d in report if d.get("issue") == ON_PITCH_COUNT_EXCEEDED]
         assert [(e["on_pitch"], e["allowed"], e["period"], e["minute"]) for e in entries] == [
             (11, 10, 1, 40.0)]
 
@@ -1768,7 +1782,8 @@ def _stint(frm: str, from_period: int, to: str | None, to_period: int | None) ->
 
 class TestOnPitchExcess:
     """_on_pitch_excess: period-aware, distinct players, exits applied, and the
-    allowed number is 11 minus the dismissals of players on the pitch."""
+    allowed number is 11 minus the dismissals that leave the team a player short.
+    Player tuples are (player_id, positions, dismissal, substitution off)."""
 
     END = (2, 90.0)
 
@@ -1791,20 +1806,20 @@ class TestOnPitchExcess:
     def test_dismissed_player_stops_counting_at_card(self):
         # P1 sent off at (1, 30:00): the ceiling drops to 10 and P1 leaves.
         players = self._full(11)
-        players[0] = (1, players[0][1], (1, 30.0), (1, 30.0))
+        players[0] = (1, players[0][1], (1, 30.0), None)
         assert self._excess(players) is None
 
     def test_eleven_on_after_a_dismissal_is_reported(self):
         # A 10-man team with 11 on the pitch: the plain 11 ceiling misses it.
         players = self._full(11)
-        players[0] = (1, players[0][1], (1, 30.0), (1, 30.0))
+        players[0] = (1, players[0][1], (1, 30.0), None)
         players.append((99, [_stint("40:00", 1, None, None)], None, None))
         assert self._excess(players) == (11, 10, (1, 40.0))
 
     def test_dismissal_instant_is_not_an_excess(self):
         # At the card instant the ceiling drops and the player leaves together.
         players = self._full(11)
-        players[0] = (1, [_stint("00:00", 1, "30:00", 1)], (1, 30.0), (1, 30.0))
+        players[0] = (1, [_stint("00:00", 1, "30:00", 1)], (1, 30.0), None)
         assert self._excess(players) is None
 
     def test_card_after_own_substitution_does_not_lower_ceiling(self):
@@ -1815,7 +1830,7 @@ class TestOnPitchExcess:
         players[0] = (2, [_stint("00:00", 1, "92:58", 2), _stint("94:31", 2, None, None)],
                       None, None)
         sub, card = (1, 29 + 10 / 60), (2, 94 + 9 / 60)
-        players[1] = (3, [_stint("00:00", 1, "29:10", 1)], sub, card)
+        players[1] = (3, [_stint("00:00", 1, "29:10", 1)], card, sub)
         players.append((99, [_stint("29:10", 1, None, None)], None, None))
         assert self._excess(players) is None
 
@@ -1825,8 +1840,8 @@ class TestOnPitchExcess:
         # period-aware time it is empty, so ten are on throughout.
         players = self._full(11)
         players[0] = (1, [_stint("00:00", 1, "45:00", 2), _stint("45:00", 2, None, None)],
-                      (1, 41.8), (1, 41.8))
-        players[1] = (2, [_stint("00:00", 1, "45:51", 1)], (1, 45.85), None)
+                      (1, 41.8), None)
+        players[1] = (2, [_stint("00:00", 1, "45:51", 1)], None, (1, 45.85))
         players.append((99, [_stint("45:00", 2, "45:51", 1), _stint("45:51", 1, "46:06", 1),
                              _stint("46:06", 1, None, None)], None, None))
         assert self._excess(players) is None
@@ -1849,9 +1864,82 @@ class TestOnPitchExcess:
 
     def test_substitution_instant_is_not_twelve(self):
         players = self._full(11)
-        players[0] = (1, [_stint("00:00", 1, "60:00", 2)], (2, 60.0), None)
+        players[0] = (1, [_stint("00:00", 1, "60:00", 2)], None, (2, 60.0))
         players.append((99, [_stint("60:00", 2, None, None)], None, None))
         assert self._excess(players) is None
+
+
+class TestOnPitchExcessEdges:
+    """H3a review follow-up 1 (plan 004): when a card lowers the allowed number,
+    a malformed stint end, and the period-aware exit order."""
+
+    END = (2, 90.0)
+
+    @staticmethod
+    def _excess(players):
+        from eleveniq.pipeline.build_player_match import _on_pitch_excess
+        return _on_pitch_excess(players, TestOnPitchExcessEdges.END)
+
+    @staticmethod
+    def _full(n: int) -> list:
+        return [(1 + i, [_stint("00:00", 1, None, None)], None, None) for i in range(n)]
+
+    def test_dismissal_while_off_for_treatment_lowers_allowed(self):
+        # P1 leaves for treatment at (1, 30:00), is sent off at (1, 32:00) while
+        # off, and is never substituted. He cannot be replaced, so P99 coming
+        # on at (1, 35:00) puts 11 on a 10-man team.
+        players = self._full(11)
+        players[0] = (1, [_stint("00:00", 1, "30:00", 1)], (1, 32.0), None)
+        players.append((99, [_stint("35:00", 1, None, None)], None, None))
+        assert self._excess(players) == (11, 10, (1, 35.0))
+
+    def test_substitution_and_card_at_same_instant_keep_allowed(self):
+        # P1 is substituted off and booked a second time at (2, 60:00). The
+        # Substitution event proves it came first (a dismissed player cannot be
+        # substituted), so the team keeps 11 and P99's entry is not an excess.
+        players = self._full(11)
+        players[0] = (1, players[0][1], (2, 60.0), (2, 60.0))
+        players.append((99, [_stint("60:00", 2, None, None)], None, None))
+        assert self._excess(players) is None
+
+    def test_card_before_taking_the_field_keeps_allowed(self):
+        # P12 is sent off at (1, 20:00) before his only stint starts; he had
+        # not taken the field, so the allowed number stays 11.
+        players = self._full(11)
+        players[0] = (1, [_stint("00:00", 1, "50:00", 2)], None, (2, 50.0))
+        players.append((12, [_stint("50:00", 2, None, None)], (1, 20.0), None))
+        assert self._excess(players) is None
+
+    def test_stint_with_to_but_null_to_period_raises(self):
+        players = self._full(10) + [(11, [_stint("00:00", 1, "60:00", None)], None, None)]
+        with pytest.raises(ValueError, match="to_period"):
+            self._excess(players)
+
+    def test_stint_end_without_substitution_event_then_card_lowers_allowed(self):
+        # Pinned assumption (ADR 002 §3): the Substitution event is complete.
+        # P1's stint ends at (2, 60:00) with no Substitution event and no
+        # "Player Off"; P99 is on from (2, 60:00). P1 is then shown a red card at
+        # (2, 70:00). With no Substitution event the rule cannot tell this from
+        # "off for treatment", so allowed drops to 10 and 11 on is reported.
+        # If a source drops Substitution events, this is a false positive.
+        players = self._full(11)
+        players[0] = (1, [{**_stint("00:00", 1, "60:00", 2), "end_reason": "Tactical Shift"}],
+                      (2, 70.0), None)
+        players.append((99, [_stint("60:00", 2, None, None)], None, None))
+        assert self._excess(players) == (11, 10, (2, 70.0))
+
+    def test_exit_order_is_period_aware_unlike_stint_end_cap(self):
+        # Pinned divergence (ADR 002 §3): P1 is substituted off in first-half
+        # stoppage, (1, 46:30), then shown a red card on the bench at (2, 45:30).
+        # The on-pitch count takes the substitution as the exit, so the card
+        # keeps 11 allowed; stint_end_cap takes the smaller match-absolute
+        # minute, 45.5. 0 cases in the 2015/16 data.
+        from eleveniq.metrics.minutes import stint_end_cap
+        players = self._full(11)
+        players[0] = (1, players[0][1], (2, 45.5), (1, 46.5))
+        players.append((99, [_stint("46:30", 1, None, None)], None, None))
+        assert self._excess(players) is None
+        assert stint_end_cap(dismissal_minute=45.5, substitution_minute=46.5) == 45.5
 
 
 @pytest.mark.integration
@@ -1864,7 +1952,7 @@ def test_real_dismissal_matches_have_no_on_pitch_excess(match_id):
         pytest.skip("StatsBomb raw data not available")
     comp_id = {3879549: 12, 3900519: 7}[match_id]
     _, report = _process_match(match_id, comp_id, 27, data_root=_RAW_ROOT)
-    assert not [d for d in report if d.get("issue") == "on_pitch_count_exceeded"]
+    assert not [d for d in report if d.get("issue") == ON_PITCH_COUNT_EXCEEDED]
 
 
 class TestSubstitutionOffEdges:
@@ -1885,7 +1973,7 @@ class TestSubstitutionOffEdges:
         _, (df, report) = _build(
             tmp_path, [_sub_off(_STARTER, period=1, minute=37, second=2)],
             _quality_lineups(starter_positions=spells))
-        assert not [d for d in report if d.get("issue") == "stint_after_substitution"]
+        assert not [d for d in report if d.get("issue") == STINT_AFTER_SUBSTITUTION]
         row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
         assert row["minutes_played"] == pytest.approx(31 + 29 / 60)
 
@@ -1935,8 +2023,8 @@ class TestOnPitchExcessWorstInstant:
         # 12 on vs 11 allowed (margin 1) early; 11 on vs 9 allowed (margin 2)
         # after two dismissals. The larger margin is "most above allowed".
         players = self._full(11)
-        players[0] = (1, players[0][1], (2, 50.0), (2, 50.0))
-        players[1] = (2, players[1][1], (2, 51.0), (2, 51.0))
+        players[0] = (1, players[0][1], (2, 50.0), None)
+        players[1] = (2, players[1][1], (2, 51.0), None)
         players += [
             (90, [_stint("10:00", 1, "15:00", 1)], None, None),
             (91, [_stint("70:00", 2, None, None)], None, None),
@@ -1951,7 +2039,7 @@ class TestOnPitchCountPipelineWiring:
     @staticmethod
     def _on_pitch(report):
         return [(e["on_pitch"], e["allowed"]) for e in report
-                if e.get("issue") == "on_pitch_count_exceeded"]
+                if e.get("issue") == ON_PITCH_COUNT_EXCEEDED]
 
     def test_second_yellow_from_foul_committed_lowers_allowed(self, tmp_path):
         # Second yellows also come as Foul Committed cards; a 10-man team that
@@ -1983,3 +2071,97 @@ class TestOnPitchCountPipelineWiring:
         _, report = _build_team(tmp_path, positions,
                                 [_sub_off(_TEAM_BASE, period=1, minute=60)])
         assert self._on_pitch(report) == []
+
+
+# ---------------------------------------------------------------------------
+# QA (plan 004 H3b): when a card lowers the allowed number (ADR 002 §3,
+# _card_lowers_allowed docstring)
+# ---------------------------------------------------------------------------
+
+class TestCardLowersAllowedSpec:
+    """Spec: a card lowers the allowed number when the player has taken the
+    field by the card (a NON-EMPTY stint starting AT OR BEFORE it, in
+    (period, minute) order) and was not substituted off BEFORE OR AT it."""
+
+    @staticmethod
+    def _excess(players):
+        from eleveniq.pipeline.build_player_match import _on_pitch_excess
+        return _on_pitch_excess(players, (2, 90.0))
+
+    @staticmethod
+    def _full(n: int) -> list:
+        return [(1 + i, [_stint("00:00", 1, None, None)], None, None) for i in range(n)]
+
+    def test_substitution_after_card_does_not_cancel_dismissal(self):
+        # Data-quality pattern: a Substitution recorded AFTER the red card. Only
+        # a substitution before or at the card cancels it; P99 coming on at
+        # (2, 70:00) puts 11 on a 10-man team.
+        players = self._full(11)
+        players[0] = (1, players[0][1], (2, 60.0), (2, 70.0))
+        players.append((99, [_stint("70:00", 2, None, None)], None, None))
+        assert self._excess(players) == (11, 10, (2, 70.0))
+
+    def test_card_at_entry_instant_lowers_allowed(self):
+        # P12 replaces P1 at (2, 60:00) and is sent off at that same instant: his
+        # stint starts AT the card, so he has taken the field and the team is 10.
+        players = self._full(11)
+        players[0] = (1, [_stint("00:00", 1, "60:00", 2)], None, (2, 60.0))
+        players.append((12, [_stint("60:00", 2, None, None)], (2, 60.0), None))
+        players.append((13, [_stint("70:00", 2, None, None)], None, None))
+        assert self._excess(players) == (11, 10, (2, 70.0))
+
+    def test_zero_length_stint_before_card_is_not_taking_the_field(self):
+        # P12's only stint is empty (from == to), so he never took the field and
+        # his card at (1, 20:00) must keep 11 allowed.
+        players = self._full(11)
+        players[0] = (1, [_stint("00:00", 1, "60:00", 2)], None, (2, 60.0))
+        players.append((12, [_stint("10:00", 1, "10:00", 1)], (1, 20.0), None))
+        players.append((13, [_stint("60:00", 2, None, None)], None, None))
+        assert self._excess(players) is None
+
+    def test_taken_the_field_is_period_aware(self):
+        # Card at (1, 46:30) in first-half stoppage; P12's stint starts at
+        # (2, 45:00), which is AFTER the card in (period, minute) order although
+        # 45.0 < 46.5 match-absolute. He had not taken the field: 11 allowed.
+        players = self._full(11)
+        players[0] = (1, [_stint("00:00", 1, "45:00", 2)], None, (2, 45.0))
+        players.append((12, [_stint("45:00", 2, None, None)], (1, 46.5), None))
+        players.append((13, [_stint("50:00", 2, None, None)], None, None))
+        assert self._excess(players) is None
+
+
+class TestOnPitchCardRulePipeline:
+    """_process_match wiring for the H3b card rule: dismissal and substitution
+    must reach _on_pitch_excess separately, not merged into one exit."""
+
+    @staticmethod
+    def _on_pitch(report):
+        return [(e["on_pitch"], e["allowed"]) for e in report
+                if e.get("issue") == ON_PITCH_COUNT_EXCEEDED]
+
+    def test_substitution_and_second_yellow_same_second_is_not_an_excess(self, tmp_path):
+        # P0 is replaced at 60:00 and booked a second time at 60:00; P11 comes on.
+        # The substitution came first, so the team keeps 11 and nothing is reported.
+        positions = [[_spell("00:00", "60:00", "Starting XI")]]
+        positions += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
+        positions += [[_spell("60:00", None, "Substitution - On")]]
+        card = _ev("Foul Committed", _TEAM_BASE, minute=60,
+                   foul_committed={"card": {"name": "Second Yellow"}})
+        df, report = _build_team(tmp_path, positions,
+                                 [_sub_off(_TEAM_BASE, period=1, minute=60), card])
+        assert self._on_pitch(report) == []
+        p0 = df.filter(pl.col("player_id") == _TEAM_BASE)["minutes_played"][0]
+        assert p0 == pytest.approx(60.0)
+
+    def test_red_card_while_off_for_treatment_lowers_allowed(self, tmp_path):
+        # P0 goes off for treatment at 30:00, is sent off at 32:00 without
+        # returning, and P11 comes on at 35:00: 11 on a 10-man team.
+        positions = [[{**_spell("00:00", "30:00", "Starting XI"), "end_reason": "Player Off"}]]
+        positions += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
+        positions += [[_spell("35:00", None, "Substitution - On")]]
+        card = _ev("Bad Behaviour", _TEAM_BASE, minute=32,
+                   bad_behaviour={"card": {"name": "Red Card"}})
+        df, report = _build_team(tmp_path, positions, [card])
+        assert self._on_pitch(report) == [(11, 10)]
+        p0 = df.filter(pl.col("player_id") == _TEAM_BASE)["minutes_played"][0]
+        assert p0 == pytest.approx(30.0)
