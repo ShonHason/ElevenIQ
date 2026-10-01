@@ -263,6 +263,36 @@ Run the spike for all 5 leagues (the goals reconciliation must pass), then the i
 - **Store `match_duration` in the match-level parquet** so `TestIntegration` can check the team
   minutes sum against 11 × duration exactly, instead of an inferred bound.
 
+### H2 review follow-ups (stats-reviewer, code-reviewer, qa-tester, 2026-10-01), in this order
+1. **`substitution_minute` becomes a required keyword argument** in `compute_player_minutes` and
+   the positions.py stint functions. A forgotten argument currently gives uncapped minutes without
+   any error. The two deliberately uncapped calls in build_player_match.py pass `None` explicitly.
+2. **Per-player guard:** a player's minutes in a match greater than the match duration (plus a
+   small tolerance) raises `DataQualityError`. Rewrite the team-ceiling tests to use 11 and 12
+   distinct players instead of one player with 11 or 12 overlapping stints.
+3. **On-pitch count check (stats-reviewer #3):** a report-only quality issue when more than 11
+   players of one team are on the pitch at any instant. It is period-aware and excludes dismissed
+   players after their card. This is the strong guard, because a team that lost minutes elsewhere
+   can mask an overcount under 11 × duration.
+4. **`find_substitutions_off` null type:** an event with `"type": null` raises a clear error
+   instead of an `AttributeError`. Also add the missing test: a substituted player whose stint
+   has no `from_period` raises (per the `_substitution_off_minute` docstring).
+5. **Fractional-second lineup times:** in the stint-after-substitution check, a lineup `from`
+   such as `"37:02.400"` against a substitution at second 2 must count as the substitution
+   instant, not fail the build. Add a test that pins the allowed equality.
+6. **One shared clamp function** for the stint-end clamp loop that is duplicated in
+   minutes.py and positions.py, so the two cannot drift.
+7. **ADR 002 §3 wording:**
+   - narrow the "on-pitch count never exceeds 11" sentence: in the pipeline's match-absolute
+     arithmetic it reaches 12 once (AC Milan, match 3879549, 45:00–45:51, caused by Rodrigo Ely's
+     reversed-period stint);
+   - classify the 9 reversed-period stints individually instead of calling all of them
+     "spurious". Some encode first-half-stoppage position changes, such as Bonaventura and
+     Bertolacci in 3879549. Only stints that start with a Substitution-On after the reversed
+     window, such as Ely's, are phantom.
+8. **code-reviewer checklist:** add "minutes taken from lineups without checking against
+   Substitution events".
+
 ### H3 verification
 Run the fast and integration suites (green), grep the old stale phrases (expect no hits), then
 `/finish-chunk`.
