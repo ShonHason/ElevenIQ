@@ -32,7 +32,7 @@ primary_position_group() to resolve the season-level assignment.
 """
 from __future__ import annotations
 from collections.abc import Iterator
-from eleveniq.metrics.minutes import parse_mm_ss, stint_end_cap
+from eleveniq.metrics.minutes import iter_stint_bounds, stint_end_cap
 
 POSITION_GROUP_MAP: dict[str, str] = {
     # Goalkeeper
@@ -97,7 +97,7 @@ def _iter_stint_contributions(
     positions: list[dict],
     match_duration: float,
     dismissal_minute: float | None,
-    substitution_minute: float | None = None,
+    substitution_minute: float | None,
 ) -> Iterator[tuple[str, float]]:
     """
     Yield (raw_position_name, duration_minutes) for every non-zero stint.
@@ -115,20 +115,11 @@ def _iter_stint_contributions(
     stints would overcount minutes.
 
     Without an exit cap, explicit `to` values are used as-is.
-    match_duration is derived from the last event timestamp and can be a few
-    seconds earlier than the real final whistle, so clamping against it would
-    risk truncating a legitimate substitution timestamp.
+    The stint ends come from minutes.iter_stint_bounds, the same function
+    compute_player_minutes uses.
     """
     cap = stint_end_cap(dismissal_minute, substitution_minute)
-    effective_end = cap if cap is not None else match_duration
-    for stint in positions:
-        start = parse_mm_ss(stint["from"])
-        if stint.get("to"):
-            raw_end = parse_mm_ss(stint["to"])
-            # Clamp only when there is an exit cap (see docstring).
-            end = min(raw_end, cap) if cap is not None else raw_end
-        else:
-            end = effective_end
+    for stint, start, end in iter_stint_bounds(positions, match_duration, cap):
         duration = max(0.0, end - start)
         if duration == 0.0:
             continue
@@ -146,8 +137,8 @@ def compute_minutes_per_group(
     positions: list[dict],
     match_duration: float,
     *,
-    dismissal_minute: float | None = None,
-    substitution_minute: float | None = None,
+    dismissal_minute: float | None,
+    substitution_minute: float | None,
 ) -> dict[str, float]:
     """
     Return a mapping of position_group → minutes played in that group for
@@ -155,6 +146,9 @@ def compute_minutes_per_group(
 
     Handles multi-stint appearances (tactical shifts), dismissals and the
     player's own substitution off (the exit cap, ADR 002 §3).
+    dismissal_minute and substitution_minute are required (keyword, no default;
+    pass None when the player was not dismissed / substituted off), so a
+    forgotten argument cannot silently give uncapped minutes.
     The `position` field in each stint may be a plain string (confirmed in
     StatsBomb open data) or a dict with a 'name' key (schema robustness).
     A null/None position is treated as UNKNOWN and included in the result.
@@ -176,8 +170,8 @@ def compute_minutes_per_raw_position(
     positions: list[dict],
     match_duration: float,
     *,
-    dismissal_minute: float | None = None,
-    substitution_minute: float | None = None,
+    dismissal_minute: float | None,
+    substitution_minute: float | None,
 ) -> dict[str, float]:
     """
     Return a mapping of StatsBomb position name → minutes for one match.

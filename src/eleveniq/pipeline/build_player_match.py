@@ -10,13 +10,15 @@ Design notes
 - Raw counts (numerators) and minutes (denominator) are preserved alongside each
   other in the output, per ADR 002 §6b.  Per-90 values are not computed here.
 - Players with minutes_played == 0 (unused substitutes) are excluded from output.
-- One dismissal quality report is collected per season run and returned separately.
-  It also carries the fail-loud data checks (plan 004 H1): UNKNOWN-position
+- One quality report is collected per season run and returned separately: the
+  dismissal checks, the starter checks and the substitution/minutes checks. It
+  also carries the fail-loud data checks (plan 004 H1): UNKNOWN-position
   minutes, unknown shot/tackle outcomes and duel types, Pass/Carry events with
   missing locations, shots missing xG, and dropped events. Any of these fails the
   build (DataQualityError) except the allow-listed bench-card drop
   (ALLOWED_DROPPED_EVENT_TYPES).
-- Penalty-shootout events (period 5) are removed before any metric is counted.
+- Penalty-shootout events (period 5, metrics.minutes.is_playing_time) are
+  removed before any metric is counted.
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ from pathlib import Path
 
 import polars as pl
 
-from eleveniq.metrics.minutes import compute_match_duration, parse_mm_ss
+from eleveniq.metrics.minutes import compute_match_duration, is_playing_time, parse_mm_ss
 from eleveniq.metrics.positions import (
     POSITION_GROUP_COLUMNS,
     UNKNOWN_POSITION_GROUP,
@@ -56,9 +58,10 @@ from eleveniq.config import (
     select_competition_seasons,
 )
 from eleveniq.pipeline.quality_report import (
+    DISMISSAL_MISSING_TIMESTAMP,
     DISMISSAL_TOLERANCE_MINUTES,
     check_dismissal_event_quality,
-    find_dismissal_minute,
+    find_dismissal,
     find_substitutions_off,
 )
 from eleveniq.statsbomb.loader import load_events, load_lineups, load_matches
@@ -71,9 +74,27 @@ _INTERIM_DIR = _PROJECT_ROOT / "data" / "interim"
 OUTPUT_PATH = _INTERIM_DIR / "player_match_stats.parquet"
 PART_DIR = _INTERIM_DIR / "player_match"
 
+# Quality-report issue names. Every "issue" value is one of these constants (or
+# quality_report.DISMISSAL_MISSING_TIMESTAMP), never a literal, so a typo cannot
+# silently disable a fail-loud check: it becomes a NameError instead.
+STARTING_XI_MISSING = "starting_xi_missing"
+STARTING_XI_MISMATCH = "starting_xi_mismatch"
+STARTING_XI_DUPLICATE = "starting_xi_duplicate"
+STARTED_INFERRED_FALLBACK = "started_inferred_fallback"
+STARTER_COUNT_MISMATCH = "starter_count_mismatch"
+UNKNOWN_SHOT_OUTCOME = "unknown_shot_outcome"
+UNKNOWN_TACKLE_OUTCOME = "unknown_tackle_outcome"
+UNKNOWN_DUEL_TYPE = "unknown_duel_type"
+PASS_MISSING_LOCATION = "pass_missing_location"
+CARRY_MISSING_LOCATION = "carry_missing_location"
+MINUTES_UNKNOWN = "minutes_unknown"
+DROPPED_EVENT = "dropped_event"
+DROPPED_EVENT_ALLOWED = "dropped_event_allowed"
+DISMISSAL_AFTER_MATCH_END = "dismissal_after_match_end"
+
 # Quality-report issues that fail the build (starter cross-check).
 STARTING_XI_ISSUES = frozenset(
-    {"starting_xi_missing", "starting_xi_mismatch", "starting_xi_duplicate"}
+    {STARTING_XI_MISSING, STARTING_XI_MISMATCH, STARTING_XI_DUPLICATE}
 )
 
 
@@ -92,11 +113,11 @@ class DataQualityError(RuntimeError):
 # Event-level checks recorded by _aggregate_events. Each key is an issue name in
 # the quality report; the build fails when any of them occurs.
 EVENT_QUALITY_ISSUES = frozenset({
-    "unknown_shot_outcome",
-    "unknown_tackle_outcome",
-    "unknown_duel_type",
-    "pass_missing_location",
-    "carry_missing_location",
+    UNKNOWN_SHOT_OUTCOME,
+    UNKNOWN_TACKLE_OUTCOME,
+    UNKNOWN_DUEL_TYPE,
+    PASS_MISSING_LOCATION,
+    CARRY_MISSING_LOCATION,
 })
 
 # Pass outcome StatsBomb records when the result is unknown. Such passes stay in
@@ -115,24 +136,31 @@ DROPPED_ZERO_MINUTES = "zero_minutes"
 MULTIPLE_SUBSTITUTIONS_OFF = "multiple_substitutions_off"
 STINT_AFTER_SUBSTITUTION = "stint_after_substitution"
 TEAM_MINUTES_EXCEED_CEILING = "team_minutes_exceed_ceiling"
+PLAYER_MINUTES_EXCEED_DURATION = "player_minutes_exceed_duration"
 # Informational (do not fail the build): a stint shortened by the substitution
-# cap, and a stint whose from_period is later than its to_period.
+# cap, a stint whose from_period is later than its to_period, and a team with
+# more players on the pitch than allowed (11 minus its dismissals so far) at
+# some instant.
 SUBSTITUTION_CAPPED = "substitution_capped"
 REVERSED_PERIOD_STINT = "reversed_period_stint"
+ON_PITCH_COUNT_EXCEEDED = "on_pitch_count_exceeded"
 
 # Per team-match, summed minutes may not exceed 11 × match_duration by more
 # than float noise (ADR 002 §3: measured maximum after the cap is 0.0).
 TEAM_MINUTES_TOLERANCE: float = 1e-6
+# Per player-match, minutes may not exceed match_duration by more than this.
+PLAYER_MINUTES_TOLERANCE: float = 1e-6
 PLAYERS_ON_PITCH: int = 11
 
 # Quality-report issues that fail the build (DataQualityError).
 FAILING_QUALITY_ISSUES = EVENT_QUALITY_ISSUES | {
-    "minutes_unknown",
-    "dropped_event",
-    "dismissal_after_match_end",
+    MINUTES_UNKNOWN,
+    DROPPED_EVENT,
+    DISMISSAL_AFTER_MATCH_END,
     MULTIPLE_SUBSTITUTIONS_OFF,
     STINT_AFTER_SUBSTITUTION,
     TEAM_MINUTES_EXCEED_CEILING,
+    PLAYER_MINUTES_EXCEED_DURATION,
 }
 
 _SCHEMA: dict[str, type] = {
@@ -145,6 +173,7 @@ _SCHEMA: dict[str, type] = {
     "season_id": pl.Int64,
     "source": pl.Utf8,
     "minutes_played": pl.Float64,
+    "match_duration": pl.Float64,
     "position_raw": pl.Utf8,
     "position_group": pl.Utf8,
     "goals": pl.Int32,
@@ -301,7 +330,7 @@ def _aggregate_events(
             loc = event.get("location")
             end_loc = pass_data.get("end_location")
             if not (loc and end_loc):
-                issues[("pass_missing_location", None)] += 1
+                issues[(PASS_MISSING_LOCATION, None)] += 1
             if loc and end_loc:
                 if is_progressive_pass(
                     (loc[0], loc[1]),
@@ -350,7 +379,7 @@ def _aggregate_events(
             shot_data = event.get("shot") or {}
             shot_outcome = (shot_data.get("outcome") or {}).get("name")
             if shot_outcome not in KNOWN_SHOT_OUTCOMES:
-                issues[("unknown_shot_outcome", shot_outcome)] += 1
+                issues[(UNKNOWN_SHOT_OUTCOME, shot_outcome)] += 1
             if is_shot_on_target(shot_outcome):
                 shots_on_target += 1
             if shot_outcome == "Goal":
@@ -369,7 +398,7 @@ def _aggregate_events(
             loc = event.get("location")
             end_loc = carry_data.get("end_location")
             if not (loc and end_loc):
-                issues[("carry_missing_location", None)] += 1
+                issues[(CARRY_MISSING_LOCATION, None)] += 1
             if loc and end_loc:
                 start = (loc[0], loc[1])
                 end = (end_loc[0], end_loc[1])
@@ -384,12 +413,12 @@ def _aggregate_events(
             duel_data = event.get("duel") or {}
             duel_type_name = (duel_data.get("type") or {}).get("name")
             if duel_type_name not in KNOWN_DUEL_TYPES:
-                issues[("unknown_duel_type", duel_type_name)] += 1
+                issues[(UNKNOWN_DUEL_TYPE, duel_type_name)] += 1
             if duel_type_name == "Tackle":
                 tackles_attempted += 1
                 duel_outcome = (duel_data.get("outcome") or {}).get("name")
                 if duel_outcome not in KNOWN_TACKLE_OUTCOMES:
-                    issues[("unknown_tackle_outcome", duel_outcome)] += 1
+                    issues[(UNKNOWN_TACKLE_OUTCOME, duel_outcome)] += 1
                 if is_tackle_won(duel_outcome):
                     tackles_won_count += 1
             elif is_aerial_lost(event):
@@ -514,12 +543,15 @@ def _process_match(
     data_root: Path | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """
-    Process one match into player-match rows plus a dismissal quality report.
+    Process one match into player-match rows plus its quality report.
 
     Returns:
-        (rows, dismissal_report)
+        (rows, quality_report)
         rows: list of player-match dicts ready for a Polars DataFrame.
-        dismissal_report: list of dismissal quality-check dicts for this match.
+        quality_report: every quality-report entry for this match (dismissal
+            checks, starter checks, substitution/minutes checks, event checks
+            and dropped events), each with an "issue" name except the plain
+            dismissal records.
     """
     events = load_events(match_id, data_root)
     lineups = load_lineups(match_id, data_root)
@@ -528,7 +560,10 @@ def _process_match(
     # no metric. Dismissal lookups use this list too: a shootout card clamps
     # nothing, because every stint has ended by then (extra time, periods 3-4,
     # still counts). The Starting XI lookup keeps the full list.
-    play_events = [e for e in events if e["period"] != 5]
+    play_events = [e for e in events if is_playing_time(e)]
+    # Period-aware end of the match, for the on-pitch count: (last playing
+    # period, match_duration).
+    match_end = (max(e["period"] for e in play_events), match_duration)
 
     # Compute xg_assisted per player (requires full match event list for cross-player lookup)
     xga_by_player = compute_xg_assisted_per_player(
@@ -547,7 +582,7 @@ def _process_match(
             player_events[pid].append(event)
 
     rows: list[dict] = []
-    dismissal_report: list[dict] = []
+    quality_report: list[dict] = []
     event_issues: Counter[tuple[str, str | None]] = Counter()
 
     for team in lineups:
@@ -556,25 +591,33 @@ def _process_match(
         # Collect (row, positions) tuples for the team before the started check
         # so the team-level fallback can inspect positions in a second pass.
         team_entries: list[tuple[dict, list]] = []
+        # (player_id, positions, period-aware exit, dismissal) for the on-pitch count.
+        on_pitch_input: list[OnPitchPlayer] = []
 
         for player in team["lineup"]:
             player_id = player["player_id"]
             player_name = player["player_name"]
             positions = player.get("positions") or []
 
-            dismissal_minute = find_dismissal_minute(play_events, player_id)
+            dismissal = find_dismissal(play_events, player_id)
+            dismissal_minute = None if dismissal is None else dismissal[1]
             if dismissal_minute is not None and dismissal_minute > match_duration:
                 # Never capped silently: fails the build (DataQualityError).
-                dismissal_report.append({
-                    "issue": "dismissal_after_match_end",
+                quality_report.append({
+                    "issue": DISMISSAL_AFTER_MATCH_END,
                     "match_id": match_id,
                     "player_id": player_id,
                     "dismissal_minute": dismissal_minute,
                     "match_duration": match_duration,
                 })
 
-            substitution_minute = _substitution_off_minute(
-                match_id, player_id, positions, play_events, dismissal_report
+            substitution = _substitution_off(
+                match_id, player_id, positions, play_events, quality_report
+            )
+            substitution_minute = None if substitution is None else substitution[1]
+            exits = [e for e in (dismissal, substitution) if e is not None]
+            on_pitch_input.append(
+                (player_id, positions, min(exits) if exits else None, dismissal)
             )
 
             # ONE shared call: compute_minutes_per_group drives both minutes_played
@@ -586,13 +629,23 @@ def _process_match(
                 substitution_minute=substitution_minute,
             )
             minutes_played = sum(group_minutes.values())
+            if minutes_played > match_duration + PLAYER_MINUTES_TOLERANCE:
+                quality_report.append({
+                    "issue": PLAYER_MINUTES_EXCEED_DURATION,
+                    "match_id": match_id,
+                    "team_id": team_id,
+                    "player_id": player_id,
+                    "minutes_played": minutes_played,
+                    "match_duration": match_duration,
+                })
 
             if substitution_minute is not None:
                 uncapped = sum(compute_minutes_per_group(
-                    positions, match_duration, dismissal_minute=dismissal_minute
+                    positions, match_duration,
+                    dismissal_minute=dismissal_minute, substitution_minute=None,
                 ).values())
                 if uncapped > minutes_played:
-                    dismissal_report.append({
+                    quality_report.append({
                         "issue": SUBSTITUTION_CAPPED,
                         "match_id": match_id,
                         "team_id": team_id,
@@ -603,7 +656,7 @@ def _process_match(
                     })
             for stint in positions:
                 if stint.get("to_period") is not None and stint["from_period"] > stint["to_period"]:
-                    dismissal_report.append({
+                    quality_report.append({
                         "issue": REVERSED_PERIOD_STINT,
                         "match_id": match_id,
                         "player_id": player_id,
@@ -631,7 +684,7 @@ def _process_match(
             # the raw StatsBomb lineup data would have overcounted their minutes.
             if dismissal_minute is not None:
                 raw_group_minutes_unfixed = compute_minutes_per_group(
-                    positions, match_duration
+                    positions, match_duration, dismissal_minute=None, substitution_minute=None
                 )
                 minutes_unfixed = sum(raw_group_minutes_unfixed.values())
                 overcounted = minutes_unfixed > dismissal_minute + DISMISSAL_TOLERANCE_MINUTES
@@ -645,7 +698,7 @@ def _process_match(
                     cause: str | None = "to_null" if has_open_ended else "explicit_to_after_card"
                 else:
                     cause = None
-                dismissal_report.append({
+                quality_report.append({
                     "match_id": match_id,
                     "player_id": player_id,
                     "player_name": player_name,
@@ -656,13 +709,13 @@ def _process_match(
                     "cause": cause,
                 })
             else:
-                # find_dismissal_minute returns None either because the player
+                # find_dismissal returns None either because the player
                 # was not dismissed, or because the dismissal event has missing
                 # timestamp fields. Surface the second case to the report so it
                 # is not silently ignored.
                 quality_issue = check_dismissal_event_quality(play_events, player_id)
                 if quality_issue is not None:
-                    dismissal_report.append({
+                    quality_report.append({
                         "match_id": match_id,
                         "player_id": player_id,
                         "player_name": player_name,
@@ -671,8 +724,8 @@ def _process_match(
 
             unknown_minutes = group_minutes.get(UNKNOWN_POSITION_GROUP, 0.0)
             if unknown_minutes > 0:
-                dismissal_report.append({
-                    "issue": "minutes_unknown",
+                quality_report.append({
+                    "issue": MINUTES_UNKNOWN,
                     "match_id": match_id,
                     "team_id": team_id,
                     "player_id": player_id,
@@ -695,6 +748,7 @@ def _process_match(
                     "season_id": season_id,
                     "source": SOURCE_STATSBOMB,
                     "minutes_played": minutes_played,
+                    "match_duration": match_duration,
                     "position_raw": position_raw,
                     "position_group": position_group,
                     "started": started,
@@ -723,8 +777,8 @@ def _process_match(
                     row["started_inferred"] = True
                     inferred_players.append(row["player_name"])
             if inferred_players:
-                dismissal_report.append({
-                    "issue": "started_inferred_fallback",
+                quality_report.append({
+                    "issue": STARTED_INFERRED_FALLBACK,
                     "match_id": match_id,
                     "team_id": team_id,
                     "team_name": team_name,
@@ -732,16 +786,16 @@ def _process_match(
                 })
             final_count = sum(1 for row, _ in team_entries if row["started"])
             if final_count != 11:
-                dismissal_report.append({
-                    "issue": "starter_count_mismatch",
+                quality_report.append({
+                    "issue": STARTER_COUNT_MISMATCH,
                     "match_id": match_id,
                     "team_id": team_id,
                     "team_name": team_name,
                     "starter_count_after_fallback": final_count,
                 })
         elif starter_count > 11:
-            dismissal_report.append({
-                "issue": "starter_count_mismatch",
+            quality_report.append({
+                "issue": STARTER_COUNT_MISMATCH,
                 "match_id": match_id,
                 "team_id": team_id,
                 "team_name": team_name,
@@ -754,23 +808,23 @@ def _process_match(
         derived = {row["player_id"] for row, _ in team_entries if row["started"]}
         xi_events = starting_xi.get(team_id, [])
         if not xi_events:
-            dismissal_report.append({
-                "issue": "starting_xi_missing",
+            quality_report.append({
+                "issue": STARTING_XI_MISSING,
                 "match_id": match_id,
                 "team_id": team_id,
                 "team_name": team_name,
             })
         elif len(xi_events) > 1:
-            dismissal_report.append({
-                "issue": "starting_xi_duplicate",
+            quality_report.append({
+                "issue": STARTING_XI_DUPLICATE,
                 "match_id": match_id,
                 "team_id": team_id,
                 "team_name": team_name,
                 "starting_xi_events": len(xi_events),
             })
         elif derived != (expected := xi_events[0]):
-            dismissal_report.append({
-                "issue": "starting_xi_mismatch",
+            quality_report.append({
+                "issue": STARTING_XI_MISMATCH,
                 "match_id": match_id,
                 "team_id": team_id,
                 "team_name": team_name,
@@ -781,7 +835,7 @@ def _process_match(
         team_minutes = sum(row["minutes_played"] for row, _ in team_entries)
         ceiling = PLAYERS_ON_PITCH * match_duration
         if team_minutes > ceiling + TEAM_MINUTES_TOLERANCE:
-            dismissal_report.append({
+            quality_report.append({
                 "issue": TEAM_MINUTES_EXCEED_CEILING,
                 "match_id": match_id,
                 "team_id": team_id,
@@ -789,33 +843,50 @@ def _process_match(
                 "ceiling": ceiling,
             })
 
+        excess = _on_pitch_excess(on_pitch_input, match_end)
+        if excess is not None:
+            on_pitch, allowed, (period, minute) = excess
+            quality_report.append({
+                "issue": ON_PITCH_COUNT_EXCEEDED,
+                "match_id": match_id,
+                "team_id": team_id,
+                "on_pitch": on_pitch,
+                "allowed": allowed,
+                "period": period,
+                "minute": minute,
+            })
+
         rows.extend(row for row, _ in team_entries)
 
     for (issue, value), count in sorted(event_issues.items(), key=str):
-        dismissal_report.append({
+        quality_report.append({
             "issue": issue, "match_id": match_id, "value": value, "count": count,
         })
-    dismissal_report.extend(_dropped_events(match_id, player_events, lineups, rows))
+    quality_report.extend(_dropped_events(match_id, player_events, lineups, rows))
 
-    return rows, dismissal_report
+    return rows, quality_report
 
 
-def _substitution_off_minute(
+def _substitution_off(
     match_id: int,
     player_id: int,
     positions: list[dict],
     play_events: list[dict],
     report: list[dict],
-) -> float | None:
+) -> tuple[int, float] | None:
     """
-    Minute of the Substitution event that took this player off, or None.
+    (period, match-absolute minute) of the Substitution event that took this
+    player off, or None.
 
     Appends a failing issue to `report` when the player was substituted off
     more than once, or has a stint that starts after his own substitution.
     The order is (period, minute), not the match-absolute minute alone:
     period 2 restarts at 45:00, so first-half stoppage (e.g. 46:01 in period 1)
     precedes a half-time substitution (45:00 in period 2). A stint starting at
-    the substitution instant is allowed; the cap gives it 0 minutes.
+    the substitution instant is allowed; the cap gives it 0 minutes. The
+    comparison is at whole-second resolution: event timestamps carry whole
+    seconds and parse_mm_ss drops a lineup time's fraction, so "37:02.400"
+    against a substitution at 37:02 is that instant, not after it.
     `from_period` is required on every stint (KeyError otherwise, never
     defaulted, or the check would silently become period-naive).
     """
@@ -841,7 +912,73 @@ def _substitution_off_minute(
                 "substitution_period": sub_period,
                 "substitution_minute": sub_minute,
             })
-    return sub_minute
+    return subs[0]
+
+
+# (player_id, positions, exit, dismissal); exit and dismissal are (period, minute).
+OnPitchPlayer = tuple[int, list[dict], tuple[int, float] | None, tuple[int, float] | None]
+
+# Order of changes at one instant: cards, then exits, then entries.
+_CARD, _EXIT, _ENTRY = 0, 1, 2
+
+
+def _on_pitch_excess(
+    players: list[OnPitchPlayer],
+    match_end: tuple[int, float],
+) -> tuple[int, int, tuple[int, float]] | None:
+    """
+    (on_pitch, allowed, (period, minute)) at the first instant where the
+    team has the most players above the allowed number, or None when it
+    never exceeds it.
+
+    allowed starts at 11 and drops by one at each dismissal of a player who is
+    on the pitch at his card. A card shown to a player who is off the pitch
+    (e.g. on the bench after his substitution) does not change it.
+
+    `players` holds (player_id, positions, exit, dismissal): exit is the earlier
+    of the player's dismissal and substitution off, dismissal his red card or
+    second yellow, each as (period, minute) or None.
+    Instants are ordered by (period, minute), not by the match-absolute minute,
+    so first-half stoppage (46:01 in period 1) precedes the second-half kick-off
+    (45:00 in period 2). A stint ends at its (to_period, to), at match_end when
+    open, and never after the player's exit, so a dismissed player stops
+    counting at his card. A stint whose end does not follow its start (e.g. a
+    reversed-period stint) contributes nothing. A player counts once even when
+    his own stints overlap. The count is taken after every change at an
+    instant, so a substitution or a dismissal is never a moment with one
+    player too many.
+    """
+    changes: list[tuple[tuple[int, float], int, int]] = []
+    for player_id, positions, exit_at, dismissal in players:
+        if dismissal is not None:
+            changes.append((dismissal, _CARD, player_id))
+        for stint in positions:
+            start = (stint["from_period"], parse_mm_ss(stint["from"]))
+            end = (stint["to_period"], parse_mm_ss(stint["to"])) if stint.get("to") else match_end
+            if exit_at is not None:
+                end = min(end, exit_at)
+            if end > start:
+                changes.append((start, _ENTRY, player_id))
+                changes.append((end, _EXIT, player_id))
+    changes.sort(key=lambda c: (c[0], c[1]))
+    active: Counter[int] = Counter()
+    on_pitch = 0
+    allowed = PLAYERS_ON_PITCH
+    worst: tuple[int, int, tuple[int, float]] | None = None
+    for i, (at, kind, player_id) in enumerate(changes):
+        if kind == _CARD:
+            if active[player_id] > 0:
+                allowed -= 1
+        else:
+            was_on = active[player_id] > 0
+            active[player_id] += 1 if kind == _ENTRY else -1
+            on_pitch += (active[player_id] > 0) - was_on
+        last_at_instant = i + 1 == len(changes) or changes[i + 1][0] != at
+        if last_at_instant and on_pitch > allowed and (
+            worst is None or on_pitch - allowed > worst[0] - worst[1]
+        ):
+            worst = (on_pitch, allowed, at)
+    return worst
 
 
 def _dropped_events(
@@ -854,9 +991,9 @@ def _dropped_events(
     One quality-report entry per event whose player has no output row.
 
     reason is DROPPED_NOT_IN_LINEUP or DROPPED_ZERO_MINUTES. The entry's issue is
-    "dropped_event_allowed" only for a card event (ALLOWED_DROPPED_EVENT_TYPES)
+    DROPPED_EVENT_ALLOWED only for a card event (ALLOWED_DROPPED_EVENT_TYPES)
     by a lineup player with an empty positions array (a bench player who never
-    came on); every other drop is "dropped_event", which fails the build. A
+    came on); every other drop is DROPPED_EVENT, which fails the build. A
     player with stints whose minutes compute to 0 is not allow-listed: that
     would be a minutes bug, not a bench card.
     """
@@ -876,7 +1013,7 @@ def _dropped_events(
             card = ((event.get("bad_behaviour") or {}).get("card") or {}).get("name")
             allowed = bench and event_type in ALLOWED_DROPPED_EVENT_TYPES and card is not None
             entries.append({
-                "issue": "dropped_event_allowed" if allowed else "dropped_event",
+                "issue": DROPPED_EVENT_ALLOWED if allowed else DROPPED_EVENT,
                 "match_id": match_id,
                 "player_id": pid,
                 "event_type": event_type,
@@ -920,17 +1057,17 @@ def build_competition_season(
     )
 
     all_rows: list[dict] = []
-    all_dismissals: list[dict] = []
+    quality_report: list[dict] = []
     failed_ids: list[int] = []
 
     for match in matches:
         match_id = match["match_id"]
         try:
-            rows, dismissals = _process_match(
+            rows, match_report = _process_match(
                 match_id, competition_id, season_id, data_root=data_root
             )
             all_rows.extend(rows)
-            all_dismissals.extend(dismissals)
+            quality_report.extend(match_report)
         except Exception:  # noqa: BLE001
             logger.error("match_id=%d failed", match_id, exc_info=True)
             failed_ids.append(match_id)
@@ -942,7 +1079,7 @@ def build_competition_season(
         )
 
     xi_issues = [
-        d for d in all_dismissals if d.get("issue") in STARTING_XI_ISSUES
+        d for d in quality_report if d.get("issue") in STARTING_XI_ISSUES
     ]
     if xi_issues:
         raise StarterCrossCheckError(
@@ -954,7 +1091,7 @@ def build_competition_season(
     df = pl.DataFrame(all_rows, schema=_SCHEMA)
 
     quality_failures = [
-        d for d in all_dismissals if d.get("issue") in FAILING_QUALITY_ISSUES
+        d for d in quality_report if d.get("issue") in FAILING_QUALITY_ISSUES
     ]
     missing_xg = df.filter(pl.col("shots_missing_xg") > 0)
     if quality_failures or missing_xg.height:
@@ -971,7 +1108,7 @@ def build_competition_season(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_path)
     logger.info("Wrote %d rows → %s", len(df), out_path)
-    return df, all_dismissals
+    return df, quality_report
 
 
 def part_path(competition_id: int, season_id: int, part_dir: Path | None = None) -> Path:
@@ -984,26 +1121,32 @@ def summarise_quality_report(report: list[dict]) -> dict[str, int]:
     return {
         "dismissals": sum(1 for d in report if d.get("issue") is None),
         "missing_timestamp": sum(
-            1 for d in report if d.get("issue") == "dismissal_missing_timestamp"
+            1 for d in report if d.get("issue") == DISMISSAL_MISSING_TIMESTAMP
         ),
         "fallback_team_matches": sum(
-            1 for d in report if d.get("issue") == "started_inferred_fallback"
+            1 for d in report if d.get("issue") == STARTED_INFERRED_FALLBACK
         ),
         "fallback_players": sum(
             len(d["players"]) for d in report
-            if d.get("issue") == "started_inferred_fallback"
+            if d.get("issue") == STARTED_INFERRED_FALLBACK
         ),
         "starter_count_mismatches": sum(
-            1 for d in report if d.get("issue") == "starter_count_mismatch"
+            1 for d in report if d.get("issue") == STARTER_COUNT_MISMATCH
         ),
         "dropped_events_allowed": sum(
-            1 for d in report if d.get("issue") == "dropped_event_allowed"
+            1 for d in report if d.get("issue") == DROPPED_EVENT_ALLOWED
         ),
         "substitution_capped": sum(
             1 for d in report if d.get("issue") == SUBSTITUTION_CAPPED
         ),
         "reversed_period_stints": sum(
             1 for d in report if d.get("issue") == REVERSED_PERIOD_STINT
+        ),
+        "on_pitch_count_exceeded": sum(
+            1 for d in report if d.get("issue") == ON_PITCH_COUNT_EXCEEDED
+        ),
+        "player_minutes_exceed_duration": sum(
+            1 for d in report if d.get("issue") == PLAYER_MINUTES_EXCEED_DURATION
         ),
     }
 
@@ -1143,5 +1286,7 @@ if __name__ == "__main__":
             f"starter_count_mismatches={summary['starter_count_mismatches']} "
             f"dropped_events_allowed={summary['dropped_events_allowed']} "
             f"substitution_capped={summary['substitution_capped']} "
-            f"reversed_period_stints={summary['reversed_period_stints']}"
+            f"reversed_period_stints={summary['reversed_period_stints']} "
+            f"on_pitch_count_exceeded={summary['on_pitch_count_exceeded']} "
+            f"player_minutes_exceed_duration={summary['player_minutes_exceed_duration']}"
         )

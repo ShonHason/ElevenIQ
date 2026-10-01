@@ -2,6 +2,7 @@
 import pytest
 from eleveniq.metrics.minutes import (
     parse_mm_ss, compute_match_duration, compute_player_minutes, stint_end_cap,
+    is_playing_time, iter_stint_bounds,
 )
 
 
@@ -99,35 +100,35 @@ class TestComputePlayerMinutes:
 
     def test_full_match_starter_to_none(self):
         stints = [self._stint("00:00", None)]
-        assert compute_player_minutes(stints, match_duration=92.5) == pytest.approx(92.5)
+        assert compute_player_minutes(stints, match_duration=92.5, dismissal_minute=None, substitution_minute=None) == pytest.approx(92.5)
 
     def test_subbed_off_at_60(self):
         stints = [self._stint("00:00", "60:00")]
-        assert compute_player_minutes(stints, match_duration=93.0) == pytest.approx(60.0)
+        assert compute_player_minutes(stints, match_duration=93.0, dismissal_minute=None, substitution_minute=None) == pytest.approx(60.0)
 
     def test_sub_on_at_60_to_none(self):
         stints = [self._stint("60:00", None)]
-        assert compute_player_minutes(stints, match_duration=93.0) == pytest.approx(33.0)
+        assert compute_player_minutes(stints, match_duration=93.0, dismissal_minute=None, substitution_minute=None) == pytest.approx(33.0)
 
     def test_unused_sub_empty_positions(self):
-        assert compute_player_minutes([], match_duration=90.0) == pytest.approx(0.0)
+        assert compute_player_minutes([], match_duration=90.0, dismissal_minute=None, substitution_minute=None) == pytest.approx(0.0)
 
     def test_tactical_shift_multi_stint(self):
         stints = [self._stint("00:00", "55:00"), self._stint("55:00", None)]
-        assert compute_player_minutes(stints, match_duration=92.0) == pytest.approx(92.0)
+        assert compute_player_minutes(stints, match_duration=92.0, dismissal_minute=None, substitution_minute=None) == pytest.approx(92.0)
 
     def test_multi_stint_with_gap(self):
         stints = [self._stint("00:00", "30:00"), self._stint("60:00", "75:00")]
-        assert compute_player_minutes(stints, match_duration=90.0) == pytest.approx(45.0)
+        assert compute_player_minutes(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None) == pytest.approx(45.0)
 
     def test_zero_length_stint_clamped(self):
         stints = [self._stint("45:00", "45:00")]
-        assert compute_player_minutes(stints, match_duration=90.0) == pytest.approx(0.0)
+        assert compute_player_minutes(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None) == pytest.approx(0.0)
 
     def test_sub_on_at_73_10(self):
         stints = [self._stint("73:10", None)]
         expected = 90.0 + 5 / 60 - (73 + 10 / 60)
-        assert compute_player_minutes(stints, match_duration=90.0 + 5 / 60) == pytest.approx(expected)
+        assert compute_player_minutes(stints, match_duration=90.0 + 5 / 60, dismissal_minute=None, substitution_minute=None) == pytest.approx(expected)
 
 
 class TestDismissalMinute:
@@ -137,41 +138,41 @@ class TestDismissalMinute:
     def test_dismissal_at_15_caps_open_stint(self):
         # StatsBomb left to=None; dismissal_minute=15 should cap the stint
         stints = [self._stint("00:00", None)]
-        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=15.0)
+        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=15.0, substitution_minute=None)
         assert minutes == pytest.approx(15.0)
 
     def test_dismissal_explicit_to_overrides_nothing(self):
         # StatsBomb correctly set to="15:00"; dismissal_minute param has no effect
         stints = [self._stint("00:00", "15:00")]
-        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=15.0)
+        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=15.0, substitution_minute=None)
         assert minutes == pytest.approx(15.0)
 
     def test_no_dismissal_minute_uses_match_duration(self):
         stints = [self._stint("00:00", None)]
-        minutes = compute_player_minutes(stints, match_duration=92.0)
+        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=None, substitution_minute=None)
         assert minutes == pytest.approx(92.0)
 
     def test_dismissal_minute_none_behaves_as_normal(self):
         stints = [self._stint("00:00", None)]
-        minutes = compute_player_minutes(stints, match_duration=90.0, dismissal_minute=None)
+        minutes = compute_player_minutes(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert minutes == pytest.approx(90.0)
 
     def test_dismissal_second_half_sub(self):
         # Sub came on at 60:00, dismissed at 75:00 (to=None from StatsBomb)
         stints = [self._stint("60:00", None)]
-        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=75.0)
+        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=75.0, substitution_minute=None)
         assert minutes == pytest.approx(15.0)
 
     def test_dismissal_minute_with_two_stints(self):
         # Tactical shift player: 0→55, 55→None; dismissed at 70
         stints = [self._stint("00:00", "55:00"), self._stint("55:00", None)]
-        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=70.0)
+        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=70.0, substitution_minute=None)
         assert minutes == pytest.approx(70.0)  # 55 (first stint) + 15 (second, capped at 70)
 
     def test_dismissal_before_sub_on_gives_zero(self):
         # Impossible in practice, but the clamp should handle it gracefully
         stints = [self._stint("60:00", None)]
-        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=55.0)
+        minutes = compute_player_minutes(stints, match_duration=92.0, dismissal_minute=55.0, substitution_minute=None)
         # effective_end=55, start=60 → duration=max(0, 55-60)=0
         assert minutes == pytest.approx(0.0)
 
@@ -179,19 +180,19 @@ class TestDismissalMinute:
         # StatsBomb left explicit to="66:43" even though card was at 56:10.
         # The first stint must be clamped at the card minute; the second at 0.
         stints = [self._stint("00:00", "66:43"), self._stint("66:43", None)]
-        minutes = compute_player_minutes(stints, match_duration=95.0, dismissal_minute=56.17)
+        minutes = compute_player_minutes(stints, match_duration=95.0, dismissal_minute=56.17, substitution_minute=None)
         assert minutes == pytest.approx(56.17)
 
     def test_explicit_to_before_dismissal_unchanged(self):
         # Substituted off at 45:00, card fired at 60:00 — 45 min should stand.
         stints = [self._stint("00:00", "45:00")]
-        minutes = compute_player_minutes(stints, match_duration=90.0, dismissal_minute=60.0)
+        minutes = compute_player_minutes(stints, match_duration=90.0, dismissal_minute=60.0, substitution_minute=None)
         assert minutes == pytest.approx(45.0)
 
     def test_explicit_to_no_dismissal_not_clamped(self):
         # Without dismissal_minute, explicit to-values are used as-is.
         stints = [self._stint("00:00", "90:05")]
-        minutes = compute_player_minutes(stints, match_duration=90.0)
+        minutes = compute_player_minutes(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert minutes == pytest.approx(90 + 5 / 60)
 
 
@@ -213,7 +214,7 @@ class TestSubstitutionMinuteCap:
         # The cap only shortens: an explicit `to` earlier than the sub stands.
         stints = [{"from": "00:00", "to": "59:50"}]
         assert compute_player_minutes(
-            stints, match_duration=92.0, substitution_minute=60.0
+            stints, match_duration=92.0, dismissal_minute=None, substitution_minute=60.0
         ) == pytest.approx(59 + 50 / 60)
 
     def test_explicit_to_past_match_duration_kept_when_sub_is_later(self):
@@ -221,5 +222,59 @@ class TestSubstitutionMinuteCap:
         # not clamp `to` down to match_duration.
         stints = [{"from": "00:00", "to": "90:05"}]
         assert compute_player_minutes(
-            stints, match_duration=90.0, substitution_minute=90 + 10 / 60
+            stints, match_duration=90.0, dismissal_minute=None, substitution_minute=90 + 10 / 60
         ) == pytest.approx(90 + 5 / 60)
+
+
+# ---------------------------------------------------------------------------
+# Plan 004 H3a: shootout period, shared stint bounds, required argument
+# ---------------------------------------------------------------------------
+
+class TestIsPlayingTime:
+    @pytest.mark.parametrize("period", [1, 2, 3, 4])
+    def test_periods_one_to_four_are_playing_time(self, period):
+        assert is_playing_time({"period": period})
+
+    def test_shootout_is_not_playing_time(self):
+        assert not is_playing_time({"period": 5})
+
+    def test_missing_period_raises(self):
+        with pytest.raises(KeyError):
+            is_playing_time({})
+
+
+def test_parse_mm_ss_drops_fractional_seconds():
+    # The stint-after-substitution check relies on this: a lineup "37:02.400"
+    # is the same instant as a substitution event at 37:02.
+    assert parse_mm_ss("37:02.400") == 37 + 2 / 60
+
+
+class TestIterStintBounds:
+    def test_open_stint_ends_at_duration_without_cap(self):
+        stints = [{"from": "10:00", "to": None}]
+        assert [(a, b) for _, a, b in iter_stint_bounds(stints, 92.0, None)] == [(10.0, 92.0)]
+
+    def test_open_stint_ends_at_cap(self):
+        stints = [{"from": "10:00", "to": None}]
+        assert [(a, b) for _, a, b in iter_stint_bounds(stints, 92.0, 60.0)] == [(10.0, 60.0)]
+
+    def test_explicit_to_clamped_only_with_cap(self):
+        stints = [{"from": "00:00", "to": "93:00"}]
+        assert [b for _, _, b in iter_stint_bounds(stints, 92.0, None)] == [93.0]
+        assert [b for _, _, b in iter_stint_bounds(stints, 92.0, 80.0)] == [80.0]
+
+    def test_negative_stint_yielded_unclamped(self):
+        # The negative-duration clamp belongs to the callers.
+        stints = [{"from": "70:00", "to": None}]
+        assert [(a, b) for _, a, b in iter_stint_bounds(stints, 92.0, 60.0)] == [(70.0, 60.0)]
+
+
+def test_substitution_minute_is_required():
+    # A forgotten argument must not silently give uncapped minutes.
+    with pytest.raises(TypeError, match="substitution_minute"):
+        compute_player_minutes([{"from": "00:00", "to": None}], 90.0, dismissal_minute=None)
+
+
+def test_dismissal_minute_is_required():
+    with pytest.raises(TypeError, match="dismissal_minute"):
+        compute_player_minutes([{"from": "00:00", "to": None}], 90.0, substitution_minute=None)

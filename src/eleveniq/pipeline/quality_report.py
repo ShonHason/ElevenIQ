@@ -37,6 +37,9 @@ from __future__ import annotations
 
 DISMISSAL_CARDS: frozenset[str] = frozenset({"Red Card", "Second Yellow"})
 
+# Quality-report issue name for a dismissal event without minute/second.
+DISMISSAL_MISSING_TIMESTAMP = "dismissal_missing_timestamp"
+
 # A dismissed player's computed minutes may exceed the card minute by this
 # tolerance before we flag a mismatch (accounts for sub-minute precision loss).
 DISMISSAL_TOLERANCE_MINUTES: float = 1.0
@@ -61,6 +64,22 @@ def find_dismissal_minute(events: list[dict], player_id: int) -> float | None:
       tell them apart: a non-None result means the second case applies and the
       dismissal fix cannot be applied.
     """
+    event = _dismissal_event(events, player_id)
+    return None if event is None else event["minute"] + event["second"] / 60
+
+
+def find_dismissal(events: list[dict], player_id: int) -> tuple[int, float] | None:
+    """
+    (period, match-absolute minute) of the dismissal find_dismissal_minute
+    returns, or None in the same cases. `period` is required (KeyError).
+    """
+    event = _dismissal_event(events, player_id)
+    return None if event is None else (event["period"], event["minute"] + event["second"] / 60)
+
+
+def _dismissal_event(events: list[dict], player_id: int) -> dict | None:
+    """The first dismissal event for `player_id`, or None when there is none
+    or it lacks minute/second (see find_dismissal_minute)."""
     for event in events:
         if (event.get("player") or {}).get("id") != player_id:
             continue
@@ -75,7 +94,7 @@ def find_dismissal_minute(events: list[dict], player_id: int) -> float | None:
             continue
         if "minute" not in event or "second" not in event:
             return None
-        return event["minute"] + event["second"] / 60
+        return event
     return None
 
 
@@ -88,13 +107,22 @@ def find_substitutions_off(events: list[dict], player_id: int) -> list[tuple[int
     The player's own Substitution event is authoritative for when he left the
     pitch (ADR 002 §3). Callers pass period 1-4 events only, and treat more than
     one entry as a data-quality failure (a player cannot be replaced twice).
+
+    Raises:
+        ValueError: if an event's type is missing or null (it could be a
+            Substitution, so it is never skipped silently).
     """
-    return [
-        (event["period"], event["minute"] + event["second"] / 60)
-        for event in events
-        if event.get("type", {}).get("name") == "Substitution"
-        and (event.get("player") or {}).get("id") == player_id
-    ]
+    subs: list[tuple[int, float]] = []
+    for event in events:
+        event_type = event.get("type")
+        if event_type is None:
+            raise ValueError(f"event {event.get('id')!r} has no type")
+        if (
+            event_type.get("name") == "Substitution"
+            and (event.get("player") or {}).get("id") == player_id
+        ):
+            subs.append((event["period"], event["minute"] + event["second"] / 60))
+    return subs
 
 
 def check_dismissal_event_quality(events: list[dict], player_id: int) -> dict | None:
@@ -109,7 +137,7 @@ def check_dismissal_event_quality(events: list[dict], player_id: int) -> dict | 
     dismissal), this function identifies and describes the problem.
 
     Return dict keys:
-        issue          str   always "dismissal_missing_timestamp"
+        issue          str   always DISMISSAL_MISSING_TIMESTAMP
         player_id      int
         card_name      str
         missing_fields list[str]  subset of ["minute", "second"]
@@ -129,7 +157,7 @@ def check_dismissal_event_quality(events: list[dict], player_id: int) -> dict | 
         missing = [k for k in ("minute", "second") if k not in event]
         if missing:
             return {
-                "issue": "dismissal_missing_timestamp",
+                "issue": DISMISSAL_MISSING_TIMESTAMP,
                 "player_id": player_id,
                 "card_name": card_name,
                 "missing_fields": missing,

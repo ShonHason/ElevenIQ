@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from eleveniq.config import COMPETITION_SEASONS
 from eleveniq.pipeline.quality_report import (
+    find_dismissal,
     find_dismissal_minute,
     find_substitutions_off,
     check_dismissal_event_quality,
@@ -488,3 +489,31 @@ class TestFindSubstitutionsOff:
         events = [_substitution_event(10, 20, period=1, minute=30),
                   _substitution_event(10, 21, period=2, minute=70)]
         assert find_substitutions_off(events, 10) == [(1, 30.0), (2, 70.0)]
+
+
+class TestFindSubstitutionsOffNullType:
+    def test_null_type_raises_clear_error(self):
+        # Could be a Substitution: never skipped silently, never an AttributeError.
+        events = [{"id": "x1", "type": None, "player": {"id": 10},
+                   "period": 1, "minute": 30, "second": 0}]
+        with pytest.raises(ValueError, match="x1"):
+            find_substitutions_off(events, 10)
+
+
+class TestFindDismissal:
+    def test_returns_period_and_minute(self):
+        events = [{"type": {"name": "Bad Behaviour"}, "player": {"id": 7},
+                   "bad_behaviour": {"card": {"name": "Red Card"}},
+                   "period": 2, "minute": 70, "second": 30}]
+        assert find_dismissal(events, 7) == (2, pytest.approx(70.5))
+        assert find_dismissal_minute(events, 7) == pytest.approx(70.5)
+
+    def test_none_when_not_dismissed(self):
+        assert find_dismissal([], 7) is None
+
+
+def test_find_substitutions_off_missing_type_key_raises():
+    # Docstring: a missing type (not only a null one) is never skipped silently.
+    events = [{"id": "x2", "player": {"id": 10}, "period": 1, "minute": 30, "second": 0}]
+    with pytest.raises(ValueError, match="x2"):
+        find_substitutions_off(events, 10)

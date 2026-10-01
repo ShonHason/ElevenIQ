@@ -293,6 +293,43 @@ Run the spike for all 5 leagues (the goals reconciliation must pass), then the i
 8. **code-reviewer checklist:** add "minutes taken from lineups without checking against
    Substitution events".
 
+### H3a review follow-ups (qa-tester, stats-reviewer, code-reviewer, 2026-10-01), for H3b
+H3a (code) is the review follow-ups above plus `match_duration`. Its reviews found the
+items below, which go into H3b (docs/tests) unless an item turns out to need code.
+1. **On-pitch check edge cases** (`_on_pitch_excess`):
+   - **Dismissal while off for treatment.** A player off for treatment ("Player Off" /
+     "Player On") who is sent off during that window does not lower the allowed number.
+     Under football law he is still dismissed and cannot be replaced, so a replacement
+     coming on would be a real excess the check misses. Decide the rule, then test it.
+     The Bordeaux case (card on the bench after his own substitution) stays excluded.
+   - **Card and exit at the same second.** Cards sort before exits, so a player
+     substituted off and booked in the same second still lowers the allowed number,
+     which gives a false excess. Add a test and decide the order.
+   - **Stint with `to` but a null `to_period`.** It currently fails with a bare
+     `TypeError` (a match failure). Raise a clear error instead.
+   - **Two cap rules order time differently.** The check picks the earlier exit in
+     (period, minute) order; `stint_end_cap` picks it in match-absolute minutes. They
+     differ only when one event is in first-half stoppage and the other in period 2,
+     which does not occur in current data. Pin or align them.
+2. **Align the 90:05 docstring with the guard.** The `iter_stint_bounds` docstring calls
+   an uncapped explicit `to` slightly past `match_duration` legitimate, but the new
+   `player_minutes_exceed_duration` guard (tolerance 1e-6) fails the build on it. Real
+   data has 0 such rows (largest excess 1.4e-14). Align the docstring and ADR 002, and
+   state that the guard is expected to trigger on new sources and that the response is to
+   investigate, not to widen the tolerance silently.
+3. **Stale ADR 002 docs.**
+   - Signatures at L148 and L460: `dismissal_minute` and `substitution_minute` are now
+     both required keyword arguments.
+   - Document the `match_duration` column in `player_match_stats`.
+   - Document the new failing issue `player_minutes_exceed_duration` and the report-only
+     issue `on_pitch_count_exceeded`, including their summary/CLI counts.
+   - State the own-goal gap in goals (about 28–38 per league below the official totals;
+     own goals are not credited to a player), so it is not mistaken for missing data.
+4. **Test hygiene.**
+   - In `test_quality_issue_names_are_constants_not_literals`, accept an `ast.IfExp` only
+     when both branches are `ast.Name`.
+   - New tests filter on literal issue strings; use the module constants instead.
+
 ### H3 verification
 Run the fast and integration suites (green), grep the old stale phrases (expect no hits), then
 `/finish-chunk`.

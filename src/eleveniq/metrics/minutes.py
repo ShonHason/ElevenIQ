@@ -25,6 +25,21 @@ eleveniq.pipeline.quality_report).
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+# Period 5 is the penalty shootout: not playing time, so it counts toward no
+# metric and is excluded from the match duration. Periods 1-4 are playing time.
+SHOOTOUT_PERIOD: int = 5
+
+
+def is_playing_time(event: dict) -> bool:
+    """True for an event in periods 1-4; False for the shootout (period 5).
+
+    The one shootout-period rule for the match duration and the event filter
+    in build_player_match. `period` is required (KeyError, never defaulted).
+    """
+    return event["period"] < SHOOTOUT_PERIOD
+
 
 def parse_mm_ss(time_str: str) -> float:
     """
@@ -60,7 +75,7 @@ def compute_match_duration(events: list[dict]) -> float:
         ValueError: if no event has period <= 4 (a match with no playing-time
                     events cannot be given a duration; no 90-minute default).
     """
-    valid = [e for e in events if e["period"] <= 4]
+    valid = [e for e in events if is_playing_time(e)]
     if not valid:
         raise ValueError("no events with period <= 4: cannot compute match duration")
     return max(e["minute"] + e["second"] / 60 for e in valid)
@@ -77,12 +92,40 @@ def stint_end_cap(
     return min(caps) if caps else None
 
 
+def iter_stint_bounds(
+    positions: list[dict],
+    match_duration: float,
+    cap: float | None,
+) -> Iterator[tuple[dict, float, float]]:
+    """
+    Yield (stint, start, end) in decimal minutes for every stint, before the
+    negative-duration clamp. The one stint-end rule shared by
+    compute_player_minutes and the per-group/raw-position functions in
+    positions.py, so the two cannot drift:
+
+    - to=None ends at the exit cap (stint_end_cap) or, without one, at
+      match_duration (the final whistle).
+    - An explicit `to` is clamped at the exit cap, but used as-is otherwise:
+      match_duration is the last event timestamp and may lag the real whistle,
+      so clamping against it could truncate a legitimate substitution time.
+    """
+    effective_end = cap if cap is not None else match_duration
+    for stint in positions:
+        start = parse_mm_ss(stint["from"])
+        if stint.get("to"):
+            raw_end = parse_mm_ss(stint["to"])
+            end = min(raw_end, cap) if cap is not None else raw_end
+        else:
+            end = effective_end
+        yield stint, start, end
+
+
 def compute_player_minutes(
     positions: list[dict],
     match_duration: float,
     *,
-    dismissal_minute: float | None = None,
-    substitution_minute: float | None = None,
+    dismissal_minute: float | None,
+    substitution_minute: float | None,
 ) -> float:
     """
     Sum of all playing stints for a player in one match, in decimal minutes.
@@ -96,31 +139,23 @@ def compute_player_minutes(
     Pipeline usage note: the pipeline derives minutes_played as
     sum(compute_minutes_per_group(...).values()), NOT by calling this function
     directly. The two are kept numerically consistent by the shared
-    _iter_stint_contributions generator; TestMinutesConsistency in
+    iter_stint_bounds generator; TestMinutesConsistency in
     tests/test_positions.py is the automated guard.
 
     Args:
         positions:        player's positions array from the StatsBomb lineup.
         match_duration:   output of compute_match_duration() for this match.
         dismissal_minute: decimal-minute of a red card / second yellow for this
-                          player, if one occurred.
+                          player, or None.
         substitution_minute: decimal-minute of the Substitution event that took
-                          this player off, if one occurred.
+                          this player off, or None.
+        Both are required keywords with no default: a forgotten argument would
+        silently give uncapped minutes.
     """
     if not positions:
         return 0.0
     cap = stint_end_cap(dismissal_minute, substitution_minute)
-    effective_end = cap if cap is not None else match_duration
-    total = 0.0
-    for stint in positions:
-        start = parse_mm_ss(stint["from"])
-        if stint.get("to"):
-            raw_end = parse_mm_ss(stint["to"])
-            # Mirror the clamping in _iter_stint_contributions: clamp explicit
-            # to-values at the exit cap, but leave them as-is otherwise
-            # (match_duration may lag the real whistle by a few seconds).
-            end = min(raw_end, cap) if cap is not None else raw_end
-        else:
-            end = effective_end
-        total += max(0.0, end - start)
-    return total
+    return sum(
+        max(0.0, end - start)
+        for _, start, end in iter_stint_bounds(positions, match_duration, cap)
+    )

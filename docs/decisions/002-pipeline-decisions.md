@@ -260,6 +260,58 @@ is always a lineup player of the same team. No explicit `to` is later than the p
 own substitution, so the cap changes no row outside the 33. After the cap, the
 on-pitch count per team never exceeds 11 at any instant.
 
+#### On-pitch count check (added 2026-10-01, plan 004 H3a; H3b finalizes the wording)
+
+**Rule.** Report-only issue `on_pitch_count_exceeded` (`_on_pitch_excess`). Per
+team-match, the number of distinct players on the pitch may not exceed **11 minus the
+team's dismissals so far**. Time is ordered by `(period, minute)`. Every stint is capped
+at the player's exit (the earlier of his dismissal and substitution). The allowed number
+drops only when the dismissed player is **on the pitch at his card**. All changes at one
+instant are applied before the count is taken. Measured on all five leagues: **0**
+team-matches exceed it.
+
+**Scope (what the check does and does not prove).**
+- It catches what the 11 × duration ceiling cannot: a team down to 10 **through a
+  dismissal** that is still credited with 11 players. A team down to 10 for any other
+  reason has no card, so the allowed number stays 11 and the check cannot see it.
+  Examples: an injured player leaving with no substitutes left, or the Ligue 1
+  "Player Off (Permanent)" residual above.
+- It runs on the **raw lineup stints ordered by (period, minute)**, not on the stored
+  minutes, which are match-absolute (`iter_stint_bounds`). So "0" means the lineups
+  are consistent. It does not mean the stored minutes never credit a 10-man team with
+  11 players. With the same stints flattened to match-absolute minutes, one team-match
+  exceeds: AC Milan 3879549, 11 on with 10 allowed at 45:00–45:51, under one minute.
+  This is the first-half-stoppage collision explained below.
+
+**AC Milan, 3879549: not an excess.** Romagnoli: second yellow at (1, 41:48), so
+10 are allowed from then on.
+- (1, 41:48)–(1, 45:51): 10 on. Balotelli, Zapata, López, De Sciglio, Bonaventura,
+  Calabria, Bertolacci, Montolivo, de Jong, Luiz Adriano.
+- (1, 45:51): de Jong off, Ely on (Substitution event). Still 10.
+- Ely's first stint "45:00 p2 → 45:51 p1" ends before it starts, so it is empty in
+  period-aware time. The same goes for the reversed middle stints of Bonaventura and
+  Bertolacci. They count once, through their own other stints.
+- From (2, 45:00) to the whistle: 10 on.
+
+Only the match-absolute minute axis shows an extra player at 45:00–45:51. There, de
+Jong's period-1 stoppage (to 45:51) and Ely's period-2 start collide on the same numbers:
+11 with Romagnoli capped, 12 without his cap. This collision is the known
+first-half-stoppage limit above, not a phantom stint. Ely's match-absolute stints sum to
+exactly his second half (50.6 min); his real (1, 45:51)–(1, 47:24) is the part that is
+lost. H3b should reword the L261 sentence and the "spurious" note on reversed-period
+stints accordingly (plan 004, H2 review follow-up 7).
+
+**Bordeaux, 3900519: not an excess.** This team-match was a false positive in a first
+measurement that lowered the ceiling for every dismissed player with stints.
+- Pallois was substituted off injured at (1, 29:10) (→ Plašil). He was then shown a red
+  card **on the bench** at (2, 94:09). He was not on the pitch, so the allowed number
+  stays 11.
+- Khazri: "Player Off" at (2, 92:58), "Player On" at (2, 94:31). The team had 10 on
+  between those two instants and 11 after them, within the allowed 11.
+
+Both matches are pinned by tests in `tests/test_build_player_match.py`
+(`TestOnPitchExcess`, `test_real_dismissal_matches_have_no_on_pitch_excess`).
+
 **Before/after (H1 output → H2 output), per league:**
 
 | League 2015/16 | Player-matches capped | Minutes removed | League minutes before | After |
