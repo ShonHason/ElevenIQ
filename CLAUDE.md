@@ -89,6 +89,9 @@ future-potential prediction. Do not add these without explicit re-scoping.
   exception: a commit that touches only docs/, spikes/ and/or CLAUDE.md (no src/ or
   tests/ changes) may be committed directly after explicit user approval, without
   /finish-chunk. Everything else still goes through /finish-chunk.
+- **Claude never pushes.** Claude commits (and merges locally) only after my explicit
+  approval; I push manually. This covers every branch, tags and force pushes.
+  Remote: `origin` = github.com/ShonHason/ElevenIQ (private).
 
 ---
 
