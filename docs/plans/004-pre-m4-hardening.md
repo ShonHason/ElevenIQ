@@ -337,7 +337,47 @@ Run the fast and integration suites (green), grep the old stale phrases (expect 
 ---
 
 ## H4: open decisions (queued 2026-10-01 from the H3b reviews)
-Not started. Each item needs a decision before code.
+**Status (2026-10-02).** The items below are decided; the decisions are in ADR 002 §31.
+Branch `h4-period-aware-minutes`.
+
+**Chunks.**
+- **H4a (spike first; this chunk):** the independent spike, the references and the
+  §31 rule text.
+- **H4b:** the pipeline, until it matches the spike in every match; then the
+  before/after, the data-auditor checklist and closing the M4 pre-condition.
+
+**Decisions.**
+- **Half-end rule:** the `Half End` event.
+  - A period that ends early is kept as recorded (31 cases, report-only).
+  - More than 5 min short fails the build.
+  - A post-match card is capped and report-only.
+- **Exits and windows.** Treatment windows are subtracted. An unpaired Player Off is an
+  exit cap, and an event after it fails the build.
+- **Stints.** Minutes are the union of a player's stints.
+- **Position at t:** the latest start. At one start instant, a Tactical Shift stint wins,
+  then the stint listed first.
+- **Checks.** The event-position oracle and the tactics-timeline check, with 9 listed
+  exceptions.
+- **`check_dismissed_player_minutes`:** removed in H4b.
+
+**H4a outcome.**
+- All counts are as predicted: 31 early period ends, 2 stints starting after Half End,
+  7 treatment windows inside a stint, 14 overlaps (15.33 min), 3 unpaired-Off caps.
+- The league minutes gap is 0.0005% or less in every league.
+- Every other core column and the dismissal counts are unchanged.
+- `core.minutes_played` and `core.minutes_<group>` are written.
+
+**H4b also (stats-reviewer, 2026-10-02):**
+- a unit test for the equal-elapsed tie (later start instant wins; 0 cases in the data);
+- tests for the Tactical Shift tie rule (the Ravel Morrison pattern) and the
+  Chaigneau case.
+
+**M4 items queued in docs/milestones.md:**
+- positions from Tactical Shift events;
+- the GK-minutes rule;
+- a near-tie season-group flag.
+
+The original queue:
 - **`check_dismissed_player_minutes`** (quality_report.py): only tests call it; the
   pipeline applies the dismissal cap itself and records minutes with and without it.
   Either wire it into the integration suite as a second check of the cap, or remove

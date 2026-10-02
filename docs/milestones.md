@@ -279,6 +279,27 @@ in ADR 002 §6 or a new ADR.
   - **900-minute gate.** 11 `in_percentile_pool ∧ is_outfield` rows would cross it: PL 5, Serie A 4, Ligue 1 2. Examples: Grealish 882.2 → 900.2, Distin 892.6 → 920.2. No GK row crosses. **The gate moves in one direction only:** 0 rows that pass it today would fall below 900. So the current definition only ever excludes borderline players, never admits extra ones. Erdinç and Klose also appear in the combined-gate note below. Their gate status depends on both decisions, so decide them together, not separately.
   - **Decide:** keep match-absolute minutes and document the bias, or move to period-aware minutes (a definition change for nearly every row, with a new ADR and a full before/after). Make the decision before any global percentile or before the gate is applied. Period-aware time would also make the reversed-period stints and the AC Milan 3879549 collision (ADR 002 §3) disappear.
 
+**Pre-conditions from Plan 004 H4 (position groups) — stats-reviewer must decide before computing percentiles:**
+
+- **Positions from Tactical Shift events (option).** ADR 002 §31.6 lists 9 player-matches where the lineup stints disagree with the team's Tactical Shift events and the player's own events.
+  - Pattern B: two shifts at one instant, Liverpool 3754226.
+  - Pattern C: a shift back to the sub-on slot position has no stint (Polomat, Ketkeophomphone, Totti, Hernanes).
+
+  Taking positions from the Tactical Shift events (`tactics.lineup`) instead of the lineup stints would fix both. The match-level `position_group` is still wrong in 4 of them:
+  - Henderson 3754226: AM-Winger, but all his events are DM-CM;
+  - Coutinho 3754226: DM-CM, but all his events are AM-Winger;
+  - Polomat 3900509: FB-WB, but 62 of 90 events are CB;
+  - Ketkeophomphone 3829474: AM-Winger, but 55 of 93 events are ST.
+
+  Decide whether to adopt it before cohorts are built.
+- **GK minutes vs one anomalous match.**
+  - **Chaigneau (Lorient, 3829440)** was checked (2026-10-02). It is not a lineup label wrong for the whole match. It is the same-instant pattern: a Bouanga → Chaigneau substitution at (1, 2:16) in the Right Midfield slot, then a Tactical Shift in the same second putting him in goal. All his events are Goalkeeper.
+  - The pre-H4 pipeline credited him 90.7 min as Right Midfield, and his season row stayed GK only by 1.1 min (91.8 GK vs 90.7). The §31.4 tie rule (H4) makes it 182.4 GK.
+  - **Consider a rule** so that a goalkeeper's season GK minutes cannot be outweighed by one anomalous match. For example, a season row with any GK match keeps GK unless the outfield minutes win by a clear margin, or with a check against his own event positions. GK vs outfield decides `is_outfield`, so one mislabel moves a player between incomparable cohorts.
+- **Near-tie season groups.** Season `position_group` is the argmax of group minutes (`build_player_season.py`), and near-ties are unstable. Full H4 flips the season group in 4 gated rows, all near-ties, e.g. player 16462: AM-Winger 1461.9 vs ST 1459.0, and player 4906 by a 0.85 min margin. Add a flag for a small margin (e.g. the top two groups within a few % of minutes), and decide how M4 cohorts treat flagged rows.
+
+- **The 900-minute gate on the period-aware clock.** §31 minutes count all stoppage time. A full match averages 94.1 (La Liga) to 96.4 (PL) minutes, +4.6% to +7.1% over a nominal 90. So `MIN_MINUTES_THRESHOLD = 900` now means about 840 (PL) to 861 (La Liga) nominal minutes, and differs between leagues (ADR 002 §31, Definition note). Decide whether to keep 900, raise it, or express the gate in nominal-equivalent minutes. Decide this together with the 11 rows that newly cross 900 in H4 (Grealish, Distin, …).
+
 **Pre-conditions from Plan 003 C3 (multi-league flags) — stats-reviewer must decide before computing percentiles:**
 
 - **A combined minutes gate counts only pool rows.** If M4 gates on a player's minutes summed across leagues (ADR 002 §17, §29), the sum includes only rows with `in_percentile_pool == True`. Minutes from a PARTIAL competition are observed-only, so adding them biases the gate. In 2015/16, Mevlüt Erdinç (Ligue 1 891 + Bundesliga 60) and Timm Klose (PL 890 + Bundesliga 93) cross 900 only through Bundesliga minutes.

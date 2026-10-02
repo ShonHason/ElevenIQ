@@ -33,7 +33,7 @@
     "box_entries_carry": 3180
   },
   "core": {
-    "minutes_played": 772808.4167,
+    "minutes_played": 782658.65,
     "shots": 8814,
     "shots_on_target": 3103,
     "xg": 874.9093,
@@ -52,6 +52,12 @@
     "blocks": 14381,
     "fouls_committed": 11207,
     "fouls_won": 10526,
-    "carries": 283256
+    "carries": 283256,
+    "minutes_am_winger": 153966.85,
+    "minutes_cb": 147354.1,
+    "minutes_dm_cm": 176499.1667,
+    "minutes_fb_wb": 142919.65,
+    "minutes_gk": 71506.1833,
+    "minutes_st": 90412.7
   }
 }
