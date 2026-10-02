@@ -336,19 +336,8 @@ Branch `m4-player-dna`. Each chunk ends with `/finish-chunk`. I inserted M4b (pi
 3. The user decides each D-item. ADR 004 "Cohorts, percentiles and Player DNA" records each decision with its numbers. ADR 002 §17 and §29 and milestones.md get pointers, and the M4 pre-conditions are closed or deferred one by one.
 4. Commit: docs/ and spikes/ only, so it can go direct after approval (CLAUDE.md exception), or through `/finish-chunk` if preferred.
 
-### M4b — Pipeline amendments (only what M4a accepted)
-- Follows the H4 order: the independent spike and references first (b1), then the pipeline until it matches exactly (b2).
-- Likely contents:
-  - Injury Clearance denominators;
-  - throw-in exclusion;
-  - `np_xg` / `np_shots`;
-  - `minutes_nominal_equiv` and the gate on it;
-  - `position_group_margin_pct` / `position_group_ambiguous`;
-  - possession-share columns (if D12 = b);
-  - the xG-assisted fallback;
-  - report-only thresholds.
-- Before/after with a stop rule: the expected `meets_min_minutes` and `position_group` flips are listed in advance, and any other flip is a STOP.
-- The stats-reviewer reviews the run output.
+### M4b — Pipeline amendments (ADR 004)
+The M4b plan is in the M4b section at the end of this file.
 
 ### M4c — Metric registry
 `src/eleveniq/analytics/registry.py`: a typed, frozen table, one entry per metric:
@@ -427,3 +416,93 @@ M4 closes when this review is signed off. Any failure goes back to the decision 
 - A GK model (V2).
 - Touch normalisation (needs a touches column, D18).
 - The new-source spike checks (D22, deferred).
+
+---
+
+## M4b — detailed plan (2026-10-02)
+
+**Goal:** add the stored columns and definition changes that ADR 004 decided, before any registry or percentile code. It is split like H4:
+- **M4b1:** independent spikes and references first;
+- **M4b2:** the pipeline, until it matches them exactly.
+
+### Scope (from ADR 004)
+| # | Change | Stored columns | Rows affected |
+|---|---|---|---|
+| D1 | Gate on nominal-equivalent minutes | season: `minutes_nominal_equiv`; `meets_min_minutes` now reads it | 28 pool outfield rows fall below (expected list); 0 rise |
+| D5 | Position margin flags | season: `position_group_margin_pct`, `position_group_share`, `position_group_ambiguous` (config `AMBIGUOUS_POSITION_MARGIN = 0.05`) | 13 gated rows flagged |
+| D12 | Team pass share | match: `team_passes_while_on`; season: the same total and `team_pass_share` | new columns only |
+| D13 | Injury Clearance out of the completion denominators | match + season: `passes_injury_clearance`, `long_passes_injury_clearance`; new denominators for `pass_completion_pct` and `long_pass_completion_pct` | small pct shifts |
+| D14 | Throw-ins out of progressive passes and pass entries | none; definition change to `progressive_passes`, `final_third_entries_pass`, `box_entries_pass` | most FB-WB rows (−28% progressive passes) |
+| D15 | Non-penalty xG and shots | match + season: `np_xg`, `np_shots`; season: `np_xg_p90`, `np_shots_p90`, `np_xg_per_shot` | new columns only |
+| D16 | xGA fallbacks are not direct | definition change to `xg_assisted_direct`; new report-only counters | 6 passers, −0.37 xG in total |
+| D22 | Limits for report-only issues | config: per-issue limit per 100 matches (3 × worst 2015/16 rate, floor 3 per competition-season), `STINT_LATE_START_FAIL_MINUTES = 2.0` | 0 failures expected |
+
+Not in M4b:
+- D3 (dedupe), D4 (statuses), D9 (`global_ok`), D11 (Hazen, cohort size) and D19 (`min_attempts`) are analytics: M4c and M4d.
+- Throw-ins stay in crosses and long passes (ADR 004 D14).
+
+### Definitions to pin before code (the stats-reviewer reviews these)
+- **`team_passes_while_on`** = the team's Pass events in periods 1–4 (including the player's own) whose instant falls inside the player's credited time.
+  - Credited time is the union of his ADR 002 §31 timeline pieces, on the elapsed clock.
+  - Pieces are half-open [start, end), so a pass at a substitution instant counts for the incoming player only.
+  - All Pass types count, including set pieces and throw-ins. The share measures how much of the team's passing goes through him, not its quality.
+- **`team_pass_share`** = `passes_attempted / team_passes_while_on`, from season totals (never an average of match ratios, ADR 002 §6a). Null when the denominator is 0.
+  - Edge: his passes outside credited time (`events_outside_credited_time`) are in the numerator but not the denominator. In 2015/16 that is at most 11 events, one player. Accepted and documented.
+- **Throw-in:** `pass.type.name == "Throw-in"`.
+  - `is_progressive_pass` gets a required keyword `pass_type_name`, the same contract as the entry functions: omitting it raises `TypeError`.
+  - Entries exclude `SET_PIECE_TYPES ∪ {"Throw-in"}`. Long passes keep excluding `SET_PIECE_TYPES` only.
+- **Penalty:** `shot.type.name == "Penalty"`. `np_xg` sums the xG of non-penalty shots; a shot without xG behaves as for `xg` (H1.4).
+- **Injury Clearance:** `pass.outcome.name == "Injury Clearance"`.
+  - `pass_completion_pct = completed / (attempted − unknown − injury_clearance)`; the long-pass ratio follows the same rule.
+  - The pass is never completed, so the numerators are unchanged.
+- **Nominal minutes:** `Σ_matches minutes_played × 90 / match_duration`, computed in `build_player_season` from the match parquet. `meets_min_minutes = minutes_nominal_equiv ≥ MIN_MINUTES_THRESHOLD`. Per-90s keep `minutes_played`.
+
+### M4b1 — Spikes and references (spikes/ + tests/fixtures/ + docs)
+1. **The stats-reviewer reviews the definitions above.** Its conditions are folded in here, before any code.
+2. Extend the independent spikes (stdlib only, no `eleveniq` imports) to the new definitions:
+   - `verify_core_metrics.py`: `progressive_passes` without throw-ins; `np_xg`, `np_shots`; `passes_injury_clearance`; `team_passes_while_on` (from its own `player_minutes` pieces);
+   - `verify_chunk_a_metrics.py`: `long_passes_injury_clearance`;
+   - `verify_chunk_b_metrics.py`: the entries without throw-ins, and `xg_assisted_direct` with the new fallback.
+3. Rewrite `tests/fixtures/reference_totals/*.json` for the 5 leagues. Every unchanged column must come out identical (an assertion, as in H4a).
+4. **Known red state:** the integration reconcile tests for `progressive_passes`, entries and `xg_assisted_direct` fail until M4b2. Recorded in `/finish-chunk`.
+
+### M4b2 — Pipeline (src/ + tests/)
+1. **Snapshot** the current parquets to `data/interim/m4a_snapshot/`.
+2. **Code:**
+   - `metrics/progressive.py`, `metrics/entries.py`: throw-in rules;
+   - `metrics/xg_assisted.py`: fallbacks and counters;
+   - `pipeline/build_player_match.py`: new match columns; `team_passes_while_on` from `player_timeline` and `PeriodClock.elapsed`; D22 limits checked per competition-season in `build_competition_season`; late-start limit in `_stint_bound_issues`;
+   - `pipeline/build_player_season.py`: nominal minutes, gate, margin flags, np columns and ratios, new pct denominators;
+   - `config.py`: the new constants.
+3. **Tests**, unit first:
+   - throw-in exclusion in each predicate, and the `TypeError` contract;
+   - penalty split;
+   - Injury Clearance denominators;
+   - fallbacks not direct;
+   - `team_passes_while_on`: a sub at the pass instant, treatment windows, a dismissal;
+   - nominal gate: a short match gives nominal > elapsed;
+   - margin flags, including a 3-way near tie;
+   - the D22 limits and the late-start limit.
+
+   qa-tester writes spec tests from ADR 004 in `/finish-chunk`.
+4. **Rebuild:** `build_player_match --force`, then `build_player_season`. Expect 0 failing issues.
+5. **`spikes/m4b_before_after.py`** (snapshot vs rebuild), per league:
+   - Δ per changed column;
+   - every flag flip, against `spikes/expected_m4b_flips.json`, which is written **before** the rebuild from the M4a spike: the 28 `meets_min_minutes` rows going down and 0 going up; `position_group`, `is_primary_stint`, `is_outfield` and `in_percentile_pool` unchanged.
+   - **STOP rule** as in plan 004: any other flip, or a spike/pipeline mismatch, is explained case by case and the user decides.
+6. **Re-run `spikes/m4_decision_measurements.py` on the new output:**
+   - D17 and D19 on the M4b columns;
+   - a new D12b section: `team_pass_share` |ρ| with leave-one-out possession, and split-half r_full, for DM-CM and CB (entry rule: |ρ| < 0.3 and r_full ≥ 0.6).
+
+   The results go into ADR 004. They feed the M4c registry review.
+7. **ADR updates:**
+   - ADR 004 gets the M4b before/after;
+   - ADR 002 §1, §14, §19, §26 and §27 get "amended by ADR 004" notes.
+8. Integration suite green. The stats-reviewer reviews the run output, then `/finish-chunk` (code-reviewer, qa-tester).
+
+### Verification
+- Fast suite: `.venv/bin/python -m pytest tests/ -q -m "not integration"`.
+- The 3 verify spikes for all 5 leagues: references equal the pipeline totals in every league.
+- `spikes/m4b_before_after.py`: no flips outside the expected list.
+- Integration suite: `.venv/bin/python -m pytest tests/ -q -m integration`.
+- `spikes/m4_decision_measurements.py`: D12b, D17 and D19 recorded in ADR 004.
