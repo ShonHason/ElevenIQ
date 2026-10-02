@@ -219,6 +219,8 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
 Per-90 calculation, position-group percentiles, DNA dimension aggregation.
 Validate methodology against the questions in brief.md §20 before moving on.
 
+**Status (2026-10-02):** plan 005. The M4a decisions are recorded in ADR 004 (docs/decisions/004-cohorts-percentiles-dna.md). Each pre-condition below is decided there, or is deferred to the new-source checklist (ADR 004 D22). The text below is kept as history.
+
 **Note for DNA feature selection (from La Liga 2015/16 data):**
 Crosses account for 0.7–9.1% of progressive passes by position group (CB 0.7%,
 DM-CM 2.4%, FB-WB 5.9%, ST 7.0%, AM-Winger 9.1%). Progressive passes are not

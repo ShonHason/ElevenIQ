@@ -1163,7 +1163,7 @@ percentile computation reads `meets_min_minutes`.
 **Minutes definition (plan 004 H4).** Since H4b, `minutes_played` is period-aware and
 counts all stoppage time (§31). So 900 minutes is about 840 (PL) to 861 (La Liga) nominal
 minutes (§31, Definition note), and 11 pool rows crossed the gate upward in H4, none
-downward (§31.7). Whether to keep 900 is an M4 decision.
+downward (§31.7). Whether to keep 900 is an M4 decision. **Decided in ADR 004 D1–D3:** the gate uses nominal-equivalent minutes, each stint is gated on its own, and there is no combined gate.
 
 `player_season_minutes_total` sums a player's stints **within one competition**
 only. Minutes in another league in the same season are not included; see §29.
@@ -1722,6 +1722,7 @@ cohort question (ADR 003 §1).
   Mario Suárez, Alhassane Bangoura, Mauro Zárate. Timm Klose, Mevlüt Erdinç and
   Alessandro Diamanti left the list: each now has ≥ 900 on one pool row (§31.7). This
   feeds the M4 minutes-gate decision (§17).
+- **Resolved in ADR 004 D3:** every reference population holds one row per `(player_id, season_id, source)`, the row with the most minutes.
 - The `build_player_season` `__main__` top-5 diagnostic is filtered on
   `in_percentile_pool` but not deduplicated across leagues.
 
