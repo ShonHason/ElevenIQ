@@ -367,6 +367,29 @@ Branch `h4-period-aware-minutes`.
 - Every other core column and the dismissal counts are unchanged.
 - `core.minutes_played` and `core.minutes_<group>` are written.
 
+**H4b first tasks (H4a review follow-ups, 2026-10-02), before any pipeline code:**
+1. **Group-minutes season = match check outside the xfail.**
+   - `test_core_minutes_reconcile`: the season-sum = match-sum check for the six
+     `minutes_<group>` columns moves to a non-xfail test.
+   - Only the comparison with the reference stays under the strict xfail.
+2. **Test the spike's expected-minutes total:** a red card inside a treatment window that
+   later closes (Player Off, card, Player On) must not deduct the same time twice. Clip
+   the window at the exit if needed.
+3. **Report-only check `events_outside_credited_time`** (expected about 15 in 2015/16:
+   PL 3, La Liga 1, Serie A 11).
+   - Document Milinković-Savić, Lazio 3879637, in ADR §31.6. His Player Off is at
+     (1, 44:27) and his Player On at (1, 45:16), but the lineup resumes only at
+     (2, 45:00). So he is credited nothing from 45:16 to the 48:47 whistle, while 11 of
+     his events fall in that span. This is most of Serie A's 4.15-min league gap.
+   - Add to docs/milestones.md M4: decide whether a Player On should resume a player's
+     time when the lineup doesn't.
+4. **ADR §31.6:** note that the league tolerance (1e-5) was set from the observed
+   2015/16 figures (largest gap 4.15 min, Serie A). A future failure is to be
+   investigated, not loosened.
+5. **Total match length in the references.** Store Σ match_duration per league in the
+   reference files, so `test_reference_totals.py` checks the exact GK identity
+   (GK minutes ≈ 2 × Σ match_duration within 0.05%) instead of loose bounds.
+
 **H4b also (stats-reviewer, 2026-10-02):**
 - a unit test for the equal-elapsed tie (later start instant wins; 0 cases in the data);
 - tests for the Tactical Shift tie rule (the Ravel Morrison pattern) and the
