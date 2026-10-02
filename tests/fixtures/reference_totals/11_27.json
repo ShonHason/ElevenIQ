@@ -8,7 +8,8 @@
     "own_goals": 29,
     "crosses_attempted": 9606,
     "crosses_completed": 2651,
-    "dismissals": 106
+    "dismissals": 106,
+    "match_duration": 35760.8333
   },
   "chunk_a": {
     "dispossessed": 9379,
@@ -33,7 +34,7 @@
     "box_entries_carry": 3751
   },
   "core": {
-    "minutes_played": 776578.8333,
+    "minutes_played": 783440.7,
     "shots": 9168,
     "shots_on_target": 3263,
     "xg": 979.7748,
@@ -52,6 +53,12 @@
     "blocks": 13616,
     "fouls_committed": 12136,
     "fouls_won": 11574,
-    "carries": 276171
+    "carries": 276171,
+    "minutes_am_winger": 168160.7333,
+    "minutes_cb": 145010.6167,
+    "minutes_dm_cm": 162832.95,
+    "minutes_fb_wb": 142797.95,
+    "minutes_gk": 71508.7167,
+    "minutes_st": 93129.7333
   }
 }

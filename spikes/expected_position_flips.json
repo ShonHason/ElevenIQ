@@ -1,0 +1,1915 @@
+{
+ "match": [
+  {
+   "match_id": 3753980,
+   "player_id": 4589,
+   "player": "Séamus Coleman",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3753981,
+   "player_id": 20641,
+   "player": "Connor Wickham",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754007,
+   "player_id": 3533,
+   "player": "Xherdan Shaqiri",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754008,
+   "player_id": 7171,
+   "player": "Fabio Borini",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754008,
+   "player_id": 9554,
+   "player": "Steven Fletcher",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754010,
+   "player_id": 8061,
+   "player": "Siem Stefan de Jong",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754014,
+   "player_id": 3538,
+   "player": "Wayne Mark Rooney",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754014,
+   "player_id": 20039,
+   "player": "Anthony Martial",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754025,
+   "player_id": 7171,
+   "player": "Fabio Borini",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754026,
+   "player_id": 3092,
+   "player": "Dwight Gayle",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754029,
+   "player_id": 9533,
+   "player": "Leandro Bacuna",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754036,
+   "player_id": 28247,
+   "player": "Libor Kozák",
+   "before": "FB-WB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754064,
+   "player_id": 3828,
+   "player": "Steven Davis",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754064,
+   "player_id": 3842,
+   "player": "Shane Long",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754111,
+   "player_id": 3496,
+   "player": "Mesut Özil",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754115,
+   "player_id": 3381,
+   "player": "Nemanja Matić",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754119,
+   "player_id": 3081,
+   "player": "Jamaal Lascelles",
+   "before": "DM-CM",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754128,
+   "player_id": 19362,
+   "player": "Rudy Gestede",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754146,
+   "player_id": 3307,
+   "player": "Marc Albrighton",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754149,
+   "player_id": 3087,
+   "player": "Gnégnéri Yaya Touré",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754151,
+   "player_id": 9536,
+   "player": "Modou Barrow",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754168,
+   "player_id": 4041,
+   "player": "José Salomón Rondón Giménez",
+   "before": "CB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754171,
+   "player_id": 3296,
+   "player": "Marouane Fellaini-Bakkioui",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754171,
+   "player_id": 18414,
+   "player": "Bastian Schweinsteiger",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754175,
+   "player_id": 4630,
+   "player": "Saido Berahino",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754181,
+   "player_id": 3469,
+   "player": "Bakary Sako",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754182,
+   "player_id": 9930,
+   "player": "Ryan Bennett",
+   "before": "FB-WB",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754189,
+   "player_id": 40118,
+   "player": "Ikechi Anya",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754200,
+   "player_id": 3294,
+   "player": "Juan Manuel Mata García",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754208,
+   "player_id": 4597,
+   "player": "Fabian Delph",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754208,
+   "player_id": 38412,
+   "player": "Kolo Habib Touré",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754213,
+   "player_id": 3626,
+   "player": "Ben Watson",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754217,
+   "player_id": 3517,
+   "player": "Aaron Ramsey",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "overlap"
+  },
+  {
+   "match_id": 3754222,
+   "player_id": 9641,
+   "player": "Fraizer Campbell",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754226,
+   "player_id": 3501,
+   "player": "Philippe Coutinho Correia",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754226,
+   "player_id": 3535,
+   "player": "Roberto Firmino Barbosa de Oliveira",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754226,
+   "player_id": 3658,
+   "player": "DeAndre Yedlin",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754236,
+   "player_id": 3589,
+   "player": "Yannick Bolasie Yala",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754236,
+   "player_id": 15892,
+   "player": "Jordon Mutch",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754238,
+   "player_id": 45014,
+   "player": "Tokelo Anthony Rantie",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754243,
+   "player_id": 4269,
+   "player": "Aleksandar Mitrović",
+   "before": "FB-WB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754250,
+   "player_id": 3671,
+   "player": "José Leonardo Ulloa",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754251,
+   "player_id": 10931,
+   "player": "Joe Allen",
+   "before": "CB",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754262,
+   "player_id": 19362,
+   "player": "Rudy Gestede",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754274,
+   "player_id": 3049,
+   "player": "Matt Ritchie",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754274,
+   "player_id": 3346,
+   "player": "Joshua King",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754277,
+   "player_id": 3476,
+   "player": "Muhamed Bešić",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754277,
+   "player_id": 3595,
+   "player": "Manuel Lanzini",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3754279,
+   "player_id": 3462,
+   "player": "Jack Frank Porteous Cork",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754279,
+   "player_id": 9551,
+   "player": "Callum McManaman",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754292,
+   "player_id": 4630,
+   "player": "Saido Berahino",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754304,
+   "player_id": 3081,
+   "player": "Jamaal Lascelles",
+   "before": "AM-Winger",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754319,
+   "player_id": 4587,
+   "player": "Matteo Darmian",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754330,
+   "player_id": 9638,
+   "player": "Jack Grealish",
+   "before": "CB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754336,
+   "player_id": 4629,
+   "player": "José Ramiro Funes Mori",
+   "before": "FB-WB",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754337,
+   "player_id": 4808,
+   "player": "Andre Wisdom",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3754338,
+   "player_id": 20543,
+   "player": "Nikica Jelavić",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825563,
+   "player_id": 6721,
+   "player": "Willian José da Silva",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825572,
+   "player_id": 6630,
+   "player": "Jorge Molina Vidal",
+   "before": "FB-WB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825578,
+   "player_id": 6666,
+   "player": "Sabin Merino Zuloaga",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825582,
+   "player_id": 6697,
+   "player": "Daniel Ceballos Fernández",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825594,
+   "player_id": 3486,
+   "player": "Fernando Llorente Torres",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825607,
+   "player_id": 6744,
+   "player": "Luciano Vietto",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825614,
+   "player_id": 26797,
+   "player": "Francisco Medina Luna",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825627,
+   "player_id": 11543,
+   "player": "José Antonio Dorado Ramírez",
+   "before": "FB-WB",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825628,
+   "player_id": 6721,
+   "player": "Willian José da Silva",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825640,
+   "player_id": 27250,
+   "player": "Nabil Ghilas",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825643,
+   "player_id": 6840,
+   "player": "Marcos Llorente Moreno",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825646,
+   "player_id": 18867,
+   "player": "Matías Nahuel Leiva Esquivel",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825684,
+   "player_id": 6829,
+   "player": "Samuel Castillejo Azuaga",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825686,
+   "player_id": 6388,
+   "player": "Ander Iturraspe Derteano",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825701,
+   "player_id": 26783,
+   "player": "Roque Luis Santa Cruz Cantero",
+   "before": "FB-WB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825717,
+   "player_id": 5504,
+   "player": "Éver Maximiliano David Banega",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825736,
+   "player_id": 6725,
+   "player": "Zakaria Bakkali",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825750,
+   "player_id": 6651,
+   "player": "Joaquín Sánchez Rodríguez",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825753,
+   "player_id": 20064,
+   "player": "Hugo Miguel Almeida Costa Lopes",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825768,
+   "player_id": 6713,
+   "player": "Diego Javier Llorente Ríos",
+   "before": "CB",
+   "after": "DM-CM",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3825768,
+   "player_id": 6743,
+   "player": "Manuel Rolando Iturra Urrutia",
+   "before": "FB-WB",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825768,
+   "player_id": 6914,
+   "player": "Roberto Román Triguero",
+   "before": "FB-WB",
+   "after": "CB",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3825772,
+   "player_id": 6663,
+   "player": "Antonio Barragán Fernández",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825786,
+   "player_id": 6557,
+   "player": "Adrián González Morales",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825837,
+   "player_id": 7906,
+   "player": "David Simón Rodríguez Santana",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825854,
+   "player_id": 5687,
+   "player": "Takashi Inui",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825869,
+   "player_id": 3497,
+   "player": "Vicente Iborra De La Fuente",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3825878,
+   "player_id": 26690,
+   "player": "Alberto Mateus Contreiras Gonçalves",
+   "before": "CB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825896,
+   "player_id": 6659,
+   "player": "Víctor Camarasa Ferrando",
+   "before": "CB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825896,
+   "player_id": 27463,
+   "player": "Mauricio Andrés Cuero Castillo",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825899,
+   "player_id": 6594,
+   "player": "Santiago Mina Lorenzo",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825900,
+   "player_id": 25057,
+   "player": "Alejandro Barrera García",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3825904,
+   "player_id": 6865,
+   "player": "Francisco José Molinero Calderón",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829413,
+   "player_id": 5476,
+   "player": "Benjamin Pavard",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3829413,
+   "player_id": 6716,
+   "player": "Sébastien Corchia",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3829419,
+   "player_id": 2980,
+   "player": "Kévin Bérigaud",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829434,
+   "player_id": 7406,
+   "player": "Julien Bègue",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829438,
+   "player_id": 41041,
+   "player": "Jonathan Correia Da Fonseca",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829440,
+   "player_id": 401467,
+   "player": "Florent Chaigneau",
+   "before": "AM-Winger",
+   "after": "GK",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829446,
+   "player_id": 7376,
+   "player": "Yoann Court",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829466,
+   "player_id": 4441,
+   "player": "Billy Ketkeophomphone",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829474,
+   "player_id": 4441,
+   "player": "Billy Ketkeophomphone",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829475,
+   "player_id": 401528,
+   "player": "Mahamane El-Hadj Traoré",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829476,
+   "player_id": 4350,
+   "player": "Yannick Cahuzac",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829478,
+   "player_id": 7430,
+   "player": "Kévin Mayi",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829479,
+   "player_id": 7338,
+   "player": "Romain Philippoteaux",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829489,
+   "player_id": 2980,
+   "player": "Kévin Bérigaud",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829501,
+   "player_id": 3246,
+   "player": "Guido Marcelo Carrillo",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829503,
+   "player_id": 401471,
+   "player": "Henri Bienvenu Ntsama",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829505,
+   "player_id": 7347,
+   "player": "Pierre-Yves Polomat",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829508,
+   "player_id": 7726,
+   "player": "Jeff Louis",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3829517,
+   "player_id": 146696,
+   "player": "Paulin Puel",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3878543,
+   "player_id": 25345,
+   "player": "Anderson Hernanes de Carvalho Andrade",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3878544,
+   "player_id": 30512,
+   "player": "Aleksandar Trajkovski",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3878544,
+   "player_id": 30772,
+   "player": "Panagiotis Tachtsidis",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879537,
+   "player_id": 7017,
+   "player": "Duván Esteban Zapata Banguera",
+   "before": "CB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879543,
+   "player_id": 5743,
+   "player": "Paulo Bruno Exequiel Dybala",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879543,
+   "player_id": 6954,
+   "player": "Giorgio Chiellini",
+   "before": "FB-WB",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879544,
+   "player_id": 30512,
+   "player": "Aleksandar Trajkovski",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879561,
+   "player_id": 8184,
+   "player": "Marco D''Alessandro",
+   "before": "ST",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879564,
+   "player_id": 38389,
+   "player": "Alberto Gilardino",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879566,
+   "player_id": 8180,
+   "player": "Leonardo Pavoletti",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879583,
+   "player_id": 7125,
+   "player": "Khouma El Hadji Babacar",
+   "before": "CB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879606,
+   "player_id": 40429,
+   "player": "Angelo Palombo",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879618,
+   "player_id": 7173,
+   "player": "Leonardo Bonucci",
+   "before": "AM-Winger",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879623,
+   "player_id": 7033,
+   "player": "Nikola Kalinić",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879635,
+   "player_id": 3434,
+   "player": "Stevan Jovetić",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879639,
+   "player_id": 8104,
+   "player": "Vassilis Torosidis",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879643,
+   "player_id": 10030,
+   "player": "Davide Biondini",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879647,
+   "player_id": 7704,
+   "player": "Alex Ferrari",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879655,
+   "player_id": 8172,
+   "player": "Felipe Anderson Pereira Gomes",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879656,
+   "player_id": 30770,
+   "player": "Filippo Falco",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879665,
+   "player_id": 11672,
+   "player": "Samuele Longo",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879671,
+   "player_id": 7056,
+   "player": "Nenad Tomović",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879680,
+   "player_id": 30770,
+   "player": "Filippo Falco",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879681,
+   "player_id": 27110,
+   "player": "Antonio Floro Flores",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879691,
+   "player_id": 5512,
+   "player": "Emil Hallfreðsson",
+   "before": "CB",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879695,
+   "player_id": 32722,
+   "player": "Norbert Sándor Balogh",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879702,
+   "player_id": 11494,
+   "player": "Luca Siligardi",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879706,
+   "player_id": 26728,
+   "player": "Alberto Facundo Costa",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879709,
+   "player_id": 6993,
+   "player": "Bryan Cristante",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879709,
+   "player_id": 7793,
+   "player": "Kevin Lasagna",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879710,
+   "player_id": 7019,
+   "player": "Matías Agustín Silvestre",
+   "before": "DM-CM",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879719,
+   "player_id": 15318,
+   "player": "Lazaros Christodoulopoulos",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879730,
+   "player_id": 5474,
+   "player": "Ivan Perišić",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879734,
+   "player_id": 3371,
+   "player": "Mario Barwuah Balotelli",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879738,
+   "player_id": 6947,
+   "player": "Miralem Pjanić",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879738,
+   "player_id": 7170,
+   "player": "Simone Verdi",
+   "before": "CB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879746,
+   "player_id": 6984,
+   "player": "Danilo D''Ambrosio",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879749,
+   "player_id": 5587,
+   "player": "Adem Ljajić",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879749,
+   "player_id": 15318,
+   "player": "Lazaros Christodoulopoulos",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879750,
+   "player_id": 7056,
+   "player": "Nenad Tomović",
+   "before": "AM-Winger",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879763,
+   "player_id": 15959,
+   "player": "Nenad Krstičić",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879767,
+   "player_id": 23241,
+   "player": "William Vainqueur",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879778,
+   "player_id": 7009,
+   "player": "Édgar Osvaldo Barreto Cáceres",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879778,
+   "player_id": 15318,
+   "player": "Lazaros Christodoulopoulos",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879779,
+   "player_id": 7165,
+   "player": "Rodrigo Sebastián Palacio",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879783,
+   "player_id": 6947,
+   "player": "Miralem Pjanić",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879783,
+   "player_id": 6980,
+   "player": "Kevin Strootman",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879783,
+   "player_id": 7017,
+   "player": "Duván Esteban Zapata Banguera",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879794,
+   "player_id": 34565,
+   "player": "Anthony Mounier",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879795,
+   "player_id": 5465,
+   "player": "Ante Rebić",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879816,
+   "player_id": 6358,
+   "player": "Emil Krafth",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879816,
+   "player_id": 15780,
+   "player": "Francesco Totti",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879819,
+   "player_id": 7145,
+   "player": "Darko Lazović",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879819,
+   "player_id": 34355,
+   "player": "Riccardo Fiamozzi",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879826,
+   "player_id": 9903,
+   "player": "Yussif Raman Chibsah",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879835,
+   "player_id": 7462,
+   "player": "Aleandro Rosi",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879835,
+   "player_id": 27110,
+   "player": "Antonio Floro Flores",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3879838,
+   "player_id": 6990,
+   "player": "Milan Škriniar",
+   "before": "FB-WB",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879840,
+   "player_id": 7022,
+   "player": "Jesús Joaquín Fernández Sáez de la Torre",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879859,
+   "player_id": 7793,
+   "player": "Kevin Lasagna",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879863,
+   "player_id": 7002,
+   "player": "Rafael Tolói",
+   "before": "FB-WB",
+   "after": "CB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879866,
+   "player_id": 40447,
+   "player": "Gennaro Sardo",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3879874,
+   "player_id": 386641,
+   "player": "Stefano Mauri",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3890301,
+   "player_id": 5555,
+   "player": "Julian Brandt",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3890301,
+   "player_id": 8219,
+   "player": "Admir Mehmedi",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3890427,
+   "player_id": 3016,
+   "player": "Allan Saint-Maximin",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3890534,
+   "player_id": 7016,
+   "player": "Benedikt Höwedes",
+   "before": "CB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3890534,
+   "player_id": 11394,
+   "player": "Stefan Kießling",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3890550,
+   "player_id": 6309,
+   "player": "Tin Jedvaj",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900490,
+   "player_id": 16503,
+   "player": "Pedro Henrique Konzen Medina da Silva",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900492,
+   "player_id": 3121,
+   "player": "Moustapha Elhadji Diallo",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900494,
+   "player_id": 3184,
+   "player": "Enzo Crivelli",
+   "before": "FB-WB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900495,
+   "player_id": 10522,
+   "player": "Mehdi Mostefa Sbaa",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900501,
+   "player_id": 16418,
+   "player": "Adrien Regattin",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900509,
+   "player_id": 7347,
+   "player": "Pierre-Yves Polomat",
+   "before": "CB",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900522,
+   "player_id": 4257,
+   "player": "Yoan Cardinale",
+   "before": "FB-WB",
+   "after": "GK",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900536,
+   "player_id": 310534,
+   "player": "Louis Poggi",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3900552,
+   "player_id": 3363,
+   "player": "Marcus Coco",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900552,
+   "player_id": 3679,
+   "player": "Souleymane Camara",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3900553,
+   "player_id": 7375,
+   "player": "Theoson Jordan Siebatcheu",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900556,
+   "player_id": 401542,
+   "player": "Goran Karanović",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900558,
+   "player_id": 4258,
+   "player": "Ronaël Pierre-Gabriel",
+   "before": "AM-Winger",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900561,
+   "player_id": 3036,
+   "player": "Alexis Blin",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900574,
+   "player_id": 7301,
+   "player": "Lossémy Karaboué",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900583,
+   "player_id": 7376,
+   "player": "Yoann Court",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900584,
+   "player_id": 40700,
+   "player": "Mamadou N''Diaye",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900586,
+   "player_id": 6284,
+   "player": "Kolbeinn Sigþórsson",
+   "before": "DM-CM",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900596,
+   "player_id": 3405,
+   "player": "François Kamano",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900602,
+   "player_id": 7635,
+   "player": "Gaëtan Charbonnier",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900609,
+   "player_id": 5477,
+   "player": "Ousmane Dembélé",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900620,
+   "player_id": 2970,
+   "player": "Christian Kouakou Yao",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900628,
+   "player_id": 3018,
+   "player": "Giovanni-Guy Yann Sio",
+   "before": "CB",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900629,
+   "player_id": 4351,
+   "player": "Bouna Sarr",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3900635,
+   "player_id": 7363,
+   "player": "Diego Rigonato Rodrigues",
+   "before": "CB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901151,
+   "player_id": 3236,
+   "player": "Sergi Darder Moll",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901155,
+   "player_id": 3767,
+   "player": "Ellyes Joris Skhiri",
+   "before": "AM-Winger",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901157,
+   "player_id": 3408,
+   "player": "Thomas Touré",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901159,
+   "player_id": 4370,
+   "player": "Javier Matías Pastore",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901161,
+   "player_id": 4254,
+   "player": "Valentin Eysseric",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901172,
+   "player_id": 3114,
+   "player": "Emiliano Sala",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901173,
+   "player_id": 403155,
+   "player": "Mohamed Amine Chermiti",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901177,
+   "player_id": 17617,
+   "player": "Christopher Maboulou",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901179,
+   "player_id": 90746,
+   "player": "Alassane Touré",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901180,
+   "player_id": 3235,
+   "player": "Ludovic Blas",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901199,
+   "player_id": 18783,
+   "player": "Omenuke Mfulu",
+   "before": "CB",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901201,
+   "player_id": 15296,
+   "player": "Romain Alessandrini",
+   "before": "DM-CM",
+   "after": "FB-WB",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901203,
+   "player_id": 3151,
+   "player": "Jules Iloki",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901212,
+   "player_id": 4454,
+   "player": "Farès Bahlouli",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901213,
+   "player_id": 3018,
+   "player": "Giovanni-Guy Yann Sio",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901222,
+   "player_id": 3151,
+   "player": "Jules Iloki",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901222,
+   "player_id": 4380,
+   "player": "Guillaume Gillet",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "stoppage_near_tie"
+  },
+  {
+   "match_id": 3901226,
+   "player_id": 27014,
+   "player": "Deniz Hümmet",
+   "before": "AM-Winger",
+   "after": "ST",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901236,
+   "player_id": 3230,
+   "player": "Alassane Pléa",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901248,
+   "player_id": 401512,
+   "player": "Lionel Mathis",
+   "before": "ST",
+   "after": "DM-CM",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901249,
+   "player_id": 4909,
+   "player": "Jeremie Boga",
+   "before": "FB-WB",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901249,
+   "player_id": 16503,
+   "player": "Pedro Henrique Konzen Medina da Silva",
+   "before": "ST",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  },
+  {
+   "match_id": 3901251,
+   "player_id": 7635,
+   "player": "Gaëtan Charbonnier",
+   "before": "DM-CM",
+   "after": "AM-Winger",
+   "cause": "tie_rule"
+  }
+ ],
+ "season_group": [
+  {
+   "player_id": 3603,
+   "team_id": 30,
+   "competition_id": 2,
+   "player": "Mame Biram Diouf",
+   "team": "Stoke City",
+   "before": "AM-Winger",
+   "after": "ST"
+  },
+  {
+   "player_id": 4906,
+   "team_id": 145,
+   "competition_id": 7,
+   "player": "Arnold Bouka Moutou",
+   "team": "Angers",
+   "before": "AM-Winger",
+   "after": "FB-WB"
+  },
+  {
+   "player_id": 9404,
+   "team_id": 872,
+   "competition_id": 9,
+   "player": "Luca Caldirola",
+   "team": "Darmstadt 98",
+   "before": "FB-WB",
+   "after": "CB"
+  },
+  {
+   "player_id": 10530,
+   "team_id": 233,
+   "competition_id": 12,
+   "player": "Jules Olivier Ntcham",
+   "team": "Genoa",
+   "before": "DM-CM",
+   "after": "AM-Winger"
+  },
+  {
+   "player_id": 16462,
+   "team_id": 136,
+   "competition_id": 7,
+   "player": "Hatem Ben Arfa",
+   "team": "OGC Nice",
+   "before": "ST",
+   "after": "AM-Winger"
+  },
+  {
+   "player_id": 25345,
+   "team_id": 238,
+   "competition_id": 12,
+   "player": "Anderson Hernanes de Carvalho Andrade",
+   "team": "Inter Milan",
+   "before": "DM-CM",
+   "after": "AM-Winger"
+  },
+  {
+   "player_id": 32722,
+   "team_id": 2256,
+   "competition_id": 12,
+   "player": "Norbert Sándor Balogh",
+   "team": "Palermo",
+   "before": "AM-Winger",
+   "after": "ST"
+  },
+  {
+   "player_id": 40407,
+   "team_id": 137,
+   "competition_id": 7,
+   "player": "Steed Malbranque",
+   "team": "Lyon",
+   "before": "DM-CM",
+   "after": "AM-Winger"
+  },
+  {
+   "player_id": 401474,
+   "team_id": 136,
+   "competition_id": 7,
+   "player": "Kévin Gomis",
+   "team": "OGC Nice",
+   "before": "CB",
+   "after": "FB-WB"
+  }
+ ],
+ "primary_stint": [
+  {
+   "player_id": 34315,
+   "team_id": 1683,
+   "competition_id": 12,
+   "player": "Simone Colombi",
+   "team": "Carpi",
+   "before": true,
+   "after": false
+  },
+  {
+   "player_id": 34315,
+   "team_id": 2256,
+   "competition_id": 12,
+   "player": "Simone Colombi",
+   "team": "Palermo",
+   "before": false,
+   "after": true
+  }
+ ]
+}

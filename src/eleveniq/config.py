@@ -17,6 +17,16 @@ MIN_MINUTES_THRESHOLD: int = 900
 
 LONG_PASS_THRESHOLD_UNITS: int = 30
 
+# A playing period whose Half End is more than this many minutes before its
+# nominal end (45:00, 90:00, 105:00, 120:00) fails the build (period_too_short):
+# an abandoned or truncated match. A smaller shortfall is kept as recorded and
+# reported. See ADR 002 §31.1.
+PERIOD_SHORT_FAIL_MINUTES: float = 5.0
+
+# The two Half End events of one playing period (one per team) may differ by at
+# most this many minutes (1 s); a larger gap fails the build. See ADR 002 §31.1.
+HALF_END_AGREE_MINUTES: float = 1 / 60
+
 MIN_AERIAL_CONTESTS: int = 10
 
 # Maximum cumulative carry distance (StatsBomb units) allowed between a shooter's

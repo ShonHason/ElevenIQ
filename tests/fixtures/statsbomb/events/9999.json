@@ -55,6 +55,22 @@
     "period": 1
   },
   {
+    "id": "e9-p1",
+    "type": {"name": "Half End"},
+    "team": {"id": 101},
+    "minute": 45,
+    "second": 0,
+    "period": 1
+  },
+  {
+    "id": "e9-p1-b",
+    "type": {"name": "Half End"},
+    "team": {"id": 102},
+    "minute": 45,
+    "second": 0,
+    "period": 1
+  },
+  {
     "id": "e5",
     "type": {"name": "Block"},
     "player": {"id": 2001},
@@ -94,6 +110,15 @@
   {
     "id": "e9",
     "type": {"name": "Half End"},
+    "team": {"id": 101},
+    "minute": 90,
+    "second": 0,
+    "period": 2
+  },
+  {
+    "id": "e9-b",
+    "type": {"name": "Half End"},
+    "team": {"id": 102},
     "minute": 90,
     "second": 0,
     "period": 2

@@ -20,10 +20,11 @@ type).  ``find_dismissal_minute`` checks both sources in a single pass so
 whichever fires first (chronologically) is returned.
 
 The fix is applied in build_player_match: every dismissed player's stints are
-capped at the card minute (dismissal_minute, ADR 002 §3), and the quality
-report records, per dismissed player, the minutes with and without that cap.
-check_dismissed_player_minutes() is a standalone check (not called by the
-pipeline) that flags computed minutes still exceeding the card minute.
+capped at his exit (the card, his own substitution or an unpaired Player Off,
+whichever comes first; ADR 002 §31.2), and the quality report records, per
+dismissed player, the minutes with and without that cap. The independent check
+of the cap is spikes/verify_core_metrics.py (exit losses in its structural
+check, and base.dismissals).
 
 Missing timestamp handling
 --------------------------
@@ -43,8 +44,8 @@ DISMISSAL_CARDS: frozenset[str] = frozenset({"Red Card", "Second Yellow"})
 # Quality-report issue name for a dismissal event without minute/second.
 DISMISSAL_MISSING_TIMESTAMP = "dismissal_missing_timestamp"
 
-# A dismissed player's computed minutes may exceed the card minute by this
-# tolerance before we flag a mismatch (accounts for sub-minute precision loss).
+# A dismissed player's uncapped minutes may exceed the card's elapsed time by
+# this tolerance before the dismissal record calls them overcounted.
 DISMISSAL_TOLERANCE_MINUTES: float = 1.0
 
 
@@ -165,45 +166,4 @@ def check_dismissal_event_quality(events: list[dict], player_id: int) -> dict | 
                 "card_name": card_name,
                 "missing_fields": missing,
             }
-    return None
-
-
-def check_dismissed_player_minutes(
-    player_id: int,
-    player_name: str,
-    match_id: int,
-    computed_minutes: float,
-    events: list[dict],
-) -> dict | None:
-    """
-    Return a mismatch report if a dismissed player's computed minutes
-    significantly exceed their card minute, or None if no problem found.
-
-    A non-None return means the computed minutes credit too much playing
-    time, i.e. the dismissal cap (ADR 002 §3) was not applied.
-
-    Returns None (no mismatch reported) if find_dismissal_minute() returns
-    None — either no dismissal occurred or the event has missing timestamps
-    (use check_dismissal_event_quality() for the latter case).
-
-    Return dict keys:
-        match_id          int
-        player_id         int
-        player_name       str
-        computed_minutes  float
-        dismissal_minute  float
-        excess_minutes    float   (computed - dismissal, always > 0)
-    """
-    dismissal_minute = find_dismissal_minute(events, player_id)
-    if dismissal_minute is None:
-        return None
-    if computed_minutes > dismissal_minute + DISMISSAL_TOLERANCE_MINUTES:
-        return {
-            "match_id": match_id,
-            "player_id": player_id,
-            "player_name": player_name,
-            "computed_minutes": computed_minutes,
-            "dismissal_minute": dismissal_minute,
-            "excess_minutes": computed_minutes - dismissal_minute,
-        }
     return None

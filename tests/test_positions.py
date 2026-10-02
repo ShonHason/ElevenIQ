@@ -2,7 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import pytest
-from eleveniq.metrics.minutes import compute_player_minutes
+from eleveniq.metrics.minutes import PeriodClock, compute_player_minutes, parse_mm_ss
 from eleveniq.metrics.positions import (
     assign_position_group,
     compute_minutes_per_group,
@@ -14,6 +14,53 @@ from eleveniq.metrics.positions import (
     OUTFIELD_GROUPS,
     POSITION_GROUP_COLUMNS,
 )
+
+
+# ---------------------------------------------------------------------------
+# Adapter for the value tests below. They were written on the match-absolute axis
+# with no first-half stoppage: on a clock whose first half ends exactly at 45:00,
+# (1, 45:00) and (2, 45:00) are the same elapsed instant, so every value carries
+# over unchanged. Period-aware cases (stoppage, windows, overlaps, position rule)
+# are in tests/test_minutes.py.
+# ---------------------------------------------------------------------------
+
+def _clock(duration: float) -> PeriodClock:
+    return PeriodClock({1: 45.0, 2: duration})
+
+
+def _instant(minute: float | None):
+    if minute is None:
+        return None
+    return (1, minute) if minute < 45 else (2, minute)
+
+
+def _with_periods(stints: list[dict]) -> list[dict]:
+    out = []
+    for s in stints:
+        start, end = parse_mm_ss(s["from"]), s["to"] and parse_mm_ss(s["to"])
+        out.append({**s, "from_period": 1 if start < 45 else 2,
+                    "to_period": None if not s["to"] else (1 if end <= 45 else 2)})
+    return out
+
+
+def _kw(dismissal_minute, substitution_minute):
+    caps = [m for m in (dismissal_minute, substitution_minute) if m is not None]
+    return dict(exit_at=_instant(min(caps)) if caps else None, treatment_windows=())
+
+
+def _per_group(stints, match_duration, *, dismissal_minute, substitution_minute):
+    return compute_minutes_per_group(_with_periods(stints), _clock(match_duration),
+                                     **_kw(dismissal_minute, substitution_minute))
+
+
+def _per_raw(stints, match_duration, *, dismissal_minute, substitution_minute):
+    return compute_minutes_per_raw_position(_with_periods(stints), _clock(match_duration),
+                                            **_kw(dismissal_minute, substitution_minute))
+
+
+def _player(stints, match_duration, *, dismissal_minute, substitution_minute):
+    return compute_player_minutes(_with_periods(stints), _clock(match_duration),
+                                  **_kw(dismissal_minute, substitution_minute))
 
 
 # ---------------------------------------------------------------------------
@@ -191,12 +238,12 @@ class TestComputeMinutesPerGroup:
 
     def test_single_stint_full_match(self):
         stints = [self._stint("Center Back", "00:00", None)]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result == {"CB": pytest.approx(90.0)}
 
     def test_single_stint_sub(self):
         stints = [self._stint("Center Forward", "60:00", None)]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result == {"ST": pytest.approx(30.0)}
 
     def test_tactical_shift_same_group(self):
@@ -204,7 +251,7 @@ class TestComputeMinutesPerGroup:
             self._stint("Left Center Midfield", "00:00", "55:00"),
             self._stint("Left Defensive Midfield", "55:00", None),
         ]
-        result = compute_minutes_per_group(stints, match_duration=92.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=92.0, dismissal_minute=None, substitution_minute=None)
         assert result == {"DM-CM": pytest.approx(92.0)}
 
     def test_tactical_shift_different_groups(self):
@@ -212,38 +259,38 @@ class TestComputeMinutesPerGroup:
             self._stint("Center Midfield", "00:00", "70:00"),
             self._stint("Center Attacking Midfield", "70:00", None),
         ]
-        result = compute_minutes_per_group(stints, match_duration=92.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=92.0, dismissal_minute=None, substitution_minute=None)
         assert result["DM-CM"] == pytest.approx(70.0)
         assert result["AM-Winger"] == pytest.approx(22.0)
 
     def test_unused_sub_returns_empty(self):
-        assert compute_minutes_per_group([], match_duration=90.0, dismissal_minute=None, substitution_minute=None) == {}
+        assert _per_group([], match_duration=90.0, dismissal_minute=None, substitution_minute=None) == {}
 
     def test_dismissal_caps_open_stint(self):
         stints = [self._stint("Center Back", "00:00", None)]
-        result = compute_minutes_per_group(stints, match_duration=92.0, dismissal_minute=15.0, substitution_minute=None)
+        result = _per_group(stints, match_duration=92.0, dismissal_minute=15.0, substitution_minute=None)
         assert result == {"CB": pytest.approx(15.0)}
 
     def test_position_as_dict_handled(self):
         # Robustness: position stored as {"name": "..."} dict form
         stints = [{"position": {"name": "Right Wing"}, "from": "00:00", "to": None}]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result == {"AM-Winger": pytest.approx(90.0)}
 
     def test_unknown_position_goes_to_unknown_key(self):
         stints = [self._stint("Libero", "00:00", "90:00")]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result == {"UNKNOWN": pytest.approx(90.0)}
 
     def test_none_position_goes_to_unknown_not_crash(self):
         # StatsBomb JSON with "position": null — must not str(None) → "None"
         stints = [{"position": None, "from": "00:00", "to": "45:00"}]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result == {"UNKNOWN": pytest.approx(45.0)}
 
     def test_zero_length_stint_omitted(self):
         stints = [self._stint("Left Back", "45:00", "45:00")]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result == {}
 
     def test_explicit_to_after_dismissal_clamped(self):
@@ -253,21 +300,21 @@ class TestComputeMinutesPerGroup:
             self._stint("Right Center Back", "00:00", "66:43"),
             self._stint("Right Center Midfield", "66:43", None),
         ]
-        result = compute_minutes_per_group(stints, match_duration=95.0, dismissal_minute=56.17, substitution_minute=None)
+        result = _per_group(stints, match_duration=95.0, dismissal_minute=56.17, substitution_minute=None)
         assert sum(result.values()) == pytest.approx(56.17)
 
     def test_explicit_to_before_dismissal_unchanged(self):
         # Substituted off at 45:00, card at 60:00 — the 45-min stint must not be extended.
         stints = [self._stint("Center Back", "00:00", "45:00")]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=60.0, substitution_minute=None)
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=60.0, substitution_minute=None)
         assert result == {"CB": pytest.approx(45.0)}
 
-    def test_explicit_to_no_dismissal_not_clamped_by_match_duration(self):
-        # Without a dismissal, explicit to-values are trusted as-is even if they
-        # are fractionally above match_duration (e.g. substitution logged 1s late).
+    def test_explicit_to_after_the_whistle_is_clamped(self):
+        # ADR 002 §31.1: a `to` after its period's Half End is clamped by the clock;
+        # the pipeline fails the build on it (stint_end_after_period_end).
         stints = [self._stint("Left Back", "00:00", "90:05")]
-        result = compute_minutes_per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
-        assert result == {"FB-WB": pytest.approx(90 + 5 / 60)}
+        result = _per_group(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        assert result == {"FB-WB": pytest.approx(90.0)}
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +365,8 @@ _PLAYER_MATCH_PARQUET = (
 
 class TestMinutesConsistency:
     """
-    Verifies that the shared _iter_stint_contributions generator keeps
-    compute_minutes_per_group and compute_player_minutes in sync.
+    Verifies that the shared player_timeline keeps compute_minutes_per_group
+    and compute_player_minutes in sync.
     sum(group minutes) must equal total player minutes for any input.
     """
 
@@ -329,14 +376,14 @@ class TestMinutesConsistency:
     def test_starter_full_match(self):
         positions = [self._stint("Center Back", "00:00", None)]
         duration = 92.0
-        group_total = sum(compute_minutes_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
-        assert group_total == pytest.approx(compute_player_minutes(positions, duration, dismissal_minute=None, substitution_minute=None))
+        group_total = sum(_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
+        assert group_total == pytest.approx(_player(positions, duration, dismissal_minute=None, substitution_minute=None))
 
     def test_sub_on_halfway(self):
         positions = [self._stint("Center Forward", "60:00", None)]
         duration = 93.0
-        group_total = sum(compute_minutes_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
-        assert group_total == pytest.approx(compute_player_minutes(positions, duration, dismissal_minute=None, substitution_minute=None))
+        group_total = sum(_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
+        assert group_total == pytest.approx(_player(positions, duration, dismissal_minute=None, substitution_minute=None))
 
     def test_tactical_shift_two_groups(self):
         positions = [
@@ -344,18 +391,18 @@ class TestMinutesConsistency:
             self._stint("Center Attacking Midfield", "55:00", None),
         ]
         duration = 92.0
-        group_total = sum(compute_minutes_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
-        assert group_total == pytest.approx(compute_player_minutes(positions, duration, dismissal_minute=None, substitution_minute=None))
+        group_total = sum(_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
+        assert group_total == pytest.approx(_player(positions, duration, dismissal_minute=None, substitution_minute=None))
 
     def test_with_dismissal(self):
         positions = [self._stint("Left Back", "00:00", None)]
         duration = 90.0
         d_min = 45.0
         group_total = sum(
-            compute_minutes_per_group(positions, duration, dismissal_minute=d_min, substitution_minute=None).values()
+            _per_group(positions, duration, dismissal_minute=d_min, substitution_minute=None).values()
         )
         assert group_total == pytest.approx(
-            compute_player_minutes(positions, duration, dismissal_minute=d_min, substitution_minute=None)
+            _player(positions, duration, dismissal_minute=d_min, substitution_minute=None)
         )
 
     def test_with_substitution_off(self):
@@ -366,24 +413,24 @@ class TestMinutesConsistency:
         ]
         duration, s_min = 93.0, 37 + 2 / 60
         group_total = sum(
-            compute_minutes_per_group(positions, duration, dismissal_minute=None, substitution_minute=s_min).values()
+            _per_group(positions, duration, dismissal_minute=None, substitution_minute=s_min).values()
         )
-        player_total = compute_player_minutes(positions, duration, dismissal_minute=None, substitution_minute=s_min)
+        player_total = _player(positions, duration, dismissal_minute=None, substitution_minute=s_min)
         assert group_total == pytest.approx(player_total)
         assert group_total == pytest.approx(31 + 29 / 60)
 
     def test_dismissal_and_substitution_use_the_earlier_cap(self):
         positions = [self._stint("Left Back", "00:00", "80:00")]
         for d_min, s_min in ((40.0, 60.0), (60.0, 40.0)):
-            group_total = sum(compute_minutes_per_group(
+            group_total = sum(_per_group(
                 positions, 90.0, dismissal_minute=d_min, substitution_minute=s_min).values())
-            player_total = compute_player_minutes(
+            player_total = _player(
                 positions, 90.0, dismissal_minute=d_min, substitution_minute=s_min)
             assert group_total == pytest.approx(player_total) == pytest.approx(40.0)
 
     def test_unused_sub_both_zero(self):
-        group_total = sum(compute_minutes_per_group([], 90.0, dismissal_minute=None, substitution_minute=None).values())
-        assert group_total == pytest.approx(compute_player_minutes([], 90.0, dismissal_minute=None, substitution_minute=None))
+        group_total = sum(_per_group([], 90.0, dismissal_minute=None, substitution_minute=None).values())
+        assert group_total == pytest.approx(_player([], 90.0, dismissal_minute=None, substitution_minute=None))
 
     def test_explicit_to_past_dismissal_consistency(self):
         """Consistency holds when explicit to-values are clamped by the dismissal."""
@@ -395,9 +442,9 @@ class TestMinutesConsistency:
         duration = 95.0
         d_min = 56.17
         group_total = sum(
-            compute_minutes_per_group(positions, duration, dismissal_minute=d_min, substitution_minute=None).values()
+            _per_group(positions, duration, dismissal_minute=d_min, substitution_minute=None).values()
         )
-        player_total = compute_player_minutes(positions, duration, dismissal_minute=d_min, substitution_minute=None)
+        player_total = _player(positions, duration, dismissal_minute=d_min, substitution_minute=None)
         assert group_total == pytest.approx(player_total)
         assert group_total == pytest.approx(d_min)
 
@@ -408,8 +455,8 @@ class TestMinutesConsistency:
             self._stint("Left Wing", "70:00", None),
         ]
         duration = 93.0
-        raw_total = sum(compute_minutes_per_raw_position(positions, duration, dismissal_minute=None, substitution_minute=None).values())
-        group_total = sum(compute_minutes_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
+        raw_total = sum(_per_raw(positions, duration, dismissal_minute=None, substitution_minute=None).values())
+        group_total = sum(_per_group(positions, duration, dismissal_minute=None, substitution_minute=None).values())
         assert raw_total == pytest.approx(group_total)
 
 
@@ -421,7 +468,7 @@ class TestComputeMinutesPerRawPosition:
     """
     compute_minutes_per_raw_position preserves the StatsBomb position name
     as the key (not the group).  Its docstring guarantees sum of values
-    equals sum(compute_minutes_per_group(...).values()) for the same inputs.
+    equals sum(_per_group(...).values()) for the same inputs.
     """
 
     def _stint(self, position: str, from_str: str, to_str=None) -> dict:
@@ -429,13 +476,13 @@ class TestComputeMinutesPerRawPosition:
 
     def test_empty_positions_returns_empty_dict(self):
         # Docstring: "Returns an empty dict for players who never took the field."
-        result = compute_minutes_per_raw_position([], match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_raw([], match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result == {}
 
     def test_keys_are_raw_position_names_not_groups(self):
         # Center Back → group CB, but the raw key must be "Center Back".
         stints = [self._stint("Center Back", "00:00", None)]
-        result = compute_minutes_per_raw_position(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_raw(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert "Center Back" in result
         assert "CB" not in result
 
@@ -445,7 +492,7 @@ class TestComputeMinutesPerRawPosition:
             self._stint("Defensive Midfield", "00:00", "60:00"),
             self._stint("Center Midfield", "60:00", None),
         ]
-        result = compute_minutes_per_raw_position(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_raw(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert "Defensive Midfield" in result
         assert "Center Midfield" in result
         assert result["Defensive Midfield"] == pytest.approx(60.0)
@@ -458,14 +505,14 @@ class TestComputeMinutesPerRawPosition:
             self._stint("Right Back", "45:00", "75:00"),
             self._stint("Left Back", "75:00", None),
         ]
-        result = compute_minutes_per_raw_position(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
+        result = _per_raw(stints, match_duration=90.0, dismissal_minute=None, substitution_minute=None)
         assert result["Left Back"] == pytest.approx(45.0 + 15.0)
         assert result["Right Back"] == pytest.approx(30.0)
 
     def test_dismissal_clamping_applied(self):
         # Same dismissal clamping as compute_minutes_per_group must be applied.
         stints = [self._stint("Center Back", "00:00", None)]
-        result = compute_minutes_per_raw_position(
+        result = _per_raw(
             stints, match_duration=90.0, dismissal_minute=30.0, substitution_minute=None
         )
         assert result == {"Center Back": pytest.approx(30.0)}
@@ -509,15 +556,55 @@ def test_no_unknown_minutes_in_season_output():
 
 
 @pytest.mark.parametrize("fn", [compute_minutes_per_group, compute_minutes_per_raw_position])
-def test_substitution_minute_is_required(fn):
+@pytest.mark.parametrize("missing", ["exit_at", "treatment_windows"])
+def test_exit_and_windows_are_required(fn, missing):
     # A forgotten argument must not silently give uncapped minutes (plan 004 H3a).
-    with pytest.raises(TypeError, match="substitution_minute"):
-        fn([{"from": "00:00", "to": None, "position": "Center Back"}], 90.0,
-           dismissal_minute=None)
+    kwargs = {"exit_at": None, "treatment_windows": ()}
+    del kwargs[missing]
+    stints = [{"from": "00:00", "from_period": 1, "to": None, "position": "Center Back"}]
+    with pytest.raises(TypeError, match=missing):
+        fn(stints, _clock(90.0), **kwargs)
 
 
-@pytest.mark.parametrize("fn", [compute_minutes_per_group, compute_minutes_per_raw_position])
-def test_dismissal_minute_is_required(fn):
-    with pytest.raises(TypeError, match="dismissal_minute"):
-        fn([{"from": "00:00", "to": None, "position": "Center Back"}], 90.0,
-           substitution_minute=None)
+# ---------------------------------------------------------------------------
+# ADR 002 §31.4: Σ minutes_<group> = minutes_played on the period clock, also
+# with stoppage, overlaps, reversed stints, treatment windows and an exit.
+# (TestMinutesConsistency above runs only on a 45:00 first half, no windows.)
+# ---------------------------------------------------------------------------
+
+def _pa_stint(frm: float, fp: int, to: float | None = None, tp: int | None = None,
+              position: str = "Center Back", reason: str = "Starting XI") -> dict:
+    def t(m: float) -> str:
+        return f"{int(m):02d}:{round((m - int(m)) * 60):02d}"
+    return {"position": position, "from": t(frm), "from_period": fp,
+            "to": None if to is None else t(to), "to_period": tp, "start_reason": reason}
+
+
+class TestGroupSumOnPeriodClock:
+    CLOCK = PeriodClock({1: 47.0, 2: 93.0})   # 47 + 48 = 95 min
+
+    @pytest.mark.parametrize("positions, exit_at, windows, expected", [
+        # Ramsey/Pléa shape: reversed stint marks CF for the second half; then
+        # a window (2, 60)-(2, 62) and an exit at (2, 85) both come out of ST.
+        ([_pa_stint(0, 1, 46.5, 1),
+          _pa_stint(46, 2, 46.5, 1, "Center Forward", "Tactical Shift"),
+          _pa_stint(46.5, 1, position="Left Back", reason="Tactical Shift")],
+         (2, 85.0), [((2, 60.0), (2, 62.0))],
+         {"CB": 46.5, "FB-WB": 1.5, "ST": 37.0}),
+        # Overlap counted once, latest start gives LW from (2, 48); a window in
+        # the first half comes out of DM-CM.
+        ([_pa_stint(0, 1, 50, 2, "Center Midfield"),
+          _pa_stint(48, 2, position="Left Wing", reason="Tactical Shift")],
+         None, [((1, 10.0), (1, 12.0))],
+         {"DM-CM": 48.0, "AM-Winger": 45.0}),
+        # Dismissal in first-half stoppage.
+        ([_pa_stint(0, 1, position="Goalkeeper")], (1, 46.0), [], {"GK": 46.0}),
+    ], ids=["reversed_window_exit", "overlap_window", "stoppage_card"])
+    def test_group_raw_and_total_agree(self, positions, exit_at, windows, expected):
+        kw = dict(exit_at=exit_at, treatment_windows=windows)
+        groups = compute_minutes_per_group(positions, self.CLOCK, **kw)
+        raw = compute_minutes_per_raw_position(positions, self.CLOCK, **kw)
+        total = compute_player_minutes(positions, self.CLOCK, **kw)
+        assert groups == pytest.approx(expected)
+        assert sum(groups.values()) == pytest.approx(total)
+        assert sum(raw.values()) == pytest.approx(total)

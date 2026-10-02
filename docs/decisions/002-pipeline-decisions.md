@@ -127,6 +127,10 @@ with `from_period=2` is only coherent as match-absolute, not within-period).
 
 ### Match duration
 
+> **Superseded by §31 (plan 004 H4b).** `match_duration` is now the elapsed playing
+> time on the Half End clock (§31.1), and a dismissal after the match end is
+> report-only (§31.2). The text below describes the pre-H4 pipeline.
+
 `compute_match_duration(events)` = max of `event["minute"] + event["second"] / 60`
 across all events with `period ≤ 4`. Period 5 (shootout) excluded. **Amended
 2026-09-29 (plan 004 H1.6):** there is no 90.0 fallback. The `period` key is required
@@ -146,6 +150,10 @@ This captures stoppage time and extra time automatically. It represents the last
 seconds in edge cases (systematic but negligible per match).
 
 ### Player minutes
+
+> **Superseded by §31 (plan 004 H4b):** `compute_player_minutes(positions, clock, *,
+> exit_at, treatment_windows)`; the minutes are the union of the stints on the period
+> clock (§31.4). The text below describes the pre-H4 pipeline.
 
 `compute_player_minutes(positions, match_duration, *, dismissal_minute, substitution_minute)`:
 - Both keywords are **required, with no default** (plan 004 H3a): a forgotten argument
@@ -283,7 +291,9 @@ period-aware clock (same stints and exit caps, each period ending at its last ev
   period 2 on the match-absolute axis.
 - Decision (2026-10-01): docs only, no code change. The limit is systematic (below).
 
-**Known limits.**
+**Known limits.** *(Superseded by §31, plan 004 H4b: first-half stoppage is now
+credited, and the AC Milan 3879549 collision no longer exists. The reversed-stint table
+above stays as history.)*
 - **First-half stoppage time cannot be represented.** Period 2 always starts at
   45:00, so on the match-absolute axis every player on the pitch at the end of the
   first half loses its stoppage time. In the Bale-type cases the treatment-return
@@ -370,7 +380,9 @@ gives a false `on_pitch_count_exceeded`. This is report-only and 0 in 2015/16, a
 pinned by `test_stint_end_without_substitution_event_then_card_lowers_allowed`. On a
 new source, investigate any `on_pitch_count_exceeded` for this pattern first.
 
-**Exit order differs from `stint_end_cap` (pinned, not aligned).** The check takes the
+**Exit order differs from `stint_end_cap` (pinned, not aligned).** *(Superseded by
+§31.2, plan 004 H4b: `stint_end_cap` now takes the earliest exit by instant, so the two
+agree; `TestOnPitchExcessEdges` pins the agreement.)* The check takes the
 earlier exit by `(period, minute)`; `stint_end_cap`, which caps the stored minutes, takes
 it by match-absolute minute. They disagree only when one exit is in first-half stoppage
 (e.g. 46:30, period 1) and the other in period 2 before 46:30. That is 0 cases in
@@ -1148,6 +1160,11 @@ meaningful combined-season data.
 must be recorded in this ADR (extend §6 or add a new section) before any
 percentile computation reads `meets_min_minutes`.
 
+**Minutes definition (plan 004 H4).** Since H4b, `minutes_played` is period-aware and
+counts all stoppage time (§31). So 900 minutes is about 840 (PL) to 861 (La Liga) nominal
+minutes (§31, Definition note), and 11 pool rows crossed the gate upward in H4, none
+downward (§31.7). Whether to keep 900 is an M4 decision.
+
 `player_season_minutes_total` sums a player's stints **within one competition**
 only. Minutes in another league in the same season are not included; see §29.
 
@@ -1700,10 +1717,11 @@ cohort question (ADR 003 §1).
   3 players twice, because both of their league rows have ≥ 900 minutes: Wahbi Khazri
   (PL 1,105 / L1 1,623), Abdoulaye Doucouré (L1 997 / LL 1,207) and Lamine Koné
   (PL 1,379 / L1 1,606). Any global cohort must deduplicate or decide explicitly.
-- **8 players have ≥ 900 minutes across leagues but no single row ≥ 900:** Mario Lemina,
-  Abdelhamid El Kaoutari, Mario Suárez, Alhassane Bangoura, Mauro Zárate, Timm Klose,
-  Alessandro Diamanti, Mevlüt Erdinç. The last two sums include observed-only
-  Bundesliga minutes. This feeds the M4 minutes-gate decision (§17).
+- **5 players have ≥ 900 minutes across leagues but no single row ≥ 900** (updated
+  2026-10-02 for the §31 minutes; 8 before H4): Mario Lemina, Abdelhamid El Kaoutari,
+  Mario Suárez, Alhassane Bangoura, Mauro Zárate. Timm Klose, Mevlüt Erdinç and
+  Alessandro Diamanti left the list: each now has ≥ 900 on one pool row (§31.7). This
+  feeds the M4 minutes-gate decision (§17).
 - The `build_player_season` `__main__` top-5 diagnostic is filtered on
   `in_percentile_pool` but not deduplicated across leagues.
 
@@ -1765,3 +1783,437 @@ the data: `"No Touch"`, and the positions "Attacking Midfield", "Defensive Midfi
 The fix changes `shots_on_target` in 127 player-match rows and 117 season rows. It also
 changes `shots_on_target_p90` in 100 of the 1,250 pool rows (median +0.040, max +0.153).
 No other column changed.
+
+---
+
+## 31. Period-Aware Minutes (plan 004 H4)
+
+**Status (2026-10-02):** implemented. Rule accepted 2026-10-01 (stats-reviewer: approve
+with conditions, folded in below).
+- **H4a:** the independent re-implementation is `spikes/verify_core_metrics.py`, and
+  the reference totals are written.
+- **H4b:** the pipeline (`metrics/minutes.py`, `metrics/positions.py`,
+  `build_player_match.py`) and the before/after numbers (§31.7).
+
+§31 supersedes §3 "Match duration", "Player minutes", "Known limits" and the on-pitch
+exit-order note; §3 keeps the substitution and dismissal rules, now ordered by instant.
+
+**Why.** Lineup times are match-absolute, and period 2 restarts at 45:00. So on the §3
+axis, every player on the pitch at the end of the first half loses its stoppage time:
+1.40% of league minutes (PL 2.17%, La Liga 0.89%; §3 "Known limits"). The per-90s are
+biased between leagues and between players within a league. Minutes move to a clock
+that runs through each period in turn.
+
+### 31.1 Instants and the period clock
+- An **instant** is `(period, minute)`.
+  - For an event: `(period, minute + second / 60)`.
+  - For a lineup stint bound: `(from_period, parse(from))` or `(to_period, parse(to))`.
+  - Instants are ordered by period, then minute.
+- **Playing periods** are 1–4. Period 5 (the shootout) is excluded as before.
+  - `PERIOD_START = {1: 0, 2: 45, 3: 90, 4: 105}`.
+  - Nominal ends: `{1: 45, 2: 90, 3: 105, 4: 120}`.
+- **Period end.** `end[p]` is the instant of period p's `Half End` event, the referee's
+  whistle, not its last event.
+  - Events after Half End stay in every metric, but they extend no minutes.
+  - 2015/16: in 8 first halves and 13 second halves the last event follows Half End
+    (max 2.63 min). These are post-whistle cards, ball receipts and two Player On
+    events.
+- **The match fails (raises)** when:
+  - a playing period has events but no Half End;
+  - a playing period does not have **exactly two** Half End events, **one per team**
+    (two different `team.id` values; a missing team id fails too). Every period of
+    all 1,551 matches in 2015/16 has exactly two;
+  - the Half End events of one period differ by more than `HALF_END_AGREE_MINUTES`
+    (config, 1 s);
+  - the playing periods present are not exactly 1..max;
+  - it has no period 1–4 event at all (no playing time; a named failure, not a crash).
+- **Period length.** `length(p) = end[p] − PERIOD_START[p]`, as recorded, because lineup
+  times share this clock.
+  - A period that ends before its nominal end is reported (`period_end_before_nominal`,
+    report-only; 31 in 2015/16, at most 1.22 min short).
+  - A period that ends more than `PERIOD_SHORT_FAIL_MINUTES` (config, default 5.0) short
+    fails the build (`period_too_short`). This catches abandoned or truncated matches.
+- **Elapsed time.** `elapsed((p, m)) = Σ_{q<p} length(q) + clamp(m, PERIOD_START[p], end[p]) − PERIOD_START[p]`.
+- **Stoppages and halts count as playing time.** The clock runs from kick-off to the
+  whistle, so every interruption inside a period is credited to the players on the
+  pitch.
+  - Examples: Leverkusen–Dortmund 3890456 has a 12.17 min second-half stoppage,
+    including a 12.05 min gap between events (the halt when the Leverkusen coach was
+    sent to the stands). Aston Villa–Watford 3754178 has 11.18 min.
+  - This is intended. ElevenIQ has no reliable "ball in play" signal, and §3 already
+    counted second-half stoppage the same way.
+  - The cost: longer stoppages lower per-90s. PL per-90s are about 2.4% lower than La
+    Liga's from stoppage length alone. That matters only for global percentiles.
+- **Match end.** `match_end = (last period, end[last])`.
+- **`match_duration`** = Σ length(p), i.e. **elapsed playing time**. Before H4 it was the
+  last event's match-absolute minute. The column keeps its name.
+- **Clamp guards (fail the build).** The clamp must not hide a bad stint.
+  - `stint_end_after_period_end`: a stint `to` later than `end[to_period]`.
+  - `stint_time_before_period_start`: a stint `from` or `to` earlier than its period's
+    `PERIOD_START`.
+  - Both are 0 in 2015/16. A stint that *starts* after its period's end is clamped to
+    that end and reported (`stint_after_period_end`, report-only; Bale 3825739 and
+    Dembélé 3900571, both returning after the whistle).
+- **Extra time.** The constants for periods 3–4 are verified only by unit tests: the
+  2015/16 data has no extra time.
+
+### 31.2 Exits
+A player's **exit** is the earliest, by instant, of:
+1. his first dismissal: a Red Card or Second Yellow, from `bad_behaviour` or
+   `foul_committed` (§3), in event-index order;
+2. his first `Substitution` event as the player taken off (§3, H2);
+3. **an unpaired `Player Off`:** a `Player Off` by him with no later `Player On` by him,
+   in event-index order. The `permanent` and `off_camera` labels are ignored; only the
+   pairing counts.
+   - Weber 3900512 is labelled permanent but returns, and his Off is paired.
+   - Any event by the player after his unpaired Off fails the build
+     (`event_after_permanent_off`; 0 in 2015/16), **except two event types that do not
+     need him on the pitch:**
+     - a **`Bad Behaviour`** event (a card of any colour), because a card can be shown
+       to a player who is off the pitch;
+     - **his own `Substitution`** (he is the event's player, the one taken off). An
+       injured player who leaves and is then formally replaced is a normal pattern.
+       His exit stays the Off, the earlier instant. In 2015/16 all 588 Substitutions
+       that follow the same player's Player Off have a Player On between them, so the
+       case does not occur.
+
+     Every other event type still fails, **including `Foul Committed`**, even with a
+     card: a foul needs the player on the pitch. Decided 2026-10-02; it makes 31.2,
+     31.3 and the exit loss in 31.6 agree.
+   - This closes the §3 "Ligue 1 residual": Boufal 3901155 and Balmont 3901151, and
+     also Cerci 3879796 (Serie A), who was not listed there.
+
+Every stint end is capped at the exit. With the exit taken by instant order,
+`stint_end_cap` and the on-pitch check (§3) no longer order exits differently.
+
+**Exits in an interval.**
+- A dismissal after a non-final period's end (a card during the interval) is clamped to
+  that period's end and reported (`dismissal_after_period_end`, report-only).
+- A dismissal after `match_end` is clamped to `match_end` and reported
+  (`dismissal_after_match_end`). It is **report-only from H4**; it used to fail the
+  build. A post-match red card is a real football event, and it changes no minutes.
+- Both are 0 in 2015/16.
+
+### 31.3 Treatment windows
+- A **treatment window** pairs a `Player Off` with the same player's next `Player On`, in
+  event-index order. Its time is subtracted from his stints.
+- Lineups already split stints at almost all of the 1,535 windows in 2015/16. Only 7
+  windows fall inside a stint, e.g. Shaqiri 3754339 (2.0 min) and Sammarco 3879602 (the
+  §3 artefact). No player has an event strictly inside his own window.
+- **A dismissal during a window** caps at the card. If the player has no `Player On`
+  before the card, the Off is unpaired, so the exit is the Off, the earlier instant.
+  Such a card is a `Bad Behaviour` event, which 31.2 exempts from
+  `event_after_permanent_off`, so the case is valid and does not fail the build. The
+  same holds when the player is then substituted: his own Substitution is exempt too,
+  and the exit loss runs from the Off to that Substitution (31.6).
+- **Two `Player Off` events in a row** by one player, with no `Player On` between them,
+  fail the build. The pairing would be ambiguous. 0 in 2015/16.
+- **A reversed window** (its `Player On` earlier in elapsed time than its `Player Off`,
+  e.g. events out of timestamp order) fails the build. Subtracting it would remove
+  nothing, and the leftover would be misreported as `overlapping_stints`. 0 of the
+  1,535 windows in 2015/16.
+- **The on-pitch check (§3) does not subtract windows.** Under the Laws, a player off for
+  treatment still counts on his team's side. The check does use the exit above, unpaired
+  Off included.
+
+### 31.4 Stint intervals, union and position
+- **Stint interval.** For each stint:
+  - `start = (from_period, from)`;
+  - `end = (to_period, to)`, or `match_end` when `to` is empty;
+  - `end = min(end, exit)`, then both ends are converted with `elapsed()`;
+  - the treatment windows (converted the same way) are subtracted;
+  - an empty or negative piece contributes nothing. A reversed-period stint
+    (`from_period > to_period`) always ends up empty.
+- **`minutes_played`** is the length of the **union** of the player's pieces: a player
+  cannot be on the pitch twice.
+  - On the period-aware clock, 14 player-matches in 2015/16 have overlapping stints
+    (15.33 min in total, max 3.02).
+  - Each is reported (`overlapping_stints`, report-only), with the minutes counted once.
+- **Position at elapsed time t** (inside the union): among the stints with
+  `elapsed(start) ≤ t`, the position of the one with the greatest `elapsed(start)`.
+  - Two stints with the same elapsed start but different start instants (a clamped
+    first-half start vs the second-half kick-off): the later instant wins.
+  - **Two stints with the same start instant: a stint whose `start_reason` is a
+    Tactical Shift wins; otherwise the one listed first in the lineup wins** (decided
+    2026-10-02 and approved by the stats-reviewer).
+    - **The cases.** There are 386 same-instant groups in 2015/16 (385 pairs and one
+      triple), almost all a substitute coming on with a simultaneous Tactical Shift.
+      StatsBomb usually lists a zero-length stint with the shift's position first, then a
+      stint from the same instant in the replaced player's slot. Once (Ravel Morrison
+      3878553) it lists them in the reverse order.
+    - **Why.** A shift at the same instant describes the shape *after* the substitution,
+      so the shift's position applies. The player's events agree.
+    - **Rejected alternatives.**
+      - "Listed first" alone differs only in Ravel, whom it gives a wrong label for the
+        whole match (0/126 events agree).
+      - The later stint, as the pre-H4 pipeline did, puts a different match-level group on
+        202 player-matches (stats-reviewer, 2026-10-02). One example is Chaigneau 3829440, a goalkeeper the pipeline
+        credited with 90.7 min as Right Midfield; he is a GK throughout under this rule.
+        **Resolved in H4b:** the pipeline now credits him 91.75 min as GK (H3b: 90.68
+        Right Midfield), and the case is in `spikes/expected_position_flips.json`
+        (cause `tie_rule`).
+  - Reversed-period stints take part: their `from` still marks a position change.
+  - **The position comes from the latest-starting stint even if that stint has already
+    ended** (or is empty), while an earlier stint still covers t. This is intended. A
+    lineup stint's `from` records when a position change happened, and that is
+    reliable. Its `to` is what breaks around reversed-period and same-instant stints.
+    Where stints overlap, the earlier one that is still "open" carries the outdated
+    position. Taking the latest start is what matches the events: Ramsey, Pléa and Ben
+    Arfa (overlaps), and 99.97–99.999% per-event agreement in every league. It only
+    matters in the 14 overlap player-matches; elsewhere the latest-starting stint is
+    the one covering t.
+  - StatsBomb applied second-half Tactical Shifts before first-half-stoppage shifts, in
+    match-absolute order. So the reversed stint carries the true second-half position.
+  - Checked against the players' own event positions: Ramsey 3754217 (DM-CM in p2),
+    Pléa 3829416 (ST), Ben Arfa 3829416.
+- **Group minutes.** `minutes_<group>` sums the union time by the group (§4) of the
+  position at t, so Σ groups = `minutes_played`. `position_raw` uses the same timeline.
+
+### 31.5 Bounds
+- **Per player:** `minutes_played ≤ match_duration + 1e-6` (§3, unchanged).
+- **Per team, per period:** Σ over players of the union time inside period p
+  ≤ `11 × length(p) + 1e-6`. Otherwise `team_minutes_exceed_ceiling` (with `period`)
+  fails the build.
+  - The clamp makes the per-player guard almost unreachable, so this is the main bound,
+    together with the clamp guards in 31.1.
+- **Dismissal record** (quality report, per dismissed player): the uncapped minutes are
+  `minutes_overcounted_without_fix` when they exceed the elapsed time from his entry
+  (his first credited instant, `entry_elapsed`) to the card, plus
+  `DISMISSAL_TOLERANCE_MINUTES`. Measuring from kick-off would miss an uncapped
+  substitute: on at 60, sent off at 70 and credited to 90 has 30 min, under the card's
+  70 but over its 10-min span. The integration test
+  `test_no_dismissed_player_minutes_above_card_minute` applies the same bound to the
+  stored minutes, from the raw Half End events and lineups.
+
+### 31.6 Independent check (H4a)
+`spikes/verify_core_metrics.py` re-implements 31.1–31.5 from this text, with no
+`eleveniq` imports. It writes `core.minutes_played` and `core.minutes_<group>` (league
+totals). It checks:
+- **per team, per period:** the ceiling in 31.5;
+- **per league:** summed minutes ≈ Σ(11 × match_duration) − exit losses − treatment
+  windows. An exit loss counts, on the elapsed clock, only for a dismissal or unpaired Off
+  that comes before the player's own substitution: it is (that substitution, or
+  match_end when there is none) − exit.
+  The tolerance is 0.001% of the league's minutes. The observed gaps are 0.0000–0.0005%:
+  the rule reconciles almost exactly once treatment windows are counted.
+  - A treatment window is clipped at the player's exit, so a red card inside a window
+    that later closes (Player Off, card, Player On) does not deduct the time after the
+    card twice (H4b; 0 cases in 2015/16, unit-tested).
+  - **The tolerance (1e-5) was set from the observed 2015/16 figures** (the largest gap
+    is 4.15 min, Serie A). A future failure is to be investigated, not loosened.
+  - **Most of Serie A's gap is Milinković-Savić, Lazio 3879637.** His Player Off is at
+    (1, 44:27) and his Player On at (1, 45:16), but the lineup resumes only at
+    (2, 45:00). So he is credited nothing from 45:16 to the 48:47 whistle, while 11 of
+    his events fall in that span. Whether a Player On should resume a player's time when
+    the lineup does not is queued for M4 (docs/milestones.md).
+- **events_outside_credited_time (report-only, H4b):** each period 1–4 event by a player
+  whose instant lies outside his credited time (the union of his pieces, closed at both
+  ends). Exempt are the types that do not need him on the pitch: `Bad Behaviour`, his
+  own `Substitution`, `Player Off` and `Player On`. Counted per event. 2015/16: 15
+  (PL 3, La Liga 1, Serie A 11). The Serie A 11 are Milinković-Savić's; the other 4 are
+  single `Ball Receipt*` events stamped (1, 0:00) by first-half substitutes who came on
+  between 24:19 and 35:30 (Caulker 3754028, Pienaar 3754163, Navas 3754258, Varane
+  3825661): mistimed events, not a minutes error.
+- **GK identity:** a team has exactly one goalkeeper on the pitch at any time, so league
+  GK minutes are about 2 × Σ match_duration, within 0.05%. Observed: 0.000–0.018% short,
+  from the following:
+  - 16 team-matches have a GK gap of up to 3.25 min: GK treatment windows and GK
+    substitutions with a gap.
+  - One team-match has an excess: Bournemouth 3754157, 2.27 min, with two goalkeepers.
+    Two Tactical Shift events at (2, 45:00) swap Distin and Allsop, the second
+    reverting the first. The lineup keeps the first, so Distin is in goal until 47:16
+    while Allsop also is. This is pattern B below, and under the tactics check's
+    5-minute threshold.
+
+  The check shares the Clock with the implementation, but not the stint arithmetic.
+- **event-position oracle:** in every match, each positioned event of a player is
+  compared with his timeline group at the event's instant. Only events between his
+  first stint start and his exit count.
+  - A player-match with less than 90% agreement fails unless it is listed below.
+  - League-wide agreement is 99.97–99.999%. A dominant-group comparison was tried first
+    and dropped: it failed on genuine multi-position players (Borja Valero and Frara,
+    3879602).
+  - With the later-stint tie rule instead, the overall agreement was 99.76%, with 268
+    player-matches below 90%.
+- **tactics-timeline check (minutes):** each player's position timeline is rebuilt from
+  the events alone, in event-index order:
+  - the `tactics.lineup` of the Starting XI and Tactical Shift events;
+  - for a substitute, the replaced player's position at his Substitution event.
+
+  The lineup timeline is compared with it minute by minute. A player-match with more
+  than 5 disagreeing minutes fails unless it is listed below. In 2015/16, 321 of
+  3,232,402 minutes disagree, and the only player-matches over 5 min are the
+  exceptions below.
+- **Limit of both checks:** event positions, tactics and lineups all come from
+  StatsBomb's tactics feed. So the checks prove that these agree with each other, not
+  that they are true. A wrong Starting XI formation would pass both.
+
+**Exceptions (9 player-matches, 2015/16).** All are lineup errors around Tactical
+Shifts, each for part of the match. Each is confirmed against the team's Tactical Shift
+events, which agree with the player's events. No rule is added for them yet; the option
+is queued for M4 (docs/milestones.md).
+
+| Pattern | Match | Player | Lineup | Events / Tactical Shift event |
+|---|---|---|---|---|
+| B. Two shifts at one instant | 3754226 | Henderson, Coutinho, Firmino, Benteke, Lallana (Liverpool) | Two Tactical Shift events at (1, 3:52) and two at (2, 45:00), the second reverting the first. The lineup applies the first: e.g. Henderson Left Midfield from 3:52 to half-time. | Events stay in the original positions (Henderson Right Defensive Midfield, 131 events). Wrong for 3:52 to half-time. Its 2nd-half stints are corrected by the first-listed rule. |
+| C. Shift back to the slot has no stint | 3900509 | Polomat (Saint-Étienne) | Left Back zero-length, then Left Center Back from the sub at 53:03 | Shift events: LB at 53:03, LCB at 67:05. Events: LB 28, LCB 62. The lineup has no stint for 67:05, so LB is credited to the end. |
+| C | 3829474 | Ketkeophomphone (Angers) | Right Wing zero-length, then Center Forward from 45:00 | Shift: RW at 45:00, CF at 63:28. Events: RW 38, CF 55. |
+| C | 3879816 | Totti (Roma) | Center Forward zero-length, then CAM from 45:00 | Shift: CF at 45:00, CAM at 70:33. Events: CF 86, CAM 65. |
+| C | 3878543 | Hernanes (Inter) | CAM zero-length, then Right Center Midfield from 45:00 | Shift: CAM at 45:00, RCM at 85:13. Events: CAM 92, RCM 17. |
+
+- **Pattern A** (the same-instant order reversed, Ravel Morrison 3878553) is resolved
+  by the Tactical Shift tie rule in 31.4.
+- **Pattern B:** there are 6 team-instants with two or more Tactical Shift events in
+  2015/16.
+- **Pattern C mechanism:** a later Tactical Shift moves the substitute back to his
+  sub-on slot position. The lineup's sub-on stint already carries that position, so
+  StatsBomb emits no new stint, and the shift position is credited until the end. This is
+  a side effect of the same-instant ordering, not missing data at random.
+- **The match-level `position_group` stays wrong in 4 player-matches:**
+
+  | Player-match | Pipeline label | Events say |
+  |---|---|---|
+  | Henderson 3754226 | AM-Winger (43.2 vs 19.5 min) | all DM-CM |
+  | Coutinho 3754226 | DM-CM (43.2 vs 41.5 min) | all AM-Winger |
+  | Polomat 3900509 | FB-WB | 62 of 90 events CB |
+  | Ketkeophomphone 3829474 | AM-Winger | 55 of 93 events ST |
+- **Patterns B and C** would be fixed by taking positions from the `Tactical Shift`
+  events instead of the lineup stints. This is an option for M4, not adopted.
+
+The before/after is §31.7.
+
+### 31.7 Before/after (H4b, 2026-10-02)
+Source: `spikes/period_aware_before_after.py` (no eleveniq imports). It compares the H3b
+output (`data/interim/h3b_snapshot/`) with the H4 rebuild and decomposes every row's
+change by re-running `spikes/verify_core_metrics.py` with one rule toggled at a time.
+
+**Pipeline vs spike.** In all 43,044 player-matches of the 5 leagues, `minutes_played`,
+the six `minutes_<group>` columns and `match_duration` agree exactly (max |diff| 0.0).
+**This is not independent evidence:** the pipeline was written after the spike and
+follows the same algorithm (elementary segments, latest-start marker), so the match shows
+that both code the same reading of this ADR. The independent evidence is still the
+structural reconciliation (league gap ≤ 0.0005%), the GK identity (≤ 0.018% short), the
+event-position oracle (99.97–99.999%) and the tactics-timeline check (31.6).
+
+**Report-only counts after the rebuild** (all as predicted; 0 failing issues):
+`period_end_before_nominal` 31, `stint_after_period_end` 2,
+`treatment_window_inside_stint` 7, `overlapping_stints` 14, `unpaired_player_off_capped`
+3, `dismissal_after_period_end` 0, `dismissal_after_match_end` 0,
+`events_outside_credited_time` 15. `substitution_capped` (33) and
+`on_pitch_count_exceeded` (0) are unchanged from H3b.
+
+**Minutes per league.**
+
+| League 2015/16 | H3b | H4 | Δ | Δ % | Gap before | Gap after |
+|---|---|---|---|---|---|---|
+| La Liga | 776,578.8 | 783,440.7 | +6,861.9 | +0.88% | 0.419% | 0.419% |
+| Premier League | 786,724.6 | 803,762.1 | +17,037.5 | +2.17% | 0.263% | 0.263% |
+| Serie A | 781,991.8 | 792,267.0 | +10,275.2 | +1.31% | 0.498% | 0.500% |
+| Ligue 1 | 772,808.4 | 782,658.7 | +9,850.2 | +1.27% | 0.507% | 0.510% |
+| Bundesliga (PARTIAL) | 69,656.5 | 70,273.4 | +616.8 | +0.89% | 0.249% | 0.248% |
+| **Total** | **3,187,760.1** | **3,232,401.8** | **+44,641.7** | **+1.40%** | | |
+
+"Gap" is Σ(11 × match_duration) − Σ minutes as a share of the first term (exit losses,
+treatment windows, gaps between a sub-off and a sub-on); it is essentially unchanged.
+
+**By player-match kind.** Full-match players (24,841): mean +1.31 min. Other
+player-matches (9,674): mean +1.24. Second-half substitutes (8,529): −0.002 (below).
+Extremes: 3754339 `match_duration` 94.12 → 103.37 (full-match +9.25); 3829452
+96.50 → 105.53 (+9.03).
+
+**Gross effect of each rule** (all rows; they add up to the Δ exactly):
+
+| Cause | Minutes | Rows |
+|---|---|---|
+| Clock (Half End rule, first-half stoppage, reversed stints) | +44,693.48 | 33,018 up, 725 down |
+| Overlap counted once (union) | −15.33 | 14 |
+| Unpaired Player Off as an exit | −29.17 | 3 |
+| Treatment windows subtracted | −7.32 | 7 |
+| Exit taken by instant instead of match-absolute minute | 0.00 | 0 |
+
+**Rows whose minutes decrease: 728, −151.68 min.**
+- 665 rows, −120.95: the match's first half ends before 45:00 (§31.1, kept as recorded).
+- 60 rows, −4.77: second-half substitutes in the 12 matches whose last event follows the
+  second-half whistle by 0.02–0.55 min. The pre-H4 clock ran their open stints to that
+  event; §31.1 ends them at Half End. Starters lose the same tail but gain more.
+- 3 rows, −29.17: the unpaired Player Off caps (Boufal 3901155 −14.37, Balmont 3901151
+  −8.65, Cerci 3879796 −6.15).
+- The overlap and window rules lower 21 rows, but the first-half stoppage outweighs
+  them, so none of those rows decreases net.
+
+**Match-level `position_group` flips: 226**, each listed with its cause in
+`spikes/expected_position_flips.json`:
+- **201 `tie_rule`:** two stints start at one instant with different groups, and the
+  §31.4 same-instant rule (Tactical Shift first) now decides the group; pre-H4, the
+  zero-length shift stint got 0 min and the slot stint got everything. Chaigneau
+  3829440 is one (above).
+  - Not the same comparison as the 202 in §31.4: that figure compares two tie rules on
+    the §31 clock; this one compares H3b with §31, and `tie_rule` means the pattern is
+    present, not that it alone caused the flip.
+- **1 `overlap`:** Ramsey 3754217, AM-Winger → DM-CM (latest start; his events agree).
+- **24 `stoppage_near_tie`:** no group loses more than 0.01 min, and the gain (≤ the
+  match's first-half stoppage, 1.03–5.45 min) goes to the group he held at half-time,
+  overturning a small old margin (e.g. Borini 3754008, 3.65; Mutch 3754236, 5.07).
+  - **Coutinho 3754226 regresses:** AM-Winger (which his events support) → DM-CM. It is
+    the pattern-B lineup error already listed in 31.6; H3b labelled him right by accident.
+- **Ben Arfa 3829416 does not flip** (the plan expected him to): he stays AM-Winger, but
+  FB-WB +16.7 and ST −13.7 min. His events agree with the new split to the second.
+- 591 player-matches have a `minutes_<group>` shift over 5 min: 326 are a stoppage gain
+  in one group; 265 move minutes between groups (258 same-instant stints, 3 overlaps, 2
+  unpaired Offs, 2 that lose only 0.02 min).
+
+**Season flags.**
+- `meets_min_minutes`: **11 up, 0 down**, all pool outfield rows: PL 5 (Grealish 882.2 →
+  900.2, Klose 889.5 → 910.5, Naismith 888.4 → 915.5, Touré 894.0 → 917.7, Distin
+  892.6 → 920.2), Ligue 1 2 (Erdinç 890.6 → 907.5, Pastore 899.0 → 908.9), Serie A 4
+  (Poli 885.1 → 904.2, Diamanti 892.5 → 909.5, Hernanes (Juventus) 895.8 → 909.7,
+  Tachtsidis 896.7 → 910.3).
+  - **Klose (Norwich) and Erdinç (Guingamp) now pass on their pool league alone.** This
+    is a single-league pass under the per-row gate (§17), not a combined-gate pass: their
+    Bundesliga rows (94.9 and 59.8, observed-only) still fail and count toward nothing.
+- `position_group`: **9 flips**, all near-ties. Gated: Diouf (Stoke) AM-Winger → ST
+  (663.7 / 658.1 before), Bouka Moutou (Angers) AM-Winger → FB-WB (655.7 / 654.3),
+  Ntcham (Genoa) DM-CM → AM-Winger (475.8 / 472.8), Ben Arfa (Nice) ST → AM-Winger
+  (1461.9 vs 1459.0 after). Ungated: Hernanes (Inter, 59 min), Balogh (Palermo, 64),
+  Malbranque (Lyon, 429), Gomis (Nice, 188), Caldirola (Darmstadt, 190).
+- `is_primary_stint`: **2 flips, one player:** Simone Colombi, Carpi 94.1 / Palermo 94.0
+  → 94.2 / 96.9.
+- Unchanged: `is_outfield` (0 flips), `in_percentile_pool` (2,279), `multi_team_season`
+  (136), `multi_competition_season` (94), 2,628 season rows.
+
+**Per-90 ratio on the gated pool** (1,261 rows; H3b per-90 / H4 per-90 − 1): 0.33–3.32%,
+median 1.30%. PL 1.11–3.32% (median 2.19%), Serie A 0.46–2.19% (1.33%), Ligue 1
+0.45–2.62% (1.27%), La Liga 0.33–1.43% (0.87%).
+
+**Percentile shift, every DNA per-90** (34 metrics; `goals_p90` and `assists_p90`
+excluded per §6c; there are no card columns). Gated pool, local = league × group,
+global = group.
+- **(a) Same cohort, new minutes:** local mean 0.20, max 8.57 pts (`passes_completed_p90`;
+  3 rank steps in a cohort of 35); global mean 0.35, max 4.58.
+- **(b) Cohort membership change:** max about 84 pts, entirely from the 4 gated rows whose
+  season group changed (ranked in another cohort). For rows whose group is unchanged,
+  (b) is at most 4.10 local and 1.32 global (11 rows joined the cohorts).
+- The H3b estimate (local max 5.7) covered only 5 metrics, so it is not comparable.
+
+**Sign-off (2026-10-02).** The flips above were outside the expected set in the H4 plan
+(which named only Ramsey and Ben Arfa at match level), so the stop rule applied. Every
+case was explained and the stats-reviewer approved with conditions. **The user accepted
+the 226 match-level flips, the 9 season `position_group` flips and the Colombi
+`is_primary_stint` flip as the intended effect of §31:** 201 from the Tactical Shift tie
+rule the user chose, the rest near-ties from the clock change; Coutinho falls into the
+lineup error already listed in 31.6. The accepted list is
+`spikes/expected_position_flips.json`; any later difference is a STOP in
+`spikes/period_aware_before_after.py`.
+
+**Definition note (corrected 2026-10-02).** These minutes count all stoppage time in
+both halves. Sources that credit a full match as 90 minutes (FBref/Opta style) do not.
+- The 1.4% figure is **§3 → §31**, i.e. first-half stoppage only. §3 already counted
+  second-half stoppage.
+- Against a nominal 90-minute match, the average §31 full match is 94.11 min (La Liga),
+  94.18 (Bundesliga), 94.85 (Ligue 1), 95.25 (Serie A) and 96.40 (PL). That is +4.6%
+  (La Liga) to +7.1% (PL).
+- So the 900-minute gate equals about **840 (PL) to 861 (La Liga) nominal minutes**.
+- Treatment windows are subtracted, which nominal sources do not do, but §3 already
+  excluded almost all of them.
+- Whether to keep 900 or adjust the gate is an M4 decision (docs/milestones.md). Any
+  future cross-source ADR must account for this (CLAUDE.md, single-source rule).

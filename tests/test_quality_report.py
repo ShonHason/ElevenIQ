@@ -7,7 +7,6 @@ from eleveniq.pipeline.quality_report import (
     find_dismissal_minute,
     find_substitutions_off,
     check_dismissal_event_quality,
-    check_dismissed_player_minutes,
     DISMISSAL_CARDS,
     DISMISSAL_TOLERANCE_MINUTES,
 )
@@ -257,147 +256,6 @@ class TestCheckDismissalEventQuality:
 
 
 # ---------------------------------------------------------------------------
-# check_dismissed_player_minutes
-# ---------------------------------------------------------------------------
-
-class TestCheckDismissedPlayerMinutes:
-    def test_mismatch_detected_red_card(self):
-        events = [_bad_behaviour_event(player_id=5, card_name="Red Card", minute=15)]
-        result = check_dismissed_player_minutes(
-            player_id=5,
-            player_name="Test Player",
-            match_id=12345,
-            computed_minutes=92.0,
-            events=events,
-        )
-        assert result is not None
-        assert result["player_id"] == 5
-        assert result["match_id"] == 12345
-        assert result["dismissal_minute"] == pytest.approx(15.0)
-        assert result["computed_minutes"] == pytest.approx(92.0)
-        assert result["excess_minutes"] == pytest.approx(77.0)
-
-    def test_no_mismatch_when_statsbomb_set_to_correctly(self):
-        # StatsBomb set `to` correctly: computed_minutes matches dismissal_minute
-        events = [_bad_behaviour_event(player_id=5, card_name="Red Card", minute=15)]
-        result = check_dismissed_player_minutes(
-            player_id=5,
-            player_name="Test Player",
-            match_id=12345,
-            computed_minutes=15.0,
-            events=events,
-        )
-        assert result is None
-
-    def test_within_tolerance_is_not_a_mismatch(self):
-        events = [_bad_behaviour_event(player_id=5, card_name="Red Card", minute=15)]
-        result = check_dismissed_player_minutes(
-            player_id=5,
-            player_name="Test Player",
-            match_id=12345,
-            computed_minutes=15.0 + DISMISSAL_TOLERANCE_MINUTES,
-            events=events,
-        )
-        assert result is None
-
-    def test_just_over_tolerance_is_a_mismatch(self):
-        events = [_bad_behaviour_event(player_id=5, card_name="Red Card", minute=15)]
-        result = check_dismissed_player_minutes(
-            player_id=5,
-            player_name="Test Player",
-            match_id=12345,
-            computed_minutes=15.0 + DISMISSAL_TOLERANCE_MINUTES + 0.01,
-            events=events,
-        )
-        assert result is not None
-
-    def test_no_card_event_returns_none(self):
-        events = [_other_event(player_id=5)]
-        result = check_dismissed_player_minutes(
-            player_id=5,
-            player_name="Test Player",
-            match_id=12345,
-            computed_minutes=90.0,
-            events=events,
-        )
-        assert result is None
-
-    def test_second_yellow_mismatch_detected(self):
-        events = [_bad_behaviour_event(player_id=8, card_name="Second Yellow", minute=72)]
-        result = check_dismissed_player_minutes(
-            player_id=8,
-            player_name="Test Player",
-            match_id=99,
-            computed_minutes=92.0,
-            events=events,
-        )
-        assert result is not None
-        assert result["dismissal_minute"] == pytest.approx(72.0)
-
-    def test_mismatch_report_has_all_keys(self):
-        events = [_bad_behaviour_event(player_id=1, card_name="Red Card", minute=10)]
-        result = check_dismissed_player_minutes(
-            player_id=1,
-            player_name="Player One",
-            match_id=555,
-            computed_minutes=90.0,
-            events=events,
-        )
-        assert result is not None
-        assert set(result.keys()) == {
-            "match_id", "player_id", "player_name",
-            "computed_minutes", "dismissal_minute", "excess_minutes",
-        }
-
-    def test_missing_timestamp_event_returns_none(self):
-        # find_dismissal_minute returns None for missing timestamp, so
-        # check_dismissed_player_minutes must also return None (no false mismatch).
-        events = [{
-            "type": {"name": "Bad Behaviour"},
-            "player": {"id": 5},
-            "bad_behaviour": {"card": {"name": "Red Card"}},
-            # minute and second absent
-        }]
-        result = check_dismissed_player_minutes(
-            player_id=5,
-            player_name="Test Player",
-            match_id=12345,
-            computed_minutes=92.0,
-            events=events,
-        )
-        assert result is None
-
-    def test_foul_committed_source_triggers_mismatch(self):
-        # ADR 002 §3: Foul Committed is the dominant dismissal source (83 % of La Liga
-        # 2015/16 dismissals).  check_dismissed_player_minutes must detect the mismatch
-        # when the card comes from a Foul Committed event, not just Bad Behaviour.
-        events = [_foul_committed_event(player_id=22, card_name="Red Card", minute=35)]
-        result = check_dismissed_player_minutes(
-            player_id=22,
-            player_name="Foul Player",
-            match_id=777,
-            computed_minutes=92.0,
-            events=events,
-        )
-        assert result is not None
-        assert result["dismissal_minute"] == pytest.approx(35.0)
-        assert result["excess_minutes"] == pytest.approx(92.0 - 35.0)
-
-    def test_foul_committed_within_tolerance_not_a_mismatch(self):
-        # A Foul Committed dismissal where the pipeline already credited the right
-        # minutes must not be reported.
-        events = [_foul_committed_event(player_id=33, card_name="Second Yellow", minute=78)]
-        result = check_dismissed_player_minutes(
-            player_id=33,
-            player_name="Clean Data Player",
-            match_id=888,
-            computed_minutes=78.0,
-            events=events,
-        )
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
 # Integration test: no dismissed player has minutes above card minute + tolerance
 # ---------------------------------------------------------------------------
 
@@ -416,15 +274,37 @@ _PLAYER_MATCH_PARQUET = (
 )
 def test_no_dismissed_player_minutes_above_card_minute(cs):
     """
-    For every dismissed player in the parquet, minutes_played must not exceed
-    their card minute by more than DISMISSAL_TOLERANCE_MINUTES.
+    Secondary check of the exit cap (plan 004 H4 §7, ADR 002 §31.2): for every
+    dismissed player in the parquet, minutes_played must not exceed the elapsed
+    playing time from his entry (his earliest lineup stint start) to the card
+    by more than DISMISSAL_TOLERANCE_MINUTES. Measuring from the entry, not from
+    kick-off, also catches an uncapped substitute: on at 60, sent off at 70 and
+    credited to 90 has 30 min, under the card's 70 but over its 10-min span.
 
-    Loads raw event files to reconstruct dismissal minutes, then cross-checks
-    against the pipeline's computed minutes_played column.
+    The elapsed times are computed here from the raw Half End events (each
+    period ends at its Half End; period p starts at 0, 45, 90, 105) and the raw
+    lineups, not with the pipeline's PeriodClock: on the period-aware clock a
+    starter sent off in period 2 is legitimately above the match-absolute card
+    minute by the first-half stoppage.
     """
     import polars as pl
-    from eleveniq.statsbomb.loader import load_events, load_matches
+    from eleveniq.statsbomb.loader import load_events, load_lineups, load_matches
     from eleveniq.pipeline.quality_report import DISMISSAL_TOLERANCE_MINUTES
+
+    period_start = {1: 0.0, 2: 45.0, 3: 90.0, 4: 105.0}
+
+    def elapsed(events: list[dict], period: int, minute: float) -> float:
+        ends = {}
+        for e in events:
+            if e["type"]["name"] == "Half End" and e["period"] <= 4:
+                ends[e["period"]] = max(ends.get(e["period"], 0.0),
+                                        e["minute"] + e["second"] / 60)
+        before = sum(ends[p] - period_start[p] for p in ends if p < period)
+        return before + min(max(minute, period_start[period]), ends[period]) - period_start[period]
+
+    def mm_ss(t: str) -> float:
+        mm, ss = t.split(".")[0].split(":")[-2:]
+        return int(mm) + int(ss) / 60
 
     df = pl.read_parquet(_PLAYER_MATCH_PARQUET).filter(
         (pl.col("competition_id") == cs.competition_id)
@@ -433,20 +313,28 @@ def test_no_dismissed_player_minutes_above_card_minute(cs):
     matches = load_matches(cs.competition_id, cs.season_id)
 
     violations = []
+    checked = 0
     for m in matches:
         mid = m["match_id"]
-        events = load_events(mid)
+        events = [e for e in load_events(mid) if e["period"] <= 4]
+        stints = {p["player_id"]: p.get("positions") or []
+                  for team in load_lineups(mid) for p in team["lineup"]}
         for row in df.filter(pl.col("match_id") == mid).iter_rows(named=True):
-            dm = find_dismissal_minute(events, row["player_id"])
-            if dm is None:
+            card = find_dismissal(events, row["player_id"])
+            if card is None:
                 continue
-            if row["minutes_played"] > dm + DISMISSAL_TOLERANCE_MINUTES:
+            checked += 1
+            entry = min(elapsed(events, s["from_period"], mm_ss(s["from"]))
+                        for s in stints[row["player_id"]])
+            limit = elapsed(events, *card) - entry
+            if row["minutes_played"] > limit + DISMISSAL_TOLERANCE_MINUTES:
                 violations.append(
                     f"match={mid} player={row['player_name']!r} "
-                    f"minutes={row['minutes_played']:.2f} card_min={dm:.2f} "
-                    f"excess={row['minutes_played'] - dm:.2f}"
+                    f"minutes={row['minutes_played']:.2f} entry_to_card={limit:.2f} "
+                    f"excess={row['minutes_played'] - limit:.2f}"
                 )
 
+    assert checked > 0
     assert violations == [], (
         f"{len(violations)} dismissed player(s) with overcounted minutes:\n"
         + "\n".join(violations)

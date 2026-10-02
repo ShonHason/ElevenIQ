@@ -337,7 +337,90 @@ Run the fast and integration suites (green), grep the old stale phrases (expect 
 ---
 
 ## H4: open decisions (queued 2026-10-01 from the H3b reviews)
-Not started. Each item needs a decision before code.
+**Status (2026-10-02).** Decided (ADR 002 §31) and implemented (H4a, H4b).
+Branch `h4-period-aware-minutes`.
+
+**Chunks.**
+- **H4a (spike first; this chunk):** the independent spike, the references and the
+  §31 rule text.
+- **H4b:** the pipeline, until it matches the spike in every match; then the
+  before/after, the data-auditor checklist and closing the M4 pre-condition.
+
+**Decisions.**
+- **Half-end rule:** the `Half End` event.
+  - A period that ends early is kept as recorded (31 cases, report-only).
+  - More than 5 min short fails the build.
+  - A post-match card is capped and report-only.
+- **Exits and windows.** Treatment windows are subtracted. An unpaired Player Off is an
+  exit cap, and an event after it fails the build.
+- **Stints.** Minutes are the union of a player's stints.
+- **Position at t:** the latest start. At one start instant, a Tactical Shift stint wins,
+  then the stint listed first.
+- **Checks.** The event-position oracle and the tactics-timeline check, with 9 listed
+  exceptions.
+- **`check_dismissed_player_minutes`:** removed in H4b.
+
+**H4a outcome.**
+- All counts are as predicted: 31 early period ends, 2 stints starting after Half End,
+  7 treatment windows inside a stint, 14 overlaps (15.33 min), 3 unpaired-Off caps.
+- The league minutes gap is 0.0005% or less in every league.
+- Every other core column and the dismissal counts are unchanged.
+- `core.minutes_played` and `core.minutes_<group>` are written.
+
+**H4b outcome (2026-10-02).**
+- First tasks 1–5 and the stats-reviewer's tie tests are done (below).
+- The pipeline implements §31 (`metrics/minutes.py`: `PeriodClock`,
+  `find_treatment_windows`, `stint_end_cap` by instant, `player_timeline`;
+  `metrics/positions.py` reads the timeline; `build_player_match.py`: per-period ceiling,
+  clamp guards, `event_after_permanent_off`, the report-only issues).
+  `check_dismissed_player_minutes` is removed; the xfail on `test_core_minutes_reconcile`
+  is gone.
+- Pipeline and spike agree exactly in all 43,044 player-matches (not independent
+  evidence; ADR 002 §31.7). All report-only counts are as predicted; 0 failing issues.
+- Before/after (`spikes/period_aware_before_after.py`, ADR 002 §31.7): +44,641.7 min
+  (+1.40%); 11 gate crossings up, 0 down; 226 match-level and 9 season group flips and
+  1 `is_primary_stint` flip, outside the plan's expected set. Each was explained; the
+  stats-reviewer approved with conditions and the user signed them off. They are
+  pinned in `spikes/expected_position_flips.json` and checked by the script's STOP rule.
+- The data-auditor has a new-source checklist; the M4 pre-condition from H3b is closed.
+- Signature change from the plan: the minutes functions take one required `exit_at`
+  (`stint_end_cap(dismissal=, substitution=, unpaired_off=)`) instead of separate
+  dismissal and substitution keywords, because the unpaired Player Off is a third exit.
+
+**H4b first tasks (H4a review follow-ups, 2026-10-02), before any pipeline code:**
+1. **Group-minutes season = match check outside the xfail.**
+   - `test_core_minutes_reconcile`: the season-sum = match-sum check for the six
+     `minutes_<group>` columns moves to a non-xfail test.
+   - Only the comparison with the reference stays under the strict xfail.
+2. **Test the spike's expected-minutes total:** a red card inside a treatment window that
+   later closes (Player Off, card, Player On) must not deduct the same time twice. Clip
+   the window at the exit if needed.
+3. **Report-only check `events_outside_credited_time`** (expected about 15 in 2015/16:
+   PL 3, La Liga 1, Serie A 11).
+   - Document Milinković-Savić, Lazio 3879637, in ADR §31.6. His Player Off is at
+     (1, 44:27) and his Player On at (1, 45:16), but the lineup resumes only at
+     (2, 45:00). So he is credited nothing from 45:16 to the 48:47 whistle, while 11 of
+     his events fall in that span. This is most of Serie A's 4.15-min league gap.
+   - Add to docs/milestones.md M4: decide whether a Player On should resume a player's
+     time when the lineup doesn't.
+4. **ADR §31.6:** note that the league tolerance (1e-5) was set from the observed
+   2015/16 figures (largest gap 4.15 min, Serie A). A future failure is to be
+   investigated, not loosened.
+5. **Total match length in the references.** Store Σ match_duration per league in the
+   reference files, so `test_reference_totals.py` checks the exact GK identity
+   (GK minutes ≈ 2 × Σ match_duration within 0.05%) instead of loose bounds.
+
+**H4b also (stats-reviewer, 2026-10-02):**
+- a unit test for the equal-elapsed tie (later start instant wins; 0 cases in the data);
+- tests for the Tactical Shift tie rule (the Ravel Morrison pattern) and the
+  Chaigneau case.
+
+**M4 items queued in docs/milestones.md:**
+- positions from Tactical Shift events;
+- the GK-minutes rule;
+- a near-tie season-group flag.
+
+The original queue:
 - **`check_dismissed_player_minutes`** (quality_report.py): only tests call it; the
   pipeline applies the dismissal cap itself and records minutes with and without it.
   Either wire it into the integration suite as a second check of the cap, or remove

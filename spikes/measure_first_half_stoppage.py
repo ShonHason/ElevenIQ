@@ -2,6 +2,12 @@
 """
 Spike: minutes lost to first-half stoppage on the match-absolute axis (plan 004 H3b).
 
+HISTORICAL: describes the pre-H4 pipeline (last-event clock, match-absolute minutes);
+superseded by H4 (ADR 002 §31, before/after in §31.7 from
+spikes/period_aware_before_after.py). It reads data/interim/player_match_stats.parquet,
+which now holds §31 minutes, so rerunning it no longer reproduces the H3b figures; use
+data/interim/h3b_snapshot/ for that.
+
 Source of the figures in:
 - docs/decisions/002-pipeline-decisions.md §3: the table of the 9
   reversed-period stints and the "Known limits" numbers;

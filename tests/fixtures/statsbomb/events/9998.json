@@ -27,8 +27,33 @@
     "bad_behaviour": {"card": {"name": "Red Card"}}
   },
   {
+    "id": "f2-p1",
+    "type": {"name": "Half End"},
+    "team": {"id": 201},
+    "minute": 45,
+    "second": 0,
+    "period": 1
+  },
+  {
+    "id": "f2-p1-b",
+    "type": {"name": "Half End"},
+    "team": {"id": 202},
+    "minute": 45,
+    "second": 0,
+    "period": 1
+  },
+  {
     "id": "f2",
     "type": {"name": "Half End"},
+    "team": {"id": 201},
+    "minute": 90,
+    "second": 0,
+    "period": 2
+  },
+  {
+    "id": "f2-b",
+    "type": {"name": "Half End"},
+    "team": {"id": 202},
     "minute": 90,
     "second": 0,
     "period": 2
