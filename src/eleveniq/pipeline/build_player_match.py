@@ -3,8 +3,8 @@ build_player_match.py — aggregate StatsBomb events into one row per player per
 
 Design notes
 ------------
-- compute_minutes_per_group is the ONE shared function for both minutes_played and
-  position group assignment.  minutes_played = sum(group_minutes.values()).
+- One minutes.player_timeline per player is the ONE source for minutes_played, the
+  group minutes and position_raw.  minutes_played = sum(minutes_per_group(...).values()).
   compute_player_minutes is NOT called separately; the two can never diverge.
 - outcome is passed explicitly to is_progressive_pass (required keyword arg).
 - Raw counts (numerators) and minutes (denominator) are preserved alongside each
@@ -19,6 +19,10 @@ Design notes
   (ALLOWED_DROPPED_EVENT_TYPES).
 - Penalty-shootout events (period 5, metrics.minutes.is_playing_time) are
   removed before any metric is counted.
+- Minutes are period-aware (ADR 002 §31): one PeriodClock per match (each period
+  ends at its Half End event), one player_timeline per player (exit cap,
+  treatment windows, union of stints, latest-start position), and
+  match_duration is the elapsed playing time.
 """
 from __future__ import annotations
 
@@ -28,13 +32,29 @@ from pathlib import Path
 
 import polars as pl
 
-from eleveniq.metrics.minutes import compute_match_duration, is_playing_time, parse_mm_ss
+from eleveniq.metrics.minutes import (
+    NOMINAL_PERIOD_END,
+    PERIOD_START,
+    PLAYER_OFF,
+    PLAYER_ON,
+    TIME_EPS,
+    Instant,
+    PeriodClock,
+    PlayerTimeline,
+    event_instant,
+    find_treatment_windows,
+    is_playing_time,
+    parse_mm_ss,
+    player_timeline,
+    stint_end,
+    stint_end_cap,
+)
 from eleveniq.metrics.positions import (
     POSITION_GROUP_COLUMNS,
     UNKNOWN_POSITION_GROUP,
     assign_position_group,
-    compute_minutes_per_group,
-    compute_minutes_per_raw_position,
+    minutes_per_group,
+    minutes_per_raw_position,
     primary_position_group,
 )
 from eleveniq.metrics.aerials import has_aerial_won, is_aerial_lost
@@ -52,6 +72,7 @@ from eleveniq.metrics.xg_assisted import compute_xg_assisted_per_player
 from eleveniq.config import (
     COMPETITION_SEASONS,
     LONG_PASS_THRESHOLD_UNITS,
+    PERIOD_SHORT_FAIL_MINUTES,
     SOURCE_STATSBOMB,
     XG_ASSISTED_MAX_CARRY_UNITS,
     CompetitionSeason,
@@ -145,8 +166,43 @@ SUBSTITUTION_CAPPED = "substitution_capped"
 REVERSED_PERIOD_STINT = "reversed_period_stint"
 ON_PITCH_COUNT_EXCEEDED = "on_pitch_count_exceeded"
 
-# Per team-match, summed minutes may not exceed 11 × match_duration by more
-# than float noise (ADR 002 §3: measured maximum after the cap is 0.0).
+# Period-aware minutes (ADR 002 §31). Failing: a period far short of its nominal
+# end, a stint bound outside its period (the clock's clamp must not hide it), and
+# an event by a player after his unpaired Player Off.
+PERIOD_TOO_SHORT = "period_too_short"
+STINT_END_AFTER_PERIOD_END = "stint_end_after_period_end"
+STINT_TIME_BEFORE_PERIOD_START = "stint_time_before_period_start"
+EVENT_AFTER_PERMANENT_OFF = "event_after_permanent_off"
+# Report-only (ADR 002 §31).
+PERIOD_END_BEFORE_NOMINAL = "period_end_before_nominal"
+STINT_AFTER_PERIOD_END = "stint_after_period_end"
+DISMISSAL_AFTER_PERIOD_END = "dismissal_after_period_end"
+TREATMENT_WINDOW_INSIDE_STINT = "treatment_window_inside_stint"
+OVERLAPPING_STINTS = "overlapping_stints"
+UNPAIRED_PLAYER_OFF_CAPPED = "unpaired_player_off_capped"
+EVENTS_OUTSIDE_CREDITED_TIME = "events_outside_credited_time"
+
+# Report-only period-aware issues, counted by summarise_quality_report.
+PERIOD_AWARE_REPORT_ONLY_ISSUES = (
+    PERIOD_END_BEFORE_NOMINAL,
+    STINT_AFTER_PERIOD_END,
+    TREATMENT_WINDOW_INSIDE_STINT,
+    OVERLAPPING_STINTS,
+    UNPAIRED_PLAYER_OFF_CAPPED,
+    DISMISSAL_AFTER_PERIOD_END,
+    DISMISSAL_AFTER_MATCH_END,
+    EVENTS_OUTSIDE_CREDITED_TIME,
+)
+
+# Event types a player may have after his unpaired Player Off (§31.2): a card can
+# be shown off the pitch, and an injured player is formally replaced after he
+# left (he is the Substitution event's player).
+OFF_PITCH_EVENT_TYPES = frozenset({"Bad Behaviour", "Substitution"})
+# events_outside_credited_time ignores the types that do not need him on the pitch.
+OUTSIDE_TIME_EXEMPT_TYPES = OFF_PITCH_EVENT_TYPES | {PLAYER_OFF, PLAYER_ON}
+
+# Per team, per period, the minutes inside the period may not exceed
+# 11 × its length by more than float noise (ADR 002 §31.5).
 TEAM_MINUTES_TOLERANCE: float = 1e-6
 # Per player-match, minutes may not exceed match_duration by more than this.
 PLAYER_MINUTES_TOLERANCE: float = 1e-6
@@ -156,7 +212,10 @@ PLAYERS_ON_PITCH: int = 11
 FAILING_QUALITY_ISSUES = EVENT_QUALITY_ISSUES | {
     MINUTES_UNKNOWN,
     DROPPED_EVENT,
-    DISMISSAL_AFTER_MATCH_END,
+    PERIOD_TOO_SHORT,
+    STINT_END_AFTER_PERIOD_END,
+    STINT_TIME_BEFORE_PERIOD_START,
+    EVENT_AFTER_PERMANENT_OFF,
     MULTIPLE_SUBSTITUTIONS_OFF,
     STINT_AFTER_SUBSTITUTION,
     TEAM_MINUTES_EXCEED_CEILING,
@@ -241,7 +300,7 @@ def _group_minutes_to_columns(group_minutes: dict[str, float]) -> dict[str, floa
     unknown = set(group_minutes) - set(POSITION_GROUP_COLUMNS)
     if unknown:
         raise ValueError(
-            f"Unknown position group(s) from compute_minutes_per_group: {sorted(unknown)}"
+            f"Unknown position group(s) from minutes_per_group: {sorted(unknown)}"
         )
     return {col: group_minutes.get(group, 0.0) for group, col in POSITION_GROUP_COLUMNS.items()}
 
@@ -555,15 +614,14 @@ def _process_match(
     """
     events = load_events(match_id, data_root)
     lineups = load_lineups(match_id, data_root)
-    match_duration = compute_match_duration(events)
+    # ADR 002 §31.1: raises (the match fails) without a valid Half End per period.
+    clock = PeriodClock.from_events(events)
+    match_duration = clock.duration
     # Penalty-shootout events (period 5) are not playing time and count toward
     # no metric. Dismissal lookups use this list too: a shootout card clamps
     # nothing, because every stint has ended by then (extra time, periods 3-4,
     # still counts). The Starting XI lookup keeps the full list.
     play_events = [e for e in events if is_playing_time(e)]
-    # Period-aware end of the match, for the on-pitch count: (last playing
-    # period, match_duration).
-    match_end = (max(e["period"] for e in play_events), match_duration)
 
     # Compute xg_assisted per player (requires full match event list for cross-player lookup)
     xga_by_player = compute_xg_assisted_per_player(
@@ -582,8 +640,10 @@ def _process_match(
             player_events[pid].append(event)
 
     rows: list[dict] = []
-    quality_report: list[dict] = []
+    quality_report: list[dict] = _period_end_issues(match_id, clock)
     event_issues: Counter[tuple[str, str | None]] = Counter()
+    # Every lineup player's timeline, for events_outside_credited_time.
+    timelines: dict[int, PlayerTimeline] = {}
 
     for team in lineups:
         team_id = team["team_id"]
@@ -591,8 +651,11 @@ def _process_match(
         # Collect (row, positions) tuples for the team before the started check
         # so the team-level fallback can inspect positions in a second pass.
         team_entries: list[tuple[dict, list]] = []
-        # (player_id, positions, dismissal, substitution off) for the on-pitch count.
+        # (player_id, positions, dismissal, substitution off, unpaired Off) for the
+        # on-pitch count.
         on_pitch_input: list[OnPitchPlayer] = []
+        # Σ over the team's players of their minutes inside each period (§31.5).
+        team_period_minutes: Counter[int] = Counter()
 
         for player in team["lineup"]:
             player_id = player["player_id"]
@@ -600,32 +663,35 @@ def _process_match(
             positions = player.get("positions") or []
 
             dismissal = find_dismissal(play_events, player_id)
-            dismissal_minute = None if dismissal is None else dismissal[1]
-            if dismissal_minute is not None and dismissal_minute > match_duration:
-                # Never capped silently: fails the build (DataQualityError).
-                quality_report.append({
-                    "issue": DISMISSAL_AFTER_MATCH_END,
-                    "match_id": match_id,
-                    "player_id": player_id,
-                    "dismissal_minute": dismissal_minute,
-                    "match_duration": match_duration,
-                })
+            if dismissal is not None:
+                quality_report.extend(_dismissal_timing_issues(match_id, player_id, dismissal, clock))
 
             substitution = _substitution_off(
                 match_id, player_id, positions, play_events, quality_report
             )
-            substitution_minute = None if substitution is None else substitution[1]
-            on_pitch_input.append((player_id, positions, dismissal, substitution))
+            treatment = find_treatment_windows(play_events, player_id)
+            unpaired_off = treatment.unpaired_off
+            if treatment.unpaired_off_position is not None:
+                quality_report.extend(_events_after_permanent_off(
+                    match_id, player_id, play_events, treatment.unpaired_off_position))
+            on_pitch_input.append((player_id, positions, dismissal, substitution, unpaired_off))
+            quality_report.extend(_stint_bound_issues(match_id, player_id, positions, clock))
 
-            # ONE shared call: compute_minutes_per_group drives both minutes_played
-            # and position group.  compute_player_minutes is NOT called separately.
-            group_minutes = compute_minutes_per_group(
-                positions,
-                match_duration,
-                dismissal_minute=dismissal_minute,
-                substitution_minute=substitution_minute,
-            )
+            # ONE timeline per player drives minutes_played, the group minutes and
+            # position_raw (ADR 002 §31.4); they cannot diverge.
+            windows = treatment.windows
+
+            def timeline_with(exit_at: Instant | None) -> PlayerTimeline:
+                return player_timeline(positions, clock, exit_at=exit_at, treatment_windows=windows)
+
+            exit_at = stint_end_cap(
+                dismissal=dismissal, substitution=substitution, unpaired_off=unpaired_off)
+            timeline = timeline_with(exit_at)
+            timelines[player_id] = timeline
+            group_minutes = minutes_per_group(timeline)
             minutes_played = sum(group_minutes.values())
+            for piece in timeline.pieces:
+                team_period_minutes[piece.period] += piece.minutes
             if minutes_played > match_duration + PLAYER_MINUTES_TOLERANCE:
                 quality_report.append({
                     "issue": PLAYER_MINUTES_EXCEED_DURATION,
@@ -635,12 +701,24 @@ def _process_match(
                     "minutes_played": minutes_played,
                     "match_duration": match_duration,
                 })
+            if timeline.overlap_minutes > TIME_EPS:
+                quality_report.append({
+                    "issue": OVERLAPPING_STINTS,
+                    "match_id": match_id,
+                    "player_id": player_id,
+                    "minutes_deduplicated": timeline.overlap_minutes,
+                })
+            if timeline.treatment_windows_inside_stints:
+                quality_report.append({
+                    "issue": TREATMENT_WINDOW_INSIDE_STINT,
+                    "match_id": match_id,
+                    "player_id": player_id,
+                    "windows": timeline.treatment_windows_inside_stints,
+                })
 
-            if substitution_minute is not None:
-                uncapped = sum(compute_minutes_per_group(
-                    positions, match_duration,
-                    dismissal_minute=dismissal_minute, substitution_minute=None,
-                ).values())
+            if substitution is not None:
+                uncapped = timeline_with(stint_end_cap(
+                    dismissal=dismissal, substitution=None, unpaired_off=unpaired_off)).minutes
                 if uncapped > minutes_played:
                     quality_report.append({
                         "issue": SUBSTITUTION_CAPPED,
@@ -648,7 +726,20 @@ def _process_match(
                         "team_id": team_id,
                         "player_id": player_id,
                         "player_name": player_name,
-                        "substitution_minute": substitution_minute,
+                        "substitution_minute": substitution[1],
+                        "minutes_removed": uncapped - minutes_played,
+                    })
+            if unpaired_off is not None:
+                uncapped = timeline_with(stint_end_cap(
+                    dismissal=dismissal, substitution=substitution, unpaired_off=None)).minutes
+                if uncapped - minutes_played > TIME_EPS:
+                    quality_report.append({
+                        "issue": UNPAIRED_PLAYER_OFF_CAPPED,
+                        "match_id": match_id,
+                        "player_id": player_id,
+                        "player_name": player_name,
+                        "player_off_period": unpaired_off[0],
+                        "player_off_minute": unpaired_off[1],
                         "minutes_removed": uncapped - minutes_played,
                     })
             for stint in positions:
@@ -669,25 +760,23 @@ def _process_match(
             position_group = primary_position_group(group_minutes)
             started = any(p.get("start_reason") == "Starting XI" for p in positions)
 
-            raw_minutes = compute_minutes_per_raw_position(
-                positions,
-                match_duration,
-                dismissal_minute=dismissal_minute,
-                substitution_minute=substitution_minute,
-            )
-            position_raw = _primary_raw_position(raw_minutes)
+            position_raw = _primary_raw_position(minutes_per_raw_position(timeline))
 
             # Dismissal quality check: record every dismissed player and whether
-            # the raw StatsBomb lineup data would have overcounted their minutes.
-            if dismissal_minute is not None:
-                raw_group_minutes_unfixed = compute_minutes_per_group(
-                    positions, match_duration, dismissal_minute=None, substitution_minute=None
-                )
-                minutes_unfixed = sum(raw_group_minutes_unfixed.values())
-                overcounted = minutes_unfixed > dismissal_minute + DISMISSAL_TOLERANCE_MINUTES
+            # the raw StatsBomb lineup data would have overcounted their minutes
+            # (no exit cap at all). He can be credited at most the elapsed time
+            # from his entry (his first credited instant) to the card, so a
+            # substitute is held to that span, not to the card's elapsed time.
+            if dismissal is not None:
+                unfixed = timeline_with(None)
+                minutes_unfixed = unfixed.minutes
+                dismissal_elapsed = clock.elapsed(dismissal)
+                entry_elapsed = unfixed.pieces[0].start  # minutes_played > 0: never empty
+                overcounted = (minutes_unfixed
+                               > dismissal_elapsed - entry_elapsed + DISMISSAL_TOLERANCE_MINUTES)
                 # cause is only meaningful when overcounting actually occurred.
                 # "to_null": at least one open-ended (to=None) stint was extended
-                #   to match_duration instead of stopping at the card minute.
+                #   to the match end instead of stopping at the card.
                 # "explicit_to_after_card": all stints had explicit to-values but
                 #   StatsBomb set them past the dismissal minute (known data error).
                 if overcounted:
@@ -699,7 +788,10 @@ def _process_match(
                     "match_id": match_id,
                     "player_id": player_id,
                     "player_name": player_name,
-                    "dismissal_minute": dismissal_minute,
+                    "dismissal_period": dismissal[0],
+                    "dismissal_minute": dismissal[1],
+                    "dismissal_elapsed": dismissal_elapsed,
+                    "entry_elapsed": entry_elapsed,
                     "minutes_with_fix": minutes_played,
                     "minutes_without_fix": minutes_unfixed,
                     "minutes_overcounted_without_fix": overcounted,
@@ -829,18 +921,19 @@ def _process_match(
                 "extra_in_derived": sorted(derived - expected),
             })
 
-        team_minutes = sum(row["minutes_played"] for row, _ in team_entries)
-        ceiling = PLAYERS_ON_PITCH * match_duration
-        if team_minutes > ceiling + TEAM_MINUTES_TOLERANCE:
-            quality_report.append({
-                "issue": TEAM_MINUTES_EXCEED_CEILING,
-                "match_id": match_id,
-                "team_id": team_id,
-                "team_minutes": team_minutes,
-                "ceiling": ceiling,
-            })
+        for period, team_minutes in sorted(team_period_minutes.items()):
+            ceiling = PLAYERS_ON_PITCH * clock.length(period)
+            if team_minutes > ceiling + TEAM_MINUTES_TOLERANCE:
+                quality_report.append({
+                    "issue": TEAM_MINUTES_EXCEED_CEILING,
+                    "match_id": match_id,
+                    "team_id": team_id,
+                    "period": period,
+                    "team_minutes": team_minutes,
+                    "ceiling": ceiling,
+                })
 
-        excess = _on_pitch_excess(on_pitch_input, match_end)
+        excess = _on_pitch_excess(on_pitch_input, clock.end)
         if excess is not None:
             on_pitch, allowed, (period, minute) = excess
             quality_report.append({
@@ -860,8 +953,136 @@ def _process_match(
             "issue": issue, "match_id": match_id, "value": value, "count": count,
         })
     quality_report.extend(_dropped_events(match_id, player_events, lineups, rows))
+    quality_report.extend(_events_outside_credited_time(match_id, play_events, timelines, clock))
 
     return rows, quality_report
+
+
+def _period_end_issues(match_id: int, clock: PeriodClock) -> list[dict]:
+    """
+    ADR 002 §31.1: a period that ends before its nominal end is reported
+    (PERIOD_END_BEFORE_NOMINAL); one more than PERIOD_SHORT_FAIL_MINUTES short
+    also fails the build (PERIOD_TOO_SHORT).
+    """
+    issues: list[dict] = []
+    for period in clock.periods:
+        shortfall = NOMINAL_PERIOD_END[period] - clock.ends[period]
+        if shortfall <= 0:
+            continue
+        entry = {"match_id": match_id, "period": period, "shortfall": shortfall}
+        issues.append({"issue": PERIOD_END_BEFORE_NOMINAL, **entry})
+        if shortfall > PERIOD_SHORT_FAIL_MINUTES:
+            issues.append({"issue": PERIOD_TOO_SHORT, **entry})
+    return issues
+
+
+def _dismissal_timing_issues(
+    match_id: int, player_id: int, dismissal: Instant, clock: PeriodClock,
+) -> list[dict]:
+    """
+    ADR 002 §31.2, report-only: a card after the match's end, or after a
+    non-final period's end (in the interval). Both are clamped by the clock.
+    """
+    if dismissal > clock.end:
+        issue = DISMISSAL_AFTER_MATCH_END
+    elif dismissal[1] > clock.ends[dismissal[0]] + TIME_EPS:
+        issue = DISMISSAL_AFTER_PERIOD_END
+    else:
+        return []
+    return [{
+        "issue": issue,
+        "match_id": match_id,
+        "player_id": player_id,
+        "dismissal_period": dismissal[0],
+        "dismissal_minute": dismissal[1],
+        "period_end": clock.ends.get(dismissal[0]),
+    }]
+
+
+def _stint_bound_issues(
+    match_id: int, player_id: int, positions: list[dict], clock: PeriodClock,
+) -> list[dict]:
+    """
+    Clamp guards (ADR 002 §31.1): clock.elapsed() clamps a minute into its
+    period, so a stint bound outside its period is checked here instead.
+    - a `from` or `to` before its period's start fails the build;
+    - a `to` after its period's Half End fails the build;
+    - a `from` after its period's Half End (a player returning after the
+      whistle) is report-only: the stint gets no minutes.
+    A `to` without `to_period` is left to player_timeline, which raises.
+    """
+    issues: list[dict] = []
+
+    def add(issue: str, field: str, period: int, minute: float) -> None:
+        issues.append({"issue": issue, "match_id": match_id, "player_id": player_id,
+                       "field": field, "period": period, "minute": minute})
+
+    for stint in positions:
+        bounds = [("from", stint["from_period"], parse_mm_ss(stint["from"]))]
+        if stint.get("to") and stint.get("to_period") is not None:
+            bounds.append(("to", stint["to_period"], parse_mm_ss(stint["to"])))
+        for field, period, minute in bounds:
+            if period not in clock.ends:
+                raise ValueError(f"player {player_id}: stint {field} in period {period}, "
+                                 f"not a playing period of this match {clock.periods}")
+            if minute < PERIOD_START[period] - TIME_EPS:
+                add(STINT_TIME_BEFORE_PERIOD_START, field, period, minute)
+            elif minute > clock.ends[period] + TIME_EPS:
+                add(STINT_AFTER_PERIOD_END if field == "from" else STINT_END_AFTER_PERIOD_END,
+                    field, period, minute)
+    return issues
+
+
+def _events_after_permanent_off(
+    match_id: int, player_id: int, play_events: list[dict], off_position: int,
+) -> list[dict]:
+    """
+    ADR 002 §31.2: after an unpaired Player Off the player is gone, so any
+    later event by him fails the build, except OFF_PITCH_EVENT_TYPES (a card
+    shown off the pitch, his own Substitution).
+    """
+    return [{
+        "issue": EVENT_AFTER_PERMANENT_OFF,
+        "match_id": match_id,
+        "player_id": player_id,
+        "event_type": e["type"]["name"],
+        "period": e["period"],
+        "minute": e["minute"],
+        "second": e["second"],
+    } for e in play_events[off_position + 1:]
+        if (e.get("player") or {}).get("id") == player_id
+        and e["type"]["name"] not in OFF_PITCH_EVENT_TYPES]
+
+
+def _events_outside_credited_time(
+    match_id: int,
+    play_events: list[dict],
+    timelines: dict[int, PlayerTimeline],
+    clock: PeriodClock,
+) -> list[dict]:
+    """
+    Report-only (plan 004 H4b, ADR 002 §31.6): one entry per period 1-4 event
+    by a player whose instant lies outside his credited time (closed
+    intervals), except OUTSIDE_TIME_EXEMPT_TYPES. A player not in the lineup
+    has no credited time (his events also fail as dropped events).
+    """
+    entries: list[dict] = []
+    for e in play_events:
+        pid = (e.get("player") or {}).get("id")
+        if pid is None or e["type"]["name"] in OUTSIDE_TIME_EXEMPT_TYPES:
+            continue
+        timeline = timelines.get(pid)
+        if timeline is None or not timeline.covers(clock.elapsed(event_instant(e))):
+            entries.append({
+                "issue": EVENTS_OUTSIDE_CREDITED_TIME,
+                "match_id": match_id,
+                "player_id": pid,
+                "event_type": e["type"]["name"],
+                "period": e["period"],
+                "minute": e["minute"],
+                "second": e["second"],
+            })
+    return entries
 
 
 def _substitution_off(
@@ -870,7 +1091,7 @@ def _substitution_off(
     positions: list[dict],
     play_events: list[dict],
     report: list[dict],
-) -> tuple[int, float] | None:
+) -> Instant | None:
     """
     (period, match-absolute minute) of the Substitution event that took this
     player off, or None.
@@ -912,8 +1133,9 @@ def _substitution_off(
     return subs[0]
 
 
-# (player_id, positions, dismissal, substitution off), each as (period, minute) or None.
-OnPitchPlayer = tuple[int, list[dict], tuple[int, float] | None, tuple[int, float] | None]
+# (player_id, positions, dismissal, substitution off, unpaired Player Off), each
+# exit as (period, minute) or None.
+OnPitchPlayer = tuple[int, list[dict], Instant | None, Instant | None, Instant | None]
 
 # Order of changes at one instant (only for a deterministic sort: the count is
 # taken after every change at the instant, and whether a card lowers the
@@ -921,27 +1143,11 @@ OnPitchPlayer = tuple[int, list[dict], tuple[int, float] | None, tuple[int, floa
 _CARD, _EXIT, _ENTRY = 0, 1, 2
 
 
-def _stint_end(stint: dict, match_end: tuple[int, float]) -> tuple[int, float]:
-    """(to_period, to) of a stint, or match_end when it is open (no `to`).
-
-    Raises ValueError for a stint with a `to` but no `to_period`: without the
-    period the end cannot be ordered against period-aware instants.
-    """
-    if not stint.get("to"):
-        return match_end
-    if stint.get("to_period") is None:
-        raise ValueError(
-            f"stint {stint.get('from')!r}-{stint['to']!r} has a 'to' but no "
-            "'to_period'; the on-pitch count needs both"
-        )
-    return (stint["to_period"], parse_mm_ss(stint["to"]))
-
-
 def _card_lowers_allowed(
     positions: list[dict],
-    dismissal: tuple[int, float],
-    substitution: tuple[int, float] | None,
-    match_end: tuple[int, float],
+    dismissal: Instant,
+    substitution: Instant | None,
+    match_end: Instant,
 ) -> bool:
     """
     Whether a dismissal leaves the team a player short (ADR 002 §3).
@@ -958,15 +1164,15 @@ def _card_lowers_allowed(
         return False
     for stint in positions:
         start = (stint["from_period"], parse_mm_ss(stint["from"]))
-        if start <= dismissal and _stint_end(stint, match_end) > start:
+        if start <= dismissal and stint_end(stint, match_end) > start:
             return True
     return False
 
 
 def _on_pitch_excess(
     players: list[OnPitchPlayer],
-    match_end: tuple[int, float],
-) -> tuple[int, int, tuple[int, float]] | None:
+    match_end: Instant,
+) -> tuple[int, int, Instant] | None:
     """
     (on_pitch, allowed, (period, minute)) at the first instant where the
     team has the most players above the allowed number, or None when it
@@ -977,15 +1183,15 @@ def _on_pitch_excess(
     and was not substituted off before or at his card, so a player off for
     treatment counts but a card on the bench does not.
 
-    `players` holds (player_id, positions, dismissal, substitution): the
-    player's red card or second yellow and his own substitution off, each as
-    (period, minute) or None. His exit is the earlier of the two.
-    Instants are ordered by (period, minute), not by the match-absolute minute,
-    so first-half stoppage (46:01 in period 1) precedes the second-half kick-off
-    (45:00 in period 2). Note this differs from minutes.stint_end_cap, which
-    picks the earlier exit by match-absolute minute; the two disagree only when
-    one exit is in first-half stoppage and the other in period 2 (0 cases in
-    the 2015/16 data; ADR 002 §3). A stint ends at its (to_period, to), at
+    `players` holds (player_id, positions, dismissal, substitution,
+    unpaired_off): the player's red card or second yellow, his own
+    substitution off and his unpaired Player Off, each as (period, minute) or
+    None. His exit is the earliest of the three (minutes.stint_end_cap, the
+    same rule as his minutes, ADR 002 §31.2). Instants are ordered by
+    (period, minute), not by the match-absolute minute, so first-half
+    stoppage (46:01 in period 1) precedes the second-half kick-off (45:00 in
+    period 2). Treatment windows are not subtracted: a player off for
+    treatment still counts on his team's side (§31.3). A stint ends at its (to_period, to), at
     match_end when open, and never after the player's exit, so a dismissed
     player stops counting at his card. A stint whose end does not follow its
     start (e.g. a reversed-period stint) contributes nothing. A player counts
@@ -996,16 +1202,16 @@ def _on_pitch_excess(
     Raises ValueError for a stint with a `to` but no `to_period`.
     """
     changes: list[tuple[tuple[int, float], int, int]] = []
-    for player_id, positions, dismissal, substitution in players:
-        exits = [e for e in (dismissal, substitution) if e is not None]
-        exit_at = min(exits) if exits else None
+    for player_id, positions, dismissal, substitution, unpaired_off in players:
+        exit_at = stint_end_cap(
+            dismissal=dismissal, substitution=substitution, unpaired_off=unpaired_off)
         if dismissal is not None and _card_lowers_allowed(
             positions, dismissal, substitution, match_end
         ):
             changes.append((dismissal, _CARD, player_id))
         for stint in positions:
             start = (stint["from_period"], parse_mm_ss(stint["from"]))
-            end = _stint_end(stint, match_end)
+            end = stint_end(stint, match_end)
             if exit_at is not None:
                 end = min(end, exit_at)
             if end > start:
@@ -1198,6 +1404,8 @@ def summarise_quality_report(report: list[dict]) -> dict[str, int]:
         "player_minutes_exceed_duration": sum(
             1 for d in report if d.get("issue") == PLAYER_MINUTES_EXCEED_DURATION
         ),
+        **{issue: sum(1 for d in report if d.get("issue") == issue)
+           for issue in PERIOD_AWARE_REPORT_ONLY_ISSUES},
     }
 
 
@@ -1338,5 +1546,6 @@ if __name__ == "__main__":
             f"substitution_capped={summary['substitution_capped']} "
             f"reversed_period_stints={summary['reversed_period_stints']} "
             f"on_pitch_count_exceeded={summary['on_pitch_count_exceeded']} "
-            f"player_minutes_exceed_duration={summary['player_minutes_exceed_duration']}"
+            f"player_minutes_exceed_duration={summary['player_minutes_exceed_duration']} "
+            + " ".join(f"{issue}={summary[issue]}" for issue in PERIOD_AWARE_REPORT_ONLY_ISSUES)
         )

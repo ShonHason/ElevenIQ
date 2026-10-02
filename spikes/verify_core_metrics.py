@@ -46,12 +46,22 @@ minutes inside period p are <= 11 * length(p) (ADR 002 §31.5). Per league:
     summed minutes ~= sum(11 * match_duration) - exit losses - treatment windows
 where an exit loss is, on the elapsed clock, (the player's own substitution,
 or match_end) - exit, for a dismissal or unpaired Player Off before his own
-substitution (§31.6). The expectation uses event timestamps only, never the
+substitution (§31.6). A treatment window is clipped at the player's exit, so
+time after the exit is never deducted twice (a red card inside a window that
+later closes). The expectation uses event timestamps only, never the
 lineup stints. It cannot see a player who left injured with no substitutes
 left and no Player Off event, or small gaps between a sub-off and a sub-on,
 so the league figure has a tolerance (LEAGUE_TOLERANCE_SHARE). A second
 identity: one goalkeeper per team at all times, so league GK minutes are
 about 2 * sum(match_duration) (GK_TOLERANCE_SHARE).
+
+Events outside credited time (report-only)
+------------------------------------------
+An event by a player (periods 1-4) whose instant lies outside his credited
+time (the union of his pieces, closed at both ends), except the event types
+that do not need him on the pitch (OFF_PITCH_EVENT_TYPES plus Player Off and
+Player On). Counted per event: `events_outside_credited_time`. 2015/16: PL 3,
+La Liga 1, Serie A 11 (Milinković-Savić 3879637, ADR 002 §31.6).
 
 Event-position oracle (external to the §31 text)
 ------------------------------------------------
@@ -157,6 +167,8 @@ Instant = tuple[int, float]
 # §31.2: event types by a player that may follow his unpaired Player Off. The
 # player of a Substitution event is the one taken off, so it is his own.
 OFF_PITCH_EVENT_TYPES = frozenset({"Bad Behaviour", "Substitution"})
+# events_outside_credited_time: types that do not need the player on the pitch.
+OUTSIDE_TIME_EXEMPT_TYPES = OFF_PITCH_EVENT_TYPES | {"Player Off", "Player On"}
 
 # Column → kind, reported with the totals.
 KINDS = {
@@ -512,7 +524,10 @@ def match_minutes(
                 until = clock.elapsed(sub) if sub is not None else clock.duration
                 losses += max(0.0, until - clock.elapsed(min(non_sub)))
             for a, b in windows.get(pid, []):
-                window_time += clock.elapsed(b) - clock.elapsed(a)
+                # Clipped at the exit: time after it is already an exit loss.
+                if exit_at is not None:
+                    b = min(b, exit_at)
+                window_time += max(0.0, clock.elapsed(b) - clock.elapsed(a))
         for p, used in by_period.items():
             if used > 11 * clock.length(p) + PER_TEAM_TOLERANCE_MIN:
                 raise SystemExit(f"FAIL: match {mid} team {team['team_id']}: period {p} "
@@ -533,6 +548,27 @@ def _group(mid: int, name: str | None, where: str) -> str:
     if group is None:
         raise SystemExit(f"FAIL: match {mid}: unmapped position {name!r} in {where}")
     return group
+
+
+def events_outside_credited_time(events: list[dict], teams: list[dict], clock: Clock) -> list[dict]:
+    """
+    Report-only: every period 1-4 event by a player, other than
+    OUTSIDE_TIME_EXEMPT_TYPES, whose elapsed instant is outside his credited
+    time (closed intervals). A player with no credited time (or not in the
+    lineup) has every such event outside.
+    """
+    segments = {p["player_id"]: p["segments"] for t in teams for p in t["players"]}
+    rows = []
+    for e in events:
+        pid = (e.get("player") or {}).get("id")
+        if (e["period"] > 4 or pid is None
+                or e["type"]["name"] in OUTSIDE_TIME_EXEMPT_TYPES):
+            continue
+        t = clock.elapsed(_at(e))
+        if not any(a - TIME_EPS <= t <= b + TIME_EPS for a, b, _ in segments.get(pid, [])):
+            rows.append({"player_id": pid, "player": e["player"].get("name"),
+                         "type": e["type"]["name"], "at": _at(e)})
+    return rows
 
 
 def event_position_oracle(mid: int, events: list[dict], teams: list[dict], clock: Clock) -> list[dict]:
@@ -612,12 +648,17 @@ def main() -> None:
     team_rows: list[dict] = []
     oracle_rows: list[dict] = []
     tactics_rows: list[dict] = []
+    outside_rows: list[dict] = []
+    match_duration = 0.0
     for m in matches:
         mid = m["match_id"]
         events = json.loads((DATA_ROOT / "events" / f"{mid}.json").read_text())
         lineups = json.loads((DATA_ROOT / "lineups" / f"{mid}.json").read_text())
         count_events(events, totals)
         teams, clock = match_minutes(mid, events, lineups, counts)
+        match_duration += clock.duration
+        outside_rows.extend({"match_id": mid, **r}
+                            for r in events_outside_credited_time(events, teams, clock))
         for t in teams:
             t["match_id"] = mid
             totals["minutes_played"] += t["summed"]
@@ -635,6 +676,10 @@ def main() -> None:
                 "treatment_window_inside_stint", "overlapping_stints", "unpaired_player_off_capped",
                 "dismissal_after_period_end", "dismissal_after_match_end"):
         print(f"  {key:<32} {counts[key]}")
+    print(f"  {'events_outside_credited_time':<32} {len(outside_rows)}")
+    for r in outside_rows:
+        print(f"    match {r['match_id']} {r['player']} {r['type']} at {r['at'][0]}, "
+              f"{r['at'][1]:.2f}")
     print(f"  {'overlap minutes deduplicated':<32} {counts['overlap_minutes']:.2f}")
     print(f"  {'unpaired-Off minutes removed':<32} {counts['unpaired_off_minutes']:.2f}")
 
@@ -706,16 +751,21 @@ def main() -> None:
         print(f"  {col:<22} {value:>14,}   {KINDS[col]}")
     dismissals = sum(t["dismissed"] for t in team_rows)
     print(f"  {'dismissals (base)':<22} {dismissals:>14,}   independent (on-pitch cards)")
+    match_duration = round(match_duration, 4)
+    print(f"  {'match_duration (base)':<22} {match_duration:>14,}   Σ length(p) per match (§31.1)")
 
-    update_reference(args.competition_id, args.season_id, core, dismissals,
+    update_reference(args.competition_id, args.season_id, core, dismissals, match_duration,
                      write=not args.no_write)
 
 
 def update_reference(
-    competition_id: int, season_id: int, core: dict, dismissals: int, *, write: bool,
+    competition_id: int, season_id: int, core: dict, dismissals: int, match_duration: float,
+    *, write: bool,
 ) -> None:
     """
-    Write the core section and base.dismissals. When the reference file already
+    Write the core section, base.dismissals and base.match_duration (Σ of the
+    §31.1 match_duration over the league's matches, for the exact GK identity
+    in tests/test_reference_totals.py). When the reference file already
     has a core section, every non-minutes core value and the dismissal count
     must come out exactly as recorded (H4 changes only the minutes). A league
     with no reference file, or none of these sections yet, is written as new.
@@ -737,7 +787,8 @@ def update_reference(
         print(f"  {col:<22} {old} → {core[col]:,} ({delta})")
     if write:
         write_reference(competition_id, season_id, "core", core)
-        write_reference(competition_id, season_id, "base", {**old_base, "dismissals": dismissals})
+        write_reference(competition_id, season_id, "base",
+                        {**old_base, "dismissals": dismissals, "match_duration": match_duration})
 
 
 if __name__ == "__main__":

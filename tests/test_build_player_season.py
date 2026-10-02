@@ -1098,23 +1098,31 @@ class TestIntegration:
                 assert season[col].sum() == expected, f"{col}: {season[col].sum()} != {expected}"
                 assert season[col].sum() == m[col].sum(), f"{col}: season sum != match sum"
 
-    # H4b must remove this marker: the pipeline then computes period-aware minutes.
-    @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason="period-aware minutes land in H4b")
+    @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
+    def test_core_minutes_season_equals_match(self, frames, ref):
+        """minutes_played and the six minutes_<group> columns: the season totals
+        equal the match-level totals (the aggregation loses no minutes)."""
+        match_df, season_df = frames
+        m, season = _league(match_df, ref), _league(season_df, ref)
+        for col in ref["core"]:
+            if col.startswith("minutes_"):
+                assert season[col].sum() == pytest.approx(m[col].sum(), abs=0.001), (
+                    f"{col}: season sum != match sum"
+                )
+
     @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
     def test_core_minutes_reconcile(self, frames, ref):
         """minutes_played and minutes_<group> must match the period-aware spike totals
-        (ADR 002 §31.6) and equal match-level totals, abs=0.001 (the references are
-        rounded to 4 decimals)."""
+        (ADR 002 §31.6), abs=0.001 (the references are rounded to 4 decimals), and
+        Σ match_duration (one value per match) must equal base.match_duration."""
         match_df, season_df = frames
         m, season = _league(match_df, ref), _league(season_df, ref)
         for col, expected in ref["core"].items():
-            if not col.startswith("minutes_"):
-                continue
-            assert season[col].sum() == pytest.approx(expected, abs=0.001), col
-            assert season[col].sum() == pytest.approx(m[col].sum(), abs=0.001), (
-                f"{col}: season sum != match sum"
-            )
+            if col.startswith("minutes_"):
+                assert season[col].sum() == pytest.approx(expected, abs=0.001), col
+        per_match = m.group_by("match_id").agg(pl.col("match_duration").first())
+        assert per_match["match_duration"].sum() == pytest.approx(
+            ref["base"]["match_duration"], abs=0.001)
 
     @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
     def test_team_minutes_within_eleven_times_duration(self, frames, ref):

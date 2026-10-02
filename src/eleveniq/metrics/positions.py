@@ -27,12 +27,15 @@ first alphabetically is chosen as a deterministic secondary tie-break
 DM-CM / AM-Winger tie resolves to AM-Winger.  This is the secondary tie-break
 only and rarely applies in practice).
 
-Use compute_minutes_per_group() to build the per-match contribution, then
+Use compute_minutes_per_group() (or minutes_per_group() on a timeline from
+minutes.player_timeline) to build the per-match contribution, then
 primary_position_group() to resolve the season-level assignment.
 """
 from __future__ import annotations
-from collections.abc import Iterator
-from eleveniq.metrics.minutes import iter_stint_bounds, stint_end_cap
+
+from collections.abc import Iterable
+
+from eleveniq.metrics.minutes import Instant, PeriodClock, PlayerTimeline, player_timeline
 
 POSITION_GROUP_MAP: dict[str, str] = {
     # Goalkeeper
@@ -93,101 +96,62 @@ def assign_position_group(position_name: str) -> str:
     return POSITION_GROUP_MAP.get(position_name, UNKNOWN_POSITION_GROUP)
 
 
-def _iter_stint_contributions(
-    positions: list[dict],
-    match_duration: float,
-    dismissal_minute: float | None,
-    substitution_minute: float | None,
-) -> Iterator[tuple[str, float]]:
+def minutes_per_group(timeline: PlayerTimeline) -> dict[str, float]:
     """
-    Yield (raw_position_name, duration_minutes) for every non-zero stint.
-
-    This is the single shared function underlying both compute_minutes_per_group
-    and compute_minutes_per_raw_position, ensuring they can never diverge.
-
-    Exit clamping (ADR 002 §3)
-    --------------------------
-    The exit cap is the earlier of dismissal_minute and substitution_minute
-    (stint_end_cap). When there is one, ALL stint end-times are clamped to
-    min(end, cap) — including stints with explicit `to` values. StatsBomb
-    sometimes keeps a stint running past the card minute or past the player's
-    own Substitution event (lineup not corrected). Without this clamp those
-    stints would overcount minutes.
-
-    Without an exit cap, explicit `to` values are used as-is.
-    The stint ends come from minutes.iter_stint_bounds, the same function
-    compute_player_minutes uses.
+    position_group → minutes for one player-match, from his timeline
+    (minutes.player_timeline, ADR 002 §31.4). Every piece of credited time has
+    exactly one position, so the values sum to timeline.minutes. An unmapped
+    or null position is UNKNOWN (which fails the build in build_player_match).
     """
-    cap = stint_end_cap(dismissal_minute, substitution_minute)
-    for stint, start, end in iter_stint_bounds(positions, match_duration, cap):
-        duration = max(0.0, end - start)
-        if duration == 0.0:
-            continue
-        pos = stint.get("position")
-        if pos is None:
-            position_name = ""
-        elif isinstance(pos, dict):
-            position_name = pos.get("name", "")
-        else:
-            position_name = str(pos)
-        yield position_name, duration
+    result: dict[str, float] = {}
+    for piece in timeline.pieces:
+        group = assign_position_group(piece.position)
+        result[group] = result.get(group, 0.0) + piece.minutes
+    return result
+
+
+def minutes_per_raw_position(timeline: PlayerTimeline) -> dict[str, float]:
+    """StatsBomb position name → minutes, from the same timeline as minutes_per_group."""
+    result: dict[str, float] = {}
+    for piece in timeline.pieces:
+        result[piece.position] = result.get(piece.position, 0.0) + piece.minutes
+    return result
 
 
 def compute_minutes_per_group(
     positions: list[dict],
-    match_duration: float,
+    clock: PeriodClock,
     *,
-    dismissal_minute: float | None,
-    substitution_minute: float | None,
+    exit_at: Instant | None,
+    treatment_windows: Iterable[tuple[Instant, Instant]],
 ) -> dict[str, float]:
     """
-    Return a mapping of position_group → minutes played in that group for
-    one match.
+    position_group → minutes for one match (ADR 002 §31.4): the clock, exit
+    cap, treatment windows, union and position rule of minutes.player_timeline.
 
-    Handles multi-stint appearances (tactical shifts), dismissals and the
-    player's own substitution off (the exit cap, ADR 002 §3).
-    dismissal_minute and substitution_minute are required (keyword, no default;
-    pass None when the player was not dismissed / substituted off), so a
-    forgotten argument cannot silently give uncapped minutes.
-    The `position` field in each stint may be a plain string (confirmed in
-    StatsBomb open data) or a dict with a 'name' key (schema robustness).
-    A null/None position is treated as UNKNOWN and included in the result.
-
-    Returns an empty dict for players who never took the field.
+    exit_at (minutes.stint_end_cap) and treatment_windows are required
+    keywords with no default, so a forgotten argument cannot silently give
+    uncapped minutes. The `position` field of a stint may be a plain string
+    (StatsBomb open data) or a dict with a 'name' key; a null position is
+    UNKNOWN. Returns an empty dict for players who never took the field.
     """
-    if not positions:
-        return {}
-    result: dict[str, float] = {}
-    for pos_name, duration in _iter_stint_contributions(
-        positions, match_duration, dismissal_minute, substitution_minute
-    ):
-        group = assign_position_group(pos_name)
-        result[group] = result.get(group, 0.0) + duration
-    return result
+    return minutes_per_group(player_timeline(
+        positions, clock, exit_at=exit_at, treatment_windows=treatment_windows))
 
 
 def compute_minutes_per_raw_position(
     positions: list[dict],
-    match_duration: float,
+    clock: PeriodClock,
     *,
-    dismissal_minute: float | None,
-    substitution_minute: float | None,
+    exit_at: Instant | None,
+    treatment_windows: Iterable[tuple[Instant, Instant]],
 ) -> dict[str, float]:
     """
-    Return a mapping of StatsBomb position name → minutes for one match.
-
-    Uses the same shared stint logic as compute_minutes_per_group, so
-    sum(compute_minutes_per_raw_position(...).values()) always equals
-    sum(compute_minutes_per_group(...).values()) for the same inputs.
+    StatsBomb position name → minutes for one match. Uses the same timeline as
+    compute_minutes_per_group, so the two always sum to the same total.
     """
-    if not positions:
-        return {}
-    result: dict[str, float] = {}
-    for pos_name, duration in _iter_stint_contributions(
-        positions, match_duration, dismissal_minute, substitution_minute
-    ):
-        result[pos_name] = result.get(pos_name, 0.0) + duration
-    return result
+    return minutes_per_raw_position(player_timeline(
+        positions, clock, exit_at=exit_at, treatment_windows=treatment_windows))
 
 
 def primary_position_group(minutes_per_group: dict[str, float]) -> str:

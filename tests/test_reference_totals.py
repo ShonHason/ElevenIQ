@@ -69,7 +69,7 @@ class TestReferenceTotalsFixtures:
     def test_core_section_present(self, cs):
         """Plan 004 H2/H4a: every reference file has the core section from
         spikes/verify_core_metrics.py, including the per-group minutes (ADR 002
-        §31.6), and base carries the dismissal count."""
+        §31.6), and base carries the dismissal count and Σ match_duration."""
         ref = _load(cs)
         assert set(ref["core"]) == {
             "minutes_played", "shots", "shots_on_target", "xg", "passes_attempted",
@@ -81,6 +81,7 @@ class TestReferenceTotalsFixtures:
             "minutes_gk", "minutes_st",
         }
         assert isinstance(ref["base"]["dismissals"], int)
+        assert isinstance(ref["base"]["match_duration"], float)
 
     @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
     def test_core_group_minutes_sum_to_minutes_played(self, cs):
@@ -93,17 +94,19 @@ class TestReferenceTotalsFixtures:
 
     @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
     def test_core_minutes_obey_the_goalkeeper_identity(self, cs):
-        """Sanity bounds from ADR 002 §31.6 on the committed totals (the fixture
-        holds no Σ match_duration, so the 0.05% GK identity itself is checked by
-        the spike, not here):
-        - at most 11 players per goalkeeper: minutes_played <= 11 x minutes_gk,
-          with the spike's 5e-4 GK slack;
-        - on the §31 clock every period runs to its whistle, so the average GK
-          minutes per team-match exceed a nominal 90."""
+        """ADR 002 §31.6 on the committed totals. base.match_duration is Σ of the
+        §31.1 match_duration (elapsed playing time) over the league's matches.
+        - GK identity: one goalkeeper per team at all times, so GK minutes equal
+          2 x Σ match_duration within 0.05% (observed 0.000-0.018% short);
+        - at most 11 players per team: minutes_played <= 22 x Σ match_duration;
+        - every period runs to its whistle, so the average match is longer
+          than a nominal 90."""
         ref = _load(cs)
-        core, matches = ref["core"], ref["base"]["matches"]
-        assert core["minutes_played"] <= 11 * core["minutes_gk"] / (1 - 5e-4)
-        assert core["minutes_gk"] / (2 * matches) > 90.0
+        core, base = ref["core"], ref["base"]
+        duration = base["match_duration"]
+        assert core["minutes_gk"] == pytest.approx(2 * duration, rel=5e-4)
+        assert core["minutes_played"] <= 2 * 11 * duration
+        assert duration / base["matches"] > 90.0
 
     @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
     def test_core_subsets_never_exceed_their_totals(self, cs):

@@ -337,7 +337,7 @@ Run the fast and integration suites (green), grep the old stale phrases (expect 
 ---
 
 ## H4: open decisions (queued 2026-10-01 from the H3b reviews)
-**Status (2026-10-02).** The items below are decided; the decisions are in ADR 002 §31.
+**Status (2026-10-02).** Decided (ADR 002 §31) and implemented (H4a, H4b).
 Branch `h4-period-aware-minutes`.
 
 **Chunks.**
@@ -366,6 +366,26 @@ Branch `h4-period-aware-minutes`.
 - The league minutes gap is 0.0005% or less in every league.
 - Every other core column and the dismissal counts are unchanged.
 - `core.minutes_played` and `core.minutes_<group>` are written.
+
+**H4b outcome (2026-10-02).**
+- First tasks 1–5 and the stats-reviewer's tie tests are done (below).
+- The pipeline implements §31 (`metrics/minutes.py`: `PeriodClock`,
+  `find_treatment_windows`, `stint_end_cap` by instant, `player_timeline`;
+  `metrics/positions.py` reads the timeline; `build_player_match.py`: per-period ceiling,
+  clamp guards, `event_after_permanent_off`, the report-only issues).
+  `check_dismissed_player_minutes` is removed; the xfail on `test_core_minutes_reconcile`
+  is gone.
+- Pipeline and spike agree exactly in all 43,044 player-matches (not independent
+  evidence; ADR 002 §31.7). All report-only counts are as predicted; 0 failing issues.
+- Before/after (`spikes/period_aware_before_after.py`, ADR 002 §31.7): +44,641.7 min
+  (+1.40%); 11 gate crossings up, 0 down; 226 match-level and 9 season group flips and
+  1 `is_primary_stint` flip, outside the plan's expected set. Each was explained; the
+  stats-reviewer approved with conditions and the user signed them off. They are
+  pinned in `spikes/expected_position_flips.json` and checked by the script's STOP rule.
+- The data-auditor has a new-source checklist; the M4 pre-condition from H3b is closed.
+- Signature change from the plan: the minutes functions take one required `exit_at`
+  (`stint_end_cap(dismissal=, substitution=, unpaired_off=)`) instead of separate
+  dismissal and substitution keywords, because the unpaired Player Off is a third exit.
 
 **H4b first tasks (H4a review follow-ups, 2026-10-02), before any pipeline code:**
 1. **Group-minutes season = match check outside the xfail.**

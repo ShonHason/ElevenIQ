@@ -381,8 +381,14 @@ class TestSpikeExitOrderAndExpectedMinutes:
         # treatment window across half time: (1, 46:00) -> (2, 46:00) is 1 + 1 min
         (lambda ev: ev.add(1, 46, "Player Off", 1).add(2, 46, "Player On", 1),
          (None, None), 93.0, 2.0, 0),
+        # red card inside a window that later closes: Off (2, 60:00), card (2, 62:00),
+        # On (2, 65:00). Credited to the Off (62); the loss runs from the card
+        # (95 - 64 = 31) and the window is clipped at the card (64 - 62 = 2), so the
+        # 64-67 span is not deducted twice: 33 = 95 - 62.
+        (lambda ev: ev.add(2, 60, "Player Off", 1).card(2, 62, 1).add(2, 65, "Player On", 1),
+         (None, None), 62.0, 33.0, 1),
     ], ids=["red_card", "bench_card_after_sub", "unpaired_off", "interval_card",
-            "window_across_half_time"])
+            "window_across_half_time", "card_inside_closed_window"])
     def test_expected_deducts_exit_losses_and_windows(self, build, stint_to, summed, deducted,
                                                       dismissed):
         """§31.6: expected = 11 x match_duration - exit losses - treatment windows,
@@ -503,6 +509,42 @@ class TestSpikePositionOracles:
         assert rows[2]["disagree"] == pytest.approx(0.0)
 
 
+class TestSpikeEventsOutsideCreditedTime:
+    """Report-only (plan 004 H4b): events by a player outside his credited time,
+    except the types that do not need him on the pitch."""
+
+    def test_only_on_pitch_event_types_outside_the_union_are_reported(self):
+        """Milinković-Savić pattern: Player Off (1, 30:00), Player On (1, 32:00), but
+        the lineup resumes only at (2, 45:00). His pass at (1, 40:00) is outside his
+        time; the Player On, a card and a pass inside his time are not; a pass at the
+        exact end of his stint (closed interval) is inside."""
+        ev = _standard_events()
+        ev.add(1, 10, "Pass", 1)
+        ev.add(1, 30, "Player Off", 1).add(1, 32, "Player On", 1)
+        ev.add(1, 40, "Pass", 1)
+        ev.card(1, 41, 1, name="Yellow Card")
+        ev.add(2, 50, "Pass", 1)
+        ev.add(2, 60, "Pass", 2)   # player 2: not in the lineup, so outside
+        events = _ordered(ev)
+        teams, clock = _match(events, [_team(1, {1: [
+            _stint("Center Back", 0, 1, 30, 1),
+            _stint("Center Back", 45, 2, reason="Player On"),
+        ]})])
+        rows = [r for r in spike.events_outside_credited_time(events, teams, clock)
+                if r["player_id"] != 999]  # the fixture's filler passes
+        assert [(r["player_id"], r["type"], r["at"]) for r in rows] == [
+            (1, "Pass", (1, 40.0)), (2, "Pass", (2, 60.0))]
+
+    def test_event_at_a_stint_boundary_is_inside(self):
+        ev = _standard_events()
+        ev.add(2, 60, "Pass", 1)
+        ev.add(2, 60, "Substitution", 1)
+        events = _ordered(ev)
+        teams, clock = _match(events, [_team(1, {1: [_stint("Center Back", 0, 1, 60, 2)]})])
+        assert [r for r in spike.events_outside_credited_time(events, teams, clock)
+                if r["player_id"] != 999] == []
+
+
 class TestSpikeSubstitutionAfterUnpairedOff:
     """§31.2: the player's own Substitution may follow his unpaired Player Off
     (an injured player formally replaced); any other event still fails."""
@@ -550,18 +592,18 @@ class TestSpikeUpdateReference:
         return {"minutes_played": minutes, "shots": shots, **groups}
 
     def test_new_league_without_a_file_is_written(self, ref_dir):
-        spike.update_reference(99, 1, self._core(), 3, write=True)
+        spike.update_reference(99, 1, self._core(), 3, 95.5, write=True)
         ref = json.loads((ref_dir / "99_1.json").read_text())
         assert ref["core"] == self._core()
-        assert ref["base"] == {"dismissals": 3}
+        assert ref["base"] == {"dismissals": 3, "match_duration": 95.5}
 
     def test_existing_base_keys_are_kept_and_minutes_may_change(self, ref_dir):
         (ref_dir / "99_1.json").write_text(json.dumps({
             "competition_id": 99, "season_id": 1,
             "base": {"matches": 5, "dismissals": 3}, "core": self._core(900.0)}))
-        spike.update_reference(99, 1, self._core(990.0), 3, write=True)
+        spike.update_reference(99, 1, self._core(990.0), 3, 95.5, write=True)
         ref = json.loads((ref_dir / "99_1.json").read_text())
-        assert ref["base"] == {"matches": 5, "dismissals": 3}
+        assert ref["base"] == {"matches": 5, "dismissals": 3, "match_duration": 95.5}
         assert ref["core"]["minutes_played"] == 990.0
 
     @pytest.mark.parametrize("change", ["shots", "dismissals"])
@@ -572,11 +614,11 @@ class TestSpikeUpdateReference:
         core = self._core(shots=11) if change == "shots" else self._core()
         dismissals = 4 if change == "dismissals" else 3
         with pytest.raises(SystemExit, match="non-minutes values changed"):
-            spike.update_reference(99, 1, core, dismissals, write=True)
+            spike.update_reference(99, 1, core, dismissals, 95.5, write=True)
         assert json.loads((ref_dir / "99_1.json").read_text()) == before
 
     def test_no_write_leaves_a_new_league_unwritten(self, ref_dir):
-        spike.update_reference(99, 1, self._core(), 3, write=False)
+        spike.update_reference(99, 1, self._core(), 3, 95.5, write=False)
         assert not (ref_dir / "99_1.json").exists()
 
 

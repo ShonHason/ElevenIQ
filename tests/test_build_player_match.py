@@ -660,8 +660,50 @@ def test_every_team_has_exactly_11_starters():
 # Starter cross-check against the Starting XI event (Plan 003 C2)
 # ---------------------------------------------------------------------------
 
+_NOMINAL_PERIOD_END = {1: 45, 2: 90, 3: 105, 4: 120}
+
+
+# The two teams' Half End events (ADR 002 §31.1: exactly two per period, one per team).
+_HALF_END_TEAMS = (801, 802)
+
+
+def _with_half_ends(events: list[dict]) -> list[dict]:
+    """
+    ADR 002 §31.1 needs exactly two Half End events, one per team, in every
+    playing period 1..max. The synthetic matches below were written with at
+    most one per period: add the pair at the nominal end of each period that
+    has none, so a period-1 whistle at 45:00 leaves their expected minutes
+    unchanged, and complete a period's single Half End with the other team's
+    at the same instant. A period given two Half End events is left as written
+    (the tests of the rule). Events with no period are left for the tests that
+    expect them to fail.
+    """
+    def is_half_end(e: dict) -> bool:
+        return (e.get("type") or {}).get("name") == "Half End"
+
+    periods = [e["period"] for e in events if isinstance(e.get("period"), int) and e["period"] <= 4]
+    by_period: dict[int, list[int]] = {}
+    for i, e in enumerate(events):
+        if is_half_end(e):
+            by_period.setdefault(e.get("period"), []).append(i)
+    out = list(events)
+    for p, (i, *rest) in by_period.items():
+        if rest:
+            continue
+        own = (out[i].get("team") or {}).get("id") or _HALF_END_TEAMS[0]
+        other = next(t for t in _HALF_END_TEAMS if t != own)
+        out[i] = {**out[i], "team": {"id": own}}
+        out.append({**out[i], "id": f"{out[i].get('id', 'he')}-other", "team": {"id": other}})
+    out += [{"id": f"he-auto-{p}-{t}", "type": {"name": "Half End"}, "team": {"id": t},
+             "period": p, "minute": _NOMINAL_PERIOD_END[p], "second": 0}
+            for p in range(1, max(periods, default=0) + 1) if p not in by_period
+            for t in _HALF_END_TEAMS]
+    return out
+
+
 def _write_match(root: Path, match_id: int, events: list[dict], lineups: list[dict]) -> None:
     import json
+    events = _with_half_ends(events)
     for sub, payload in (("events", events), ("lineups", lineups)):
         (root / sub).mkdir(parents=True, exist_ok=True)
         (root / sub / f"{match_id}.json").write_text(json.dumps(payload))
@@ -681,8 +723,15 @@ _HALF_END = {"id": "he", "type": {"name": "Half End"}, "minute": 90, "second": 0
 
 
 def _spell(frm: str, to: str | None, reason: str) -> dict:
+    """A stint in match-absolute shorthand: a time before 45:00 is period 1, a
+    later one period 2 (a `to` of exactly 45:00 ends period 1). A first-half
+    stoppage stint sets its period explicitly."""
+    def minute(t: str) -> float:
+        mm, ss = t.split(".")[0].split(":")
+        return int(mm) + int(ss) / 60
     return {"position_id": 10, "position": "Center Defensive Midfield",
-            "from": frm, "to": to, "from_period": 1, "to_period": None if to is None else 1,
+            "from": frm, "to": to, "from_period": 1 if minute(frm) < 45 else 2,
+            "to_period": None if to is None else (1 if minute(to) <= 45 else 2),
             "start_reason": reason}
 
 
@@ -1067,6 +1116,17 @@ class TestSummariseQualityReport:
             {"issue": "on_pitch_count_exceeded", "match_id": 10, "team_id": 1},
             {"issue": "player_minutes_exceed_duration", "match_id": 11, "player_id": 18},
             {"issue": "player_minutes_exceed_duration", "match_id": 11, "player_id": 19},
+            {"issue": "period_end_before_nominal", "match_id": 12, "period": 1},
+            {"issue": "stint_after_period_end", "match_id": 12, "player_id": 20},
+            {"issue": "treatment_window_inside_stint", "match_id": 12, "player_id": 21},
+            {"issue": "overlapping_stints", "match_id": 12, "player_id": 22},
+            {"issue": "overlapping_stints", "match_id": 12, "player_id": 23},
+            {"issue": "unpaired_player_off_capped", "match_id": 12, "player_id": 24},
+            {"issue": "dismissal_after_period_end", "match_id": 12, "player_id": 25},
+            {"issue": "dismissal_after_match_end", "match_id": 12, "player_id": 26},
+            {"issue": "events_outside_credited_time", "match_id": 12, "player_id": 27},
+            {"issue": "events_outside_credited_time", "match_id": 12, "player_id": 27},
+            {"issue": "events_outside_credited_time", "match_id": 12, "player_id": 27},
         ]
         assert summarise_quality_report(report) == {
             "dismissals": 2,
@@ -1079,6 +1139,14 @@ class TestSummariseQualityReport:
             "reversed_period_stints": 2,
             "on_pitch_count_exceeded": 1,
             "player_minutes_exceed_duration": 2,
+            "period_end_before_nominal": 1,
+            "stint_after_period_end": 1,
+            "treatment_window_inside_stint": 1,
+            "overlapping_stints": 2,
+            "unpaired_player_off_capped": 1,
+            "dismissal_after_period_end": 1,
+            "dismissal_after_match_end": 1,
+            "events_outside_credited_time": 3,
         }
 
     def test_empty_report_all_zero(self):
@@ -1133,9 +1201,17 @@ def _shot(outcome: str, *, xg: float | None = 0.1, **kw) -> dict:
     return _ev("Shot", shot=shot, location=[110, 40], **kw)
 
 
+def _default_half_end(events) -> list[dict]:
+    """The (2, 90:00) whistle, unless the test gives its own period-2 Half End."""
+    own = any((e.get("type") or {}).get("name") == "Half End" and e.get("period") == 2
+              for e in events)
+    return [] if own else [_HALF_END]
+
+
 def _build(tmp_path, events, lineups=None):
     """Write one synthetic match and build it; return (out_path, result-or-exc)."""
-    _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events, _HALF_END],
+    _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events,
+                                  *_default_half_end(events)],
                  lineups or _quality_lineups())
     out = tmp_path / "out.parquet"
     return out, build_competition_season(99, 1, data_root=tmp_path, output_path=out)
@@ -1143,7 +1219,8 @@ def _build(tmp_path, events, lineups=None):
 
 def _build_fails(tmp_path, events, lineups=None) -> str:
     out = tmp_path / "out.parquet"
-    _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events, _HALF_END],
+    _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events,
+                                  *_default_half_end(events)],
                  lineups or _quality_lineups())
     with pytest.raises(DataQualityError) as exc:
         build_competition_season(99, 1, data_root=tmp_path, output_path=out)
@@ -1347,15 +1424,26 @@ class TestPenaltyShootoutExcluded:
         row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
         assert row["minutes_played"] == pytest.approx(100.0)
 
-    def test_dismissal_after_match_end_fails_build(self, tmp_path, monkeypatch):
-        # A dismissal minute past the match duration is never capped silently.
-        # Unreachable while the duration is the last period<=4 event (the card is
-        # one), so the duration is forced below the card minute here.
-        monkeypatch.setattr(
-            "eleveniq.pipeline.build_player_match.compute_match_duration", lambda _: 50.0)
-        card = _ev("Bad Behaviour", period=2, minute=60,
+    def test_dismissal_after_match_end_is_capped_and_reported(self, tmp_path):
+        # ADR 002 §31.2 (report-only from H4): a red card after the final
+        # whistle (2, 90:00) is a real event; it is clamped to match_end and
+        # changes no minutes.
+        card = _ev("Bad Behaviour", period=2, minute=92,
                    bad_behaviour={"card": {"name": "Red Card"}})
-        assert "dismissal_after_match_end" in _build_fails(tmp_path, [card])
+        _, (df, report) = _build(tmp_path, [card])
+        assert df.filter(pl.col("player_id") == _STARTER)["minutes_played"][0] == pytest.approx(90.0)
+        assert [d["issue"] for d in report if d.get("issue", "").startswith("dismissal_after")] == [
+            "dismissal_after_match_end"]
+
+    def test_dismissal_in_the_interval_caps_at_the_period_end(self, tmp_path):
+        # ADR 002 §31.2: a card at (1, 46:00), after the (1, 45:00) whistle, is
+        # clamped to the period end: 45 minutes, reported.
+        card = _ev("Bad Behaviour", period=1, minute=46,
+                   bad_behaviour={"card": {"name": "Red Card"}})
+        _, (df, report) = _build(tmp_path, [card])
+        assert df.filter(pl.col("player_id") == _STARTER)["minutes_played"][0] == pytest.approx(45.0)
+        assert [d["issue"] for d in report if d.get("issue", "").startswith("dismissal_after")] == [
+            "dismissal_after_period_end"]
 
     def test_shootout_event_by_bench_player_is_not_dropped_event(self, tmp_path):
         # Filtered as a shootout event, so not reported as a dropped event.
@@ -1459,7 +1547,8 @@ def _write_team_match(tmp_path, player_positions, events) -> list[dict]:
     lineups = _team_lineups(player_positions)
     starters = [p["player_id"] for p in lineups[0]["lineup"]
                 if any(s["start_reason"] == "Starting XI" for s in p["positions"])]
-    _write_match(tmp_path, 8100, [_xi_event(_TEAM, starters), *events, _HALF_END], lineups)
+    _write_match(tmp_path, 8100, [_xi_event(_TEAM, starters), *events,
+                                  *_default_half_end(events)], lineups)
     return lineups
 
 
@@ -1516,7 +1605,7 @@ class TestSubstitutionOffCap:
         # restart (45:00). (1, 46:01) precedes (2, 45:00): no failure.
         spells = [
             {**_spell("00:00", "44:00", "Starting XI")},
-            {**_spell("46:01", None, "Player On")},
+            {**_spell("46:01", None, "Player On"), "from_period": 1},
         ]
         _, (df, report) = _build(
             tmp_path, [_sub_off(_STARTER, period=2, minute=45)],
@@ -1560,9 +1649,12 @@ class TestSubstitutionOffCap:
 
     def test_reversed_period_stint_reported_not_failed(self, tmp_path):
         # 3879549 pattern: "45:00 p2 → 45:51 p1".
+        # The first half ends at 47:00 (the to = (1, 45:51) is inside it).
         spells = [{**_spell("00:00", "45:00", "Starting XI")},
-                  {**_spell("45:00", "45:51", "Tactical Shift"), "from_period": 2}]
-        _, (_, report) = _build(tmp_path, [], _quality_lineups(starter_positions=spells))
+                  {**_spell("45:00", "45:51", "Tactical Shift"), "from_period": 2,
+                   "to_period": 1}]
+        events = [_ev("Half End", None, period=1, minute=47)]
+        _, (_, report) = _build(tmp_path, events, _quality_lineups(starter_positions=spells))
         assert [d for d in report if d.get("issue") == REVERSED_PERIOD_STINT]
 
 
@@ -1626,14 +1718,19 @@ class TestSubstitutionOffPipelineEdges:
 
     def test_second_half_stoppage_stint_before_extra_time_substitution_is_allowed(self, tmp_path):
         # Same ordering rule as the Bale case, one half later: period 3 restarts at
-        # 90:00, so (2, 92:30) precedes a substitution at (3, 91:00).
+        # 90:00, so (2, 92:30) precedes a substitution at (3, 91:00). His Player On
+        # is after the (2, 90:00) whistle, so the stint is clamped to that end
+        # (ADR 002 §31.1, stint_after_period_end) and runs from the period-3
+        # restart to his substitution: 88 + 1 min.
         spells = [{**_spell("00:00", "88:00", "Starting XI"), "to_period": 2},
                   {**_spell("92:30", None, "Player On"), "from_period": 2}]
         events = [_sub_off(_STARTER, period=3, minute=91),
                   _ev("Half End", None, period=4, minute=120)]
         _, (df, report) = _build(tmp_path, events, _quality_lineups(starter_positions=spells))
         assert not [d for d in report if d.get("issue") == STINT_AFTER_SUBSTITUTION]
-        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(88.0)
+        assert [d["issue"] for d in report if d.get("issue") == "stint_after_period_end"] == [
+            "stint_after_period_end"]
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(89.0)
 
     def test_shootout_substitution_does_not_extend_minutes(self, tmp_path):
         # A Substitution in period 5 (shootout) is not playing time: it must neither
@@ -1728,12 +1825,15 @@ class TestPeriodFiveAssists:
 class TestPlayerMinutesGuard:
     """A player's minutes may not exceed the match duration (H2 review follow-up 2)."""
 
-    def test_overlapping_own_stints_fail_build(self, tmp_path):
-        # 2 × 90 = 180 minutes for one player, far under the 11 × 90 team ceiling.
+    def test_overlapping_own_stints_are_counted_once_and_reported(self, tmp_path):
+        # ADR 002 §31.4: minutes are the union of the stints, so two full-match
+        # stints give 90, not 180; the deduplicated time is reported.
         spells = [_spell("00:00", None, "Starting XI"), _spell("00:00", None, "Tactical Shift")]
-        msg = _build_fails(tmp_path, [], _quality_lineups(starter_positions=spells))
-        assert "player_minutes_exceed_duration" in msg
-        assert "team_minutes_exceed_ceiling" not in msg
+        _, (df, report) = _build(tmp_path, [], _quality_lineups(starter_positions=spells))
+        assert df.filter(pl.col("player_id") == _STARTER)["minutes_played"][0] == pytest.approx(90.0)
+        overlaps = [d for d in report if d.get("issue") == "overlapping_stints"]
+        assert [d["minutes_deduplicated"] for d in overlaps] == [pytest.approx(90.0)]
+        assert not [d for d in report if d.get("issue") == PLAYER_MINUTES_EXCEED_DURATION]
 
     def test_full_match_equals_duration_passes(self, tmp_path):
         _, (df, report) = _build(tmp_path, [])
@@ -1746,16 +1846,27 @@ class TestOnPitchCount:
     not failed (H2 review follow-up 3)."""
 
     def test_overcount_masked_under_team_ceiling_is_reported_not_failed(self, tmp_path):
-        # P0 leaves at 60:00 with no substitute, so the team total (965) is
-        # under 11 × 90, yet a 12th player is on during 10:00-15:00.
+        # P0 leaves at (2, 60:00) with no substitute, so period 2's total
+        # (15 + 450 + 5 = 470) is under 11 × 45, yet a 12th player is on during
+        # (2, 50:00)-(2, 55:00). The per-period ceiling (ADR 002 §31.5) cannot see
+        # it; the on-pitch count reports it.
         positions = [[_spell("00:00", "60:00", "Starting XI")]]
         positions += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
-        positions += [[_spell("10:00", "15:00", "Substitution - On")]]
+        positions += [[_spell("50:00", "55:00", "Substitution - On")]]
         df, report = _build_team(tmp_path, positions)
         assert df["minutes_played"].sum() == pytest.approx(965.0)
         entries = [d for d in report if d.get("issue") == ON_PITCH_COUNT_EXCEEDED]
         assert [(e["on_pitch"], e["allowed"], e["period"], e["minute"]) for e in entries] == [
-            (12, 11, 1, 10.0)]
+            (12, 11, 2, 50.0)]
+
+    def test_twelve_in_one_period_fail_the_per_period_ceiling(self, tmp_path):
+        # ADR 002 §31.5: the same 12th player in period 1 makes period 1's total
+        # 11 × 45 + 5 = 500 > 495, so the build fails, although the match total
+        # (965) is under 11 × 90.
+        positions = [[_spell("00:00", "60:00", "Starting XI")]]
+        positions += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
+        positions += [[_spell("10:00", "15:00", "Substitution - On")]]
+        assert "team_minutes_exceed_ceiling" in _build_team_fails(tmp_path, positions)
 
     def test_eleven_on_for_ten_man_team_is_reported(self, tmp_path):
         # P0 sent off at 30:00 (the cap ends his stint), but P11 is on from
@@ -1780,10 +1891,17 @@ def _stint(frm: str, from_period: int, to: str | None, to_period: int | None) ->
     return {"from": frm, "from_period": from_period, "to": to, "to_period": to_period}
 
 
+def _pad(players: list) -> list:
+    """The on-pitch tuples below predate the unpaired Player Off exit (ADR 002
+    §31.2): a 4-tuple (player_id, positions, dismissal, substitution) has none."""
+    return [(*p, None) if len(p) == 4 else p for p in players]
+
+
 class TestOnPitchExcess:
     """_on_pitch_excess: period-aware, distinct players, exits applied, and the
     allowed number is 11 minus the dismissals that leave the team a player short.
-    Player tuples are (player_id, positions, dismissal, substitution off)."""
+    Player tuples are (player_id, positions, dismissal, substitution off[,
+    unpaired Player Off])."""
 
     END = (2, 90.0)
 
@@ -1794,7 +1912,7 @@ class TestOnPitchExcess:
     @staticmethod
     def _excess(players):
         from eleveniq.pipeline.build_player_match import _on_pitch_excess
-        return _on_pitch_excess(players, TestOnPitchExcess.END)
+        return _on_pitch_excess(_pad(players), TestOnPitchExcess.END)
 
     def test_eleven_full_match_players(self):
         assert self._excess(self._full(11)) is None
@@ -1878,7 +1996,7 @@ class TestOnPitchExcessEdges:
     @staticmethod
     def _excess(players):
         from eleveniq.pipeline.build_player_match import _on_pitch_excess
-        return _on_pitch_excess(players, TestOnPitchExcessEdges.END)
+        return _on_pitch_excess(_pad(players), TestOnPitchExcessEdges.END)
 
     @staticmethod
     def _full(n: int) -> list:
@@ -1928,18 +2046,29 @@ class TestOnPitchExcessEdges:
         players.append((99, [_stint("60:00", 2, None, None)], None, None))
         assert self._excess(players) == (11, 10, (2, 70.0))
 
-    def test_exit_order_is_period_aware_unlike_stint_end_cap(self):
-        # Pinned divergence (ADR 002 §3): P1 is substituted off in first-half
-        # stoppage, (1, 46:30), then shown a red card on the bench at (2, 45:30).
-        # The on-pitch count takes the substitution as the exit, so the card
-        # keeps 11 allowed; stint_end_cap takes the smaller match-absolute
-        # minute, 45.5. 0 cases in the 2015/16 data.
+    def test_exit_order_is_period_aware_like_stint_end_cap(self):
+        # ADR 002 §31.2 (the §3 divergence is closed): P1 is substituted off in
+        # first-half stoppage, (1, 46:30), then shown a red card on the bench at
+        # (2, 45:30). Both the on-pitch count and stint_end_cap take the
+        # substitution as the exit, so the card keeps 11 allowed.
         from eleveniq.metrics.minutes import stint_end_cap
         players = self._full(11)
         players[0] = (1, players[0][1], (2, 45.5), (1, 46.5))
         players.append((99, [_stint("46:30", 1, None, None)], None, None))
         assert self._excess(players) is None
-        assert stint_end_cap(dismissal_minute=45.5, substitution_minute=46.5) == 45.5
+        assert stint_end_cap(dismissal=(2, 45.5), substitution=(1, 46.5),
+                             unpaired_off=None) == (1, 46.5)
+
+    def test_unpaired_player_off_is_an_exit(self):
+        # ADR 002 §31.2-31.3: P1's lineup stint runs to the whistle, but he left
+        # at an unpaired Player Off (2, 60:00). P99 on at (2, 62:00) is not a
+        # twelfth player; without the Off as an exit he would be.
+        players = self._full(11)
+        players[0] = (1, players[0][1], None, None, (2, 60.0))
+        players.append((99, [_stint("62:00", 2, None, None)], None, None, None))
+        assert self._excess(players) is None
+        players[0] = (1, players[0][1], None, None, None)
+        assert self._excess(players) == (12, 11, (2, 62.0))
 
 
 @pytest.mark.integration
@@ -1997,7 +2126,7 @@ class TestOnPitchExcessWorstInstant:
     @staticmethod
     def _excess(players):
         from eleveniq.pipeline.build_player_match import _on_pitch_excess
-        return _on_pitch_excess(players, (2, 90.0))
+        return _on_pitch_excess(_pad(players), (2, 90.0))
 
     @staticmethod
     def _full(n: int) -> list:
@@ -2069,7 +2198,7 @@ class TestOnPitchCountPipelineWiring:
         positions += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
         positions += [[_spell("60:00", None, "Substitution - On")]]
         _, report = _build_team(tmp_path, positions,
-                                [_sub_off(_TEAM_BASE, period=1, minute=60)])
+                                [_sub_off(_TEAM_BASE, period=2, minute=60)])
         assert self._on_pitch(report) == []
 
 
@@ -2086,7 +2215,7 @@ class TestCardLowersAllowedSpec:
     @staticmethod
     def _excess(players):
         from eleveniq.pipeline.build_player_match import _on_pitch_excess
-        return _on_pitch_excess(players, (2, 90.0))
+        return _on_pitch_excess(_pad(players), (2, 90.0))
 
     @staticmethod
     def _full(n: int) -> list:
@@ -2145,10 +2274,10 @@ class TestOnPitchCardRulePipeline:
         positions = [[_spell("00:00", "60:00", "Starting XI")]]
         positions += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
         positions += [[_spell("60:00", None, "Substitution - On")]]
-        card = _ev("Foul Committed", _TEAM_BASE, minute=60,
+        card = _ev("Foul Committed", _TEAM_BASE, period=2, minute=60,
                    foul_committed={"card": {"name": "Second Yellow"}})
         df, report = _build_team(tmp_path, positions,
-                                 [_sub_off(_TEAM_BASE, period=1, minute=60), card])
+                                 [_sub_off(_TEAM_BASE, period=2, minute=60), card])
         assert self._on_pitch(report) == []
         p0 = df.filter(pl.col("player_id") == _TEAM_BASE)["minutes_played"][0]
         assert p0 == pytest.approx(60.0)
@@ -2165,3 +2294,239 @@ class TestOnPitchCardRulePipeline:
         assert self._on_pitch(report) == [(11, 10)]
         p0 = df.filter(pl.col("player_id") == _TEAM_BASE)["minutes_played"][0]
         assert p0 == pytest.approx(30.0)
+
+
+# ---------------------------------------------------------------------------
+# Plan 004 H4b: period-aware minutes in the pipeline (ADR 002 §31)
+# ---------------------------------------------------------------------------
+
+def _half_end(period: int, minute: int, second: int = 0) -> dict:
+    return {**_ev("Half End", None, period=period, minute=minute), "second": second}
+
+
+class TestPeriodAwarePipeline:
+    """_process_match wiring of ADR 002 §31: the Half End clock, exits, windows,
+    the clamp guards and the report-only issues. One starter, 11 not needed:
+    only per-player minutes and issues are checked."""
+
+    @staticmethod
+    def _starter(df):
+        return df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+
+    @staticmethod
+    def _issues(report, name):
+        return [d for d in report if d.get("issue") == name]
+
+    def test_first_half_stoppage_is_credited_and_post_whistle_events_extend_nothing(self, tmp_path):
+        # Half End (1, 47:00) and (2, 93:00); a Ball Receipt after the first-half
+        # whistle stays a counted event but adds no time: 47 + 48 = 95.
+        events = [_half_end(1, 47), _ev("Pass", period=1, minute=48,
+                                        location=[50, 40], **{"pass": {"end_location": [60, 40]}}),
+                  _half_end(2, 93)]
+        _, (df, report) = _build(tmp_path, events)
+        row = self._starter(df)
+        assert row["minutes_played"] == pytest.approx(95.0)
+        assert row["match_duration"] == pytest.approx(95.0)
+        assert row["passes_attempted"] == 1
+
+    def test_missing_half_end_fails_the_match(self, tmp_path):
+        # A period-1 event but no period-1 Half End and the helper is bypassed.
+        import json
+        _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), _HALF_END], _quality_lineups())
+        path = tmp_path / "events" / "8100.json"
+        events = [e for e in json.loads(path.read_text())
+                  if not (e["type"]["name"] == "Half End" and e["period"] == 1)]
+        path.write_text(json.dumps(events))
+        with pytest.raises(MatchProcessingError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+
+    def test_disagreeing_half_ends_fail_the_match(self, tmp_path, caplog):
+        # One per team, 2 s apart: only the disagreement can fail it.
+        events = [_half_end(1, 45), {**_half_end(1, 45, second=2), "team": {"id": 802}},
+                  _HALF_END]
+        _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events], _quality_lineups())
+        with pytest.raises(MatchProcessingError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+        assert "disagree" in caplog.text
+
+    def test_half_ends_not_one_per_team_fail_the_match(self, tmp_path, caplog):
+        # §31.1: two period-1 Half End events, both from the same team.
+        events = [_half_end(1, 45), _half_end(1, 45), _HALF_END]
+        _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events], _quality_lineups())
+        with pytest.raises(MatchProcessingError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+        assert "not one per team" in caplog.text
+
+    def test_slightly_short_period_is_kept_and_reported(self, tmp_path):
+        _, (df, report) = _build(tmp_path, [_half_end(1, 44)])
+        assert self._starter(df)["minutes_played"] == pytest.approx(44 + 45)
+        assert [(d["period"], d["shortfall"]) for d in
+                self._issues(report, "period_end_before_nominal")] == [(1, pytest.approx(1.0))]
+
+    def test_far_short_period_fails_the_build(self, tmp_path):
+        msg = _build_fails(tmp_path, [_half_end(1, 39)])  # 6 min short of 45:00
+        assert "period_too_short" in msg
+
+    @pytest.mark.parametrize("stint, issue", [
+        (_spell("00:00", "44:00", "Starting XI") | {"to": "46:00"}, "stint_end_after_period_end"),
+        (_spell("00:00", None, "Starting XI") | {"from": "44:00", "from_period": 2},
+         "stint_time_before_period_start"),
+    ], ids=["to_after_half_end", "from_before_period_start"])
+    def test_clamp_guards_fail_the_build(self, tmp_path, stint, issue):
+        msg = _build_fails(tmp_path, [], _quality_lineups(starter_positions=[stint]))
+        assert issue in msg
+
+    def test_treatment_window_inside_a_stint_is_subtracted(self, tmp_path):
+        # Shaqiri 3754339 pattern: Off (1, 20:00), On (1, 22:00), lineup unbroken.
+        events = [_ev("Player Off", period=1, minute=20), _ev("Player On", period=1, minute=22)]
+        _, (df, report) = _build(tmp_path, events)
+        assert self._starter(df)["minutes_played"] == pytest.approx(88.0)
+        assert [d["windows"] for d in self._issues(report, "treatment_window_inside_stint")] == [1]
+
+    def test_unpaired_player_off_caps_and_is_reported(self, tmp_path):
+        # Boufal 3901155 pattern: Player Off with no Player On, lineup runs on.
+        _, (df, report) = _build(tmp_path, [_ev("Player Off", period=2, minute=70)])
+        assert self._starter(df)["minutes_played"] == pytest.approx(70.0)
+        assert [d["minutes_removed"] for d in self._issues(report, "unpaired_player_off_capped")] == [
+            pytest.approx(20.0)]
+
+    @pytest.mark.parametrize("kind, fails", [("Pass", True), ("Foul Committed", True),
+                                             ("Bad Behaviour", False)])
+    def test_event_after_unpaired_player_off(self, tmp_path, kind, fails):
+        # ADR 002 §31.2: only a card (Bad Behaviour) or his own Substitution may
+        # follow; a Foul Committed needs him on the pitch, even with a card.
+        later = _ev(kind, period=2, minute=80)
+        if kind == "Bad Behaviour":
+            later["bad_behaviour"] = {"card": {"name": "Yellow Card"}}
+        if kind == "Pass":
+            later |= {"location": [50, 40], "pass": {"end_location": [60, 40]}}
+        events = [{**_ev("Player Off", period=2, minute=70), "index": 70}, {**later, "index": 80}]
+        if fails:
+            assert "event_after_permanent_off" in _build_fails(tmp_path, events)
+        else:
+            _, (df, _) = _build(tmp_path, events)
+            assert self._starter(df)["minutes_played"] == pytest.approx(70.0)
+
+    def test_reversed_treatment_window_fails_the_match(self, tmp_path, caplog):
+        # Player Off then Player On in event order, but the On's timestamp is
+        # earlier: a reversed window is a data error, not an overlap (§31.3).
+        events = [{**_ev("Player Off", period=1, minute=22), "index": 22},
+                  {**_ev("Player On", period=1, minute=20), "index": 23}]
+        _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events, _HALF_END],
+                     _quality_lineups())
+        with pytest.raises(MatchProcessingError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+        assert "reversed in elapsed time" in caplog.text
+
+    def test_two_player_offs_in_a_row_fail_the_match(self, tmp_path):
+        events = [_ev("Player Off", period=1, minute=20), _ev("Player Off", period=1, minute=21),
+                  _ev("Player On", period=1, minute=22)]
+        _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER]), *events, _HALF_END],
+                     _quality_lineups())
+        with pytest.raises(MatchProcessingError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+
+    def test_events_outside_credited_time_are_reported(self, tmp_path):
+        # Milinković-Savić 3879637 pattern: Player Off (1, 30:00), Player On
+        # (1, 32:00), but the lineup resumes only at (2, 45:00). His pass at
+        # (1, 40:00) is outside his time; the Off/On events themselves are exempt.
+        spells = [_spell("00:00", "30:00", "Starting XI"), _spell("45:00", None, "Player On")]
+        events = [_ev("Player Off", period=1, minute=30), _ev("Player On", period=1, minute=32),
+                  _ev("Pass", period=1, minute=40, location=[50, 40],
+                      **{"pass": {"end_location": [60, 40]}})]
+        _, (df, report) = _build(tmp_path, events, _quality_lineups(starter_positions=spells))
+        assert self._starter(df)["minutes_played"] == pytest.approx(75.0)
+        assert [(d["event_type"], d["period"], d["minute"]) for d in
+                self._issues(report, "events_outside_credited_time")] == [("Pass", 1, 40)]
+
+    def test_new_issue_names_fail_or_report_as_documented(self):
+        from eleveniq.pipeline.build_player_match import (
+            FAILING_QUALITY_ISSUES, PERIOD_AWARE_REPORT_ONLY_ISSUES,
+        )
+        assert {"period_too_short", "stint_end_after_period_end",
+                "stint_time_before_period_start", "event_after_permanent_off",
+                "team_minutes_exceed_ceiling"} <= FAILING_QUALITY_ISSUES
+        assert not set(PERIOD_AWARE_REPORT_ONLY_ISSUES) & FAILING_QUALITY_ISSUES
+        assert "dismissal_after_match_end" in PERIOD_AWARE_REPORT_ONLY_ISSUES
+
+
+def _pass(pid: int, *, period: int, minute: int, second: int = 0) -> dict:
+    return {**_ev("Pass", pid, period=period, minute=minute, location=[50, 40],
+                  **{"pass": {"end_location": [60, 40]}}),
+            "id": f"pass-{pid}-{period}-{minute}-{second}", "second": second}
+
+
+class TestPeriodAwarePipelineEdges:
+    """ADR 002 §31.2, §31.3 and §31.6 wiring not covered by TestPeriodAwarePipeline."""
+
+    @staticmethod
+    def _row(df, pid):
+        return df.filter(pl.col("player_id") == pid).row(0, named=True)
+
+    def test_dismissal_record_compares_against_elapsed_card_time(self, tmp_path):
+        # First half ends (1, 47:00); red card at (2, 45:30) and the lineup stint
+        # ends there too. The card's elapsed time is 47.5 = the uncapped
+        # minutes, so nothing was overcounted. Comparing with the raw minute
+        # (45.5 + 1 tolerance) would wrongly say "overcounted".
+        card = {**_ev("Bad Behaviour", period=2, minute=45,
+                      bad_behaviour={"card": {"name": "Red Card"}}), "second": 30}
+        lineups = _quality_lineups(starter_positions=[_spell("00:00", "45:30", "Starting XI")])
+        _, (df, report) = _build(tmp_path, [_half_end(1, 47), card], lineups)
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(47.5)
+        entry = next(d for d in report if "dismissal_elapsed" in d)
+        assert entry["dismissal_elapsed"] == pytest.approx(47.5)
+        assert entry["minutes_without_fix"] == pytest.approx(47.5)
+        assert entry["minutes_overcounted_without_fix"] is False
+        assert entry["cause"] is None
+
+    def test_dismissal_record_holds_a_substitute_to_entry_until_card(self, tmp_path):
+        # On at (2, 60:00), red card at (2, 70:00), lineup stint left open: the
+        # raw data would credit him 30 min (to 90:00). That is under the card's
+        # elapsed time (70 + 1), so only the entry-to-card span (10 + 1) shows
+        # the overcount.
+        card = _ev("Bad Behaviour", _BENCH, period=2, minute=70,
+                   bad_behaviour={"card": {"name": "Red Card"}})
+        lineups = _quality_lineups(
+            starter_positions=[_spell("00:00", "60:00", "Starting XI")],
+            bench_positions=[_spell("60:00", None, "Substitution")])
+        _, (df, report) = _build(tmp_path, [card], lineups)
+        assert self._row(df, _BENCH)["minutes_played"] == pytest.approx(10.0)
+        entry = next(d for d in report if d.get("player_id") == _BENCH and "dismissal_elapsed" in d)
+        assert entry["entry_elapsed"] == pytest.approx(60.0)
+        assert entry["minutes_without_fix"] == pytest.approx(30.0)
+        assert entry["minutes_overcounted_without_fix"] is True
+        assert entry["cause"] == "to_null"
+
+    def test_unpaired_off_then_own_substitution_is_valid_and_exit_is_the_off(self, tmp_path):
+        # §31.2: an injured player leaves (unpaired Player Off at 70:00) and is
+        # formally replaced at 72:00. His own Substitution is exempt from
+        # event_after_permanent_off, and his exit is the Off, the earlier instant.
+        events = [_ev("Player Off", period=2, minute=70),
+                  _sub_off(_STARTER, period=2, minute=72)]
+        lineups = _quality_lineups(
+            bench_positions=[_spell("72:00", None, "Substitution - On (Injury)")])
+        _, (df, report) = _build(tmp_path, events, lineups)
+        assert self._row(df, _STARTER)["minutes_played"] == pytest.approx(70.0)
+        assert self._row(df, _BENCH)["minutes_played"] == pytest.approx(18.0)
+        assert [d["minutes_removed"] for d in report
+                if d.get("issue") == "unpaired_player_off_capped"] == [pytest.approx(2.0)]
+        assert not [d for d in report if d.get("issue") == "events_outside_credited_time"]
+
+    def test_events_outside_credited_time_uses_the_period_clock(self, tmp_path):
+        # Half End (1, 47:00). Inside credited time, so not reported:
+        #  - the starter's pass in first-half stoppage (1, 46:00);
+        #  - his pass after the whistle (1, 48:00): clamped to the period end;
+        #  - the substitute's passes after his entry at (1, 46:00), including
+        #    (2, 45:30), which is elapsed 47.5 although 45:30 < 46:00.
+        # Outside: the substitute's pass at (1, 45:30), before he came on.
+        bench = [_spell("46:00", None, "Substitution - On (Tactical)") | {"from_period": 1}]
+        events = [_half_end(1, 47),
+                  _pass(_STARTER, period=1, minute=46), _pass(_STARTER, period=1, minute=48),
+                  _pass(_BENCH, period=1, minute=45, second=30),
+                  _pass(_BENCH, period=1, minute=46, second=30),
+                  _pass(_BENCH, period=2, minute=45, second=30)]
+        _, (df, report) = _build(tmp_path, events, _quality_lineups(bench_positions=bench))
+        assert self._row(df, _BENCH)["minutes_played"] == pytest.approx(92.0 - 46.0)
+        outside = [(d["player_id"], d["period"], d["minute"], d["second"]) for d in report
+                   if d.get("issue") == "events_outside_credited_time"]
+        assert outside == [(_BENCH, 1, 45, 30)]

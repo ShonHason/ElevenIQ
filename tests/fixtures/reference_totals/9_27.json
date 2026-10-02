@@ -8,7 +8,8 @@
     "own_goals": 6,
     "crosses_attempted": 701,
     "crosses_completed": 219,
-    "dismissals": 7
+    "dismissals": 7,
+    "match_duration": 3202.1833
   },
   "chunk_a": {
     "dispossessed": 969,
