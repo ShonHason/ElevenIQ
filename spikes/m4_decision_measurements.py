@@ -1,8 +1,11 @@
 """Spike: measurements that settle the M4 decisions D1–D22 (plan 005, M4a).
 
 Reads data/processed/player_season_stats.parquet, data/interim/player_match_stats.parquet,
-matches.json (dates) and the raw events. Writes nothing: it prints one section per
-D-item, and the figures go into ADR 004.
+matches.json (dates) and the raw events. It prints one section per D-item, and the
+figures go into ADR 004. With --write-json PATH it also writes the measurements the
+M4c metric registry derives its statuses from (plan 005 M4c2; committed as
+src/eleveniq/analytics/measurements/statsbomb_27.json). The file holds measurements
+only: every threshold is applied in eleveniq, not here.
 
 This is a measurement, not an independent check. It never imports eleveniq
 (tests/test_spikes_independent.py): the pass geometry (ADR 002 §1, §27), the position
@@ -11,14 +14,19 @@ were measured once with the pipeline (plan 005 M4a) and are recorded in ADR 004;
 section was removed with the eleveniq import (plan 005 M4b2).
 
 "Gated" below means the D1 default: in_percentile_pool ∧ is_outfield ∧ nominal-equivalent
-minutes ≥ 900, where nominal = Σ_matches minutes × 90 / match_duration.
+minutes ≥ 900 − 1e-6, where nominal = Σ_matches minutes × 90 / match_duration. The spike
+recomputes it and fails unless it equals the parquet's meets_min_minutes on every row.
 
-Usage: .venv/bin/python spikes/m4_decision_measurements.py
+Usage: .venv/bin/python spikes/m4_decision_measurements.py [--write-json PATH]
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import math
+import random
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -73,7 +81,9 @@ MATCH_PARQUET = ROOT / "data" / "interim" / "player_match_stats.parquet"
 LEAGUES = {11: "La Liga", 2: "Premier League", 12: "Serie A", 7: "Ligue 1", 9: "Bundesliga"}
 POOL_LEAGUES = (11, 2, 12, 7)
 SEASON = 27
+SOURCE = "statsbomb"
 GATE = 900.0
+GATE_TOLERANCE = 1e-6          # MIN_MINUTES_TOLERANCE (ADR 004 D1), written out
 OUTFIELD = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
 GROUP_COLS = {
     "GK": "minutes_gk", "CB": "minutes_cb", "FB-WB": "minutes_fb_wb",
@@ -88,20 +98,48 @@ GLOBAL_OK_BAND = 10.0          # D9: each league's mean global percentile within
 MEDIAN_RATIO_BAND = (0.8, 1.25)  # D9 original proposal, shown for comparison
 MIN_COHORT_SIZE = 30
 POSSESSION_RHO = 0.4
+SIGN_NEUTRAL_RHO = 0.05        # a league with |ρ| below this has no sign in the D12 sign test (user, 2026-10-04)
 COLLINEAR_RHO = 0.85
-RELIABILITY_DNA = 0.7
-RELIABILITY_RATIO = 0.6
+RELIABILITY_DNA = 0.6          # D19 (user, 2026-10-02); 0.6 ≤ r < 0.7 carries a "lower reliability" note
+LOW_RELIABILITY_BELOW = 0.7
+RELIABILITY_RATIO = 0.6        # min_attempts = ⌈1.5·M⌉ gives n / (n + M) = 0.6
+RATIO_MIN_N = 10               # rows with fewer attempts are left out of the M estimate
 TRAIT_COUNTS = (5, 10, 15)
+COLLINEAR_REPORT_FLOOR = 0.7   # --write-json keeps every pair with |ρ| ≥ this (the D17 rule is 0.85)
+BOOTSTRAP_B = 2000             # np_xg_per_shot M interval (stats-reviewer condition 2, M4c2)
+BOOTSTRAP_SEED = 27
 
 # Ratio metrics: (name, numerator column, denominator expression columns (+, -)).
 RATIOS = {
-    "pass_completion_pct": ("passes_completed", ["passes_attempted"], ["passes_unknown_outcome"]),
-    "long_pass_completion_pct": ("long_passes_completed", ["long_passes_attempted"], ["long_passes_unknown_outcome"]),
+    # Unknown outcomes and Injury Clearances leave the pass denominators (ADR 002 §14, ADR 004 D13);
+    # crosses keep their Injury Clearances (D13).
+    "pass_completion_pct": ("passes_completed", ["passes_attempted"],
+                            ["passes_unknown_outcome", "passes_injury_clearance"]),
+    "long_pass_completion_pct": ("long_passes_completed", ["long_passes_attempted"],
+                                 ["long_passes_unknown_outcome", "long_passes_injury_clearance"]),
     "cross_completion_pct": ("crosses_completed", ["crosses_attempted"], ["crosses_unknown_outcome"]),
     "dribble_success_pct": ("dribbles_completed", ["dribbles_attempted"], []),
     "tackle_success_pct": ("tackles_won", ["tackles_attempted"], []),
     "aerial_win_pct": ("aerials_won", ["aerials_won", "aerials_lost"], []),
 }
+RATIOS_ALL = {**RATIOS, "np_xg_per_shot": ("np_xg", ["np_shots"], [])}   # variance-components M (M4c2)
+SIGNATURE_COUNT_QUANTILE = 0.9  # --write-json: each cell's P90 of the season count (inverse ECDF), for the trait minimum
+
+
+def ratio_den(pos: list[str], neg: list[str]) -> pl.Expr:
+    return sum(pl.col(c) for c in pos) - (sum(pl.col(c) for c in neg) if neg else 0)
+
+
+def ratio_value(num: str, pos: list[str], neg: list[str]) -> pl.Expr:
+    """The spike's own ratio; null when the denominator is 0 (as in the pipeline)."""
+    den = ratio_den(pos, neg)
+    return pl.when(den > 0).then(pl.col(num) / den).otherwise(None)
+
+
+parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+parser.add_argument("--write-json", type=Path, metavar="PATH",
+                    help="also write the registry measurements (plan 005 M4c2) to PATH")
+ARGS = parser.parse_args()
 
 
 def load_json(p: Path):
@@ -163,7 +201,18 @@ match = match.with_columns(
     (pl.col("minutes_played") * 90.0 / pl.col("match_duration")).alias("minutes_nominal"),
 )
 nominal = match.group_by(KEY).agg(pl.col("minutes_nominal").sum().alias("minutes_nominal_equiv"))
-season = season.join(nominal, on=KEY, how="left")
+# The parquet's own minutes_nominal_equiv is set aside: every gate below uses the spike's value.
+season = season.rename({"minutes_nominal_equiv": "pipeline_minutes_nominal_equiv"}).join(nominal, on=KEY, how="left")
+season = season.with_columns(
+    (pl.col("minutes_nominal_equiv") >= GATE - GATE_TOLERANCE).fill_null(False).alias("gate"))
+gate_mismatch = season.filter(pl.col("gate").ne_missing(pl.col("meets_min_minutes")))  # a null mismatches
+if gate_mismatch.height:
+    print(f"FAIL: recomputed gate ≠ meets_min_minutes on {gate_mismatch.height} rows:")
+    print(gate_mismatch.select(*KEY, "player_name", "minutes_nominal_equiv", "pipeline_minutes_nominal_equiv",
+                               "gate", "meets_min_minutes"))
+    sys.exit(1)
+print(f"gate check: recomputed nominal ≥ {GATE:.0f} − {GATE_TOLERANCE:g} equals meets_min_minutes on all "
+      f"{season.height} rows ({season['gate'].sum()} true)")
 
 # Season position margin and share (D5).
 outfield_min_cols = [GROUP_COLS[g] for g in GROUP_COLS]
@@ -182,13 +231,17 @@ season = season.with_columns(
 )
 
 base = season.filter(pl.col("in_percentile_pool") & pl.col("is_outfield"))
-gated = base.filter(pl.col("minutes_nominal_equiv") >= GATE)
+gated = base.filter("gate")
 
 
-def dedupe_global(df: pl.DataFrame) -> pl.DataFrame:
-    """D3: one row per (player_id, season_id, source), most minutes, tie → lowest competition_id."""
-    return (df.sort(["minutes_played", "competition_id"], descending=[True, False])
-              .unique(subset=["player_id", "season_id", "source"], keep="first", maintain_order=True))
+def dedupe_global(df: pl.DataFrame, by: tuple[str, ...] = ("position_group",)) -> pl.DataFrame:
+    """D3: each reference population holds one row per (player_id, season_id, source): most minutes,
+    tie → lowest competition_id, then lowest team_id. A population is a position group (global) or a
+    league × position group (local: by=("competition_id", "position_group")), so the dedupe runs after
+    the group split (user, 2026-10-04, ADR 004 §10.1): a mover whose two rows are in different groups
+    (2015/16: Doucouré, Rennes AM-Winger / Granada DM-CM) keeps both, one in each population."""
+    return (df.sort(["minutes_played", "competition_id", "team_id"], descending=[True, False, False])
+              .unique(subset=["player_id", "season_id", "source", *by], keep="first", maintain_order=True))
 
 
 def local_pct(df: pl.DataFrame, metric: str, pop: pl.DataFrame | None = None) -> pl.Series:
@@ -286,6 +339,7 @@ pool_tot = base.group_by(["player_id", "season_id", "source"]).agg(
 print("combined-only (pool rows sum ≥ gate across competitions, no row ≥ gate):")
 show(pool_tot.filter((pl.col("comps") >= 2) & (pl.col("total") >= GATE) & (pl.col("max_row") < GATE)))
 gpop = dedupe_global(gated)
+lpop = dedupe_global(gated, by=("competition_id", "position_group"))   # local populations (D3 amended)
 dup_keys = multi.filter(pl.col("n") >= 2)["player_id"].to_list()
 movers = gated.filter(pl.col("player_id").is_in(dup_keys))
 mx = 0.0
@@ -337,6 +391,8 @@ d7_events: dict[tuple[int, int], Counter] = defaultdict(Counter)
 no_receipt: list[dict] = []
 xga_issue = Counter()
 event_minutes = Counter()          # league -> events in periods 1–4
+np_shot_xg: list[dict] = []        # one row per non-penalty shot (np_xg_per_shot M, M4c2)
+np_shot_null_xg: list[dict] = []
 
 pool_match_ids = match.select("match_id", "competition_id").unique()
 for match_id, comp in pool_match_ids.iter_rows():
@@ -406,6 +462,10 @@ for match_id, comp in pool_match_ids.iter_rows():
             if (sh.get("type") or {}).get("name") == "Penalty":
                 pm[(match_id, pid, "pen_shots")] += 1
                 pm[(match_id, pid, "pen_xg")] += sh.get("statsbomb_xg") or 0.0
+            else:
+                shot_row = {"match_id": match_id, "player_id": pid, "shot_team_id": team,
+                            "xg": sh.get("statsbomb_xg")}
+                (np_shot_null_xg if shot_row["xg"] is None else np_shot_xg).append(shot_row)
     # D16: no-receipt assisted shots, now that poss_player is complete.
     for e in events:
         if e["type"]["name"] != "Pass":
@@ -474,7 +534,7 @@ for mid, names in D7_MATCHES.items():
         d7_out.append({"player": r["player_name"], "match_id": mid, "match_group": r["position_group"],
                        "events_group": max(evc.items(), key=lambda kv: kv[1])[0] if evc else None,
                        "season_group": srow["position_group"], "season_group_events": new_group,
-                       "gated": srow["minutes_nominal_equiv"] >= GATE and srow["in_percentile_pool"],
+                       "gated": srow["gate"] and srow["in_percentile_pool"],
                        "cohort_change": new_group != srow["position_group"]})
 show(pl.DataFrame(d7_out))
 
@@ -486,11 +546,22 @@ print("Not re-measured: ADR 002 §31.6 events_outside_credited_time attributes i
 # ── D9 ────────────────────────────────────────────────────────────────────────
 section("D9 — global_ok: league mean of global percentile within 50 ± 10 (vs median-ratio band)")
 d9 = []
+d9_league_means: dict[tuple[str, str], dict[str, float]] = {}   # (metric, group) -> {competition_id: mean}
+
+
+def league_mean_global_pct(sub: pl.DataFrame, col: str, pop: pl.DataFrame) -> dict[str, float]:
+    """D9: each pool league's mean global percentile of `col` (sub and pop hold one group)."""
+    gp = global_pct(sub, col, pop)
+    means = sub.select("competition_id").with_columns(gp.alias("gp")).group_by("competition_id").agg(pl.col("gp").mean())
+    return {str(c): v for c, v in sorted(means.iter_rows())}
+
+
 for m in P90:
     gp = global_pct(gated, m, gpop)
     tmp = gated.select("competition_id", "position_group", m).with_columns(gp.alias("gp"))
     for (grp,), sub in tmp.group_by(["position_group"]):
         means = sub.group_by("competition_id").agg(pl.col("gp").mean(), pl.col(m).median().alias("med"))
+        d9_league_means[(m, grp)] = {str(c): v for c, v in sorted(means.select("competition_id", "gp").iter_rows())}
         lo, hi = means["gp"].min(), means["gp"].max()
         med = means["med"]
         ratio = (med.max() / med.min()) if med.min() and med.min() > 0 else float("inf")
@@ -527,19 +598,39 @@ show(heavy, rows=80)
 
 # ── D12 ───────────────────────────────────────────────────────────────────────
 section("D12 — leave-one-out team possession vs every volume per-90")
+def possession_rho(sub: pl.DataFrame, col: str, proxy: str) -> dict:
+    """D12: Spearman ρ of `col` with a possession proxy within each pool league, and their mean.
+
+    The mean is defined only when ρ is defined in all four pool leagues (user, 2026-10-04, ADR 004
+    §10.3); otherwise it is null and the cell cannot be tested. n_by_league holds the rows used."""
+    per, n_by = {}, {}
+    for (comp,), s in sorted(sub.select("competition_id", proxy, col).drop_nulls().group_by(["competition_id"]),
+                             key=lambda kv: kv[0]):
+        n_by[str(comp)] = s.height
+        x = s.select(pl.corr(proxy, col, method="spearman")).item()
+        if x is not None and not math.isnan(x):
+            per[str(comp)] = x
+    vals = list(per.values())
+    complete = sorted(per) == sorted(str(c) for c in POOL_LEAGUES)
+    signed = [x for x in vals if abs(x) >= SIGN_NEUTRAL_RHO]
+    return {"rho_within_mean": sum(vals) / len(vals) if complete else None, "by_league": per,
+            "n_by_league": n_by,
+            # printed trigger only; --write-json drops it and the registry applies the sign test itself
+            "same_sign": complete and bool(signed) and (all(x > 0 for x in signed) or all(x < 0 for x in signed)),
+            "rho_pooled": sub.select(pl.corr(proxy, col, method="spearman")).item()}
+
+
 d12 = []
+d12_detail: dict[tuple[str, str, str], dict] = {}   # (metric, proxy, group) -> possession_rho()
 for m in P90:
     for proxy in ("poss_dur_loo", "poss_pass_loo"):
         for (grp,), sub in gated.group_by(["position_group"]):
-            pooled = sub.select(pl.corr(proxy, m, method="spearman")).item()
-            per = [s.select(pl.corr(proxy, m, method="spearman")).item()
-                   for _, s in sub.group_by("competition_id")]
-            per = [x for x in per if x is not None and not math.isnan(x)]
-            mean_within = sum(per) / len(per) if per else None
-            same_sign = bool(per) and (all(x > 0 for x in per) or all(x < 0 for x in per))
-            d12.append({"metric": m, "proxy": proxy, "group": grp, "rho_pooled": pooled, "rho_within_mean": mean_within,
+            pr = d12_detail[(m, proxy, grp)] = possession_rho(sub, m, proxy)
+            per, mean_within = list(pr["by_league"].values()), pr["rho_within_mean"]
+            d12.append({"metric": m, "proxy": proxy, "group": grp, "rho_pooled": pr["rho_pooled"],
+                        "rho_within_mean": mean_within,
                         "min_league": min(per) if per else None, "max_league": max(per) if per else None,
-                        "trigger": mean_within is not None and abs(mean_within) >= POSSESSION_RHO and same_sign})
+                        "trigger": mean_within is not None and abs(mean_within) >= POSSESSION_RHO and pr["same_sign"]})
 d12 = pl.DataFrame(d12)
 print(f"triggered cells (|mean within-league ρ| ≥ {POSSESSION_RHO}, same sign in all 4 leagues):")
 show(d12.filter("trigger").sort("proxy", "metric", "group"), rows=200)
@@ -600,14 +691,16 @@ if no_receipt:
 
 # ── D17 ───────────────────────────────────────────────────────────────────────
 section("D17 — collinearity (pre-M4b columns; re-run on M4b output)")
-pairs = []
+pairs = []   # per-90 pairs here; ratio and team_pass_share pairs are added after the ratio section (D19)
 for (grp,), sub in gated.group_by(["position_group"]):
     for i, a in enumerate(P90):
         for b in P90[i + 1:]:
             r = sub.select(pl.corr(a, b, method="spearman")).item()
-            if r is not None and not math.isnan(r) and abs(r) >= COLLINEAR_RHO:
+            if r is not None and not math.isnan(r) and abs(r) >= COLLINEAR_REPORT_FLOOR:
                 pairs.append({"group": grp, "a": a, "b": b, "rho": r})
-show(pl.DataFrame(pairs).sort("a", "b", "group") if pairs else pl.DataFrame({"none": []}), rows=120)
+pairs.sort(key=lambda d: (d["a"], d["b"], d["group"]))
+over = [d for d in pairs if abs(d["rho"]) >= COLLINEAR_RHO]
+show(pl.DataFrame(over) if over else pl.DataFrame({"none": []}), rows=120)
 print("box_entries_pass that are also progressive (share):")
 show(gated.group_by("position_group").agg(
     (pl.col("box_and_prog").sum() / pl.col("box_entries_pass").sum()).alias("box_in_progressive")).sort("position_group"))
@@ -621,7 +714,7 @@ ratio_cols = sorted({c for num, pos, neg in RATIOS.values() for c in [num, *pos,
 halves = played.group_by([*KEY, "half"]).agg(pl.col("minutes_played").sum(),
                                             *[pl.col(c).sum() for c in set(count_cols) | set(ratio_cols)])
 season_info = season.select(*KEY, "position_group", "in_percentile_pool", "is_outfield", "minutes_nominal_equiv",
-                            "player_name")
+                            "gate", "player_name")
 halves = halves.join(season_info, on=KEY).filter(pl.col("in_percentile_pool") & pl.col("is_outfield"))
 
 
@@ -637,12 +730,13 @@ def split_half(df: pl.DataFrame, value_expr: pl.Expr) -> dict[str, float | None]
     return out
 
 
-bins = {"450-900": (450, 900), "900-1800": (900, 1800), "≥1800": (1800, 1e9), "gated(≥900)": (900, 1e9)}
+bins = {"450-900": (450, 900), "900-1800": (900, 1800), "≥1800": (1800, 1e9), "gated(≥900)": None}
 rel_rows = []
 for m in P90:
     c = COUNT_OF[m]
-    for bname, (lo, hi) in bins.items():
-        sub = halves.filter((pl.col("minutes_nominal_equiv") >= lo) & (pl.col("minutes_nominal_equiv") < hi))
+    for bname, rng in bins.items():
+        sub = (halves.filter("gate") if rng is None else
+               halves.filter((pl.col("minutes_nominal_equiv") >= rng[0]) & (pl.col("minutes_nominal_equiv") < rng[1])))
         r = split_half(sub, pl.col(c) / pl.col("minutes_played") * 90)
         for grp, val in r.items():
             rel_rows.append({"metric": m, "bin": bname, "group": grp, "r_full": val})
@@ -656,32 +750,171 @@ show(rel.group_by("metric", "bin").agg(pl.col("r_full").mean()).pivot(on="bin", 
 below = rel.filter((pl.col("bin") == "gated(≥900)") & (pl.col("r_full") < RELIABILITY_DNA))
 print(f"metric × group cells below {RELIABILITY_DNA} at the gate: {below.height}")
 
-print("\nRatios: beta-binomial M per group (pool outfield rows, n ≥ 10), min_attempts = 1.5·M "
-      f"(reliability {RELIABILITY_RATIO}); split-half cross-check at the gate")
+# ── np_xg_per_shot: per-shot xG for the variance-components M (M4c2) ────────────
+# Stats-reviewer conditions (M4c2): raw scale, pooled within-row variance (MSW) in the same
+# moment form as the beta-binomial; the ANOVA, per-row-variance and log-scale variants and
+# M at n ≥ 5 are printed and recorded but not used; a bootstrap interval records how
+# stable M is. Guards: no null xG, every shot maps to a match row of the shooter's team, and
+# per row the shot count and xG sum reconcile with the season parquet's np_shots / np_xg.
+print("\nnp_xg_per_shot: per-shot non-penalty xG from the raw events (periods 1–4)")
+if np_shot_null_xg:
+    print(f"FAIL: {len(np_shot_null_xg)} non-penalty shots have no statsbomb_xg:", np_shot_null_xg[:10])
+    sys.exit(1)
+shots_np = pl.DataFrame(np_shot_xg).join(match.select("match_id", *KEY), on=["match_id", "player_id"], how="left")
+unmapped = shots_np.filter(pl.col("team_id").is_null())
+wrong_team = shots_np.filter(pl.col("team_id").is_not_null() & (pl.col("shot_team_id") != pl.col("team_id")))
+if unmapped.height or wrong_team.height:
+    print(f"FAIL: {unmapped.height} shots map to no match row, {wrong_team.height} to a row of another team")
+    print(unmapped.head(10), wrong_team.head(10))
+    sys.exit(1)
+per_row_shots = shots_np.group_by(KEY).agg(
+    pl.len().alias("n_shots"), pl.col("xg").sum().alias("sum_xg"), pl.col("xg").mean().alias("mean_xg"),
+    ((pl.col("xg") - pl.col("xg").mean()) ** 2).sum().alias("ss_xg"),
+    pl.col("xg").log().mean().alias("mean_log_xg"),
+    ((pl.col("xg").log() - pl.col("xg").log().mean()) ** 2).sum().alias("ss_log_xg"),
+    pl.col("xg").min().alias("min_xg"),
+)
+if shots_np["xg"].min() <= 0:
+    print("FAIL: a non-penalty shot has xG ≤ 0, so the log-scale variant is undefined")
+    sys.exit(1)
+recon = season.select(*KEY, "np_shots", "np_xg").join(per_row_shots, on=KEY, how="full", coalesce=True).with_columns(
+    pl.col("n_shots").fill_null(0), pl.col("sum_xg").fill_null(0.0))
+bad = recon.filter((pl.col("np_shots").is_null()) | (pl.col("n_shots") != pl.col("np_shots"))
+                   | ((pl.col("sum_xg") - pl.col("np_xg")).abs() > 1e-9))
+if bad.height:
+    print(f"FAIL: {bad.height} season rows do not reconcile with the per-shot events (np_shots exact, np_xg 1e-9):")
+    print(bad.head(20))
+    sys.exit(1)
+print(f"  {shots_np.height} non-penalty shots; null xG 0; unmapped 0; team mismatches 0; "
+      f"{recon.filter(pl.col('n_shots') > 0).height} season rows reconcile with np_shots (exact) and np_xg "
+      f"(max |Δ| {(recon['sum_xg'] - recon['np_xg']).abs().max():.2g}); min shot xG {shots_np['xg'].min():.4g}")
+shot_rows = (per_row_shots.join(base.select(*KEY, "position_group"), on=KEY, how="inner").sort(KEY))
+
+
+def variance_components(n: list[int], mean: list[float], ss: list[float]) -> dict:
+    """One-way random effects over rows: per-shot noise σ²_w (pooled, MSW), between-row τ², M = σ²_w / τ²."""
+    k, N = len(n), sum(n)
+    msw = sum(ss) / sum(ni - 1 for ni in n)
+    xbar = sum(ni * mi for ni, mi in zip(n, mean)) / N
+    var_obs = sum((mi - xbar) ** 2 for mi in mean) / k
+    tau2 = var_obs - sum(msw / ni for ni in n) / k
+    msb = sum(ni * (mi - xbar) ** 2 for ni, mi in zip(n, mean)) / (k - 1)
+    n0 = (N - sum(ni * ni for ni in n) / N) / (k - 1)
+    tau2_anova = (msb - msw) / n0
+    tau2_row = var_obs - sum(si / (ni - 1) / ni for ni, si in zip(n, ss)) / k
+    return {"rows": k, "shots": N, "mean": xbar, "sigma2_w": msw, "tau2": tau2,
+            "M": msw / tau2 if tau2 > 0 else None,
+            "M_anova": msw / tau2_anova if tau2_anova > 0 else None,
+            "M_row_variance": msw / tau2_row if tau2_row > 0 else None}
+
+
+def quantile_inf(vals: list[float], q: float) -> float | None:
+    """Nearest-rank quantile; None stands for +∞ (no signal)."""
+    v = sorted(math.inf if x is None else x for x in vals)
+    x = v[round(q * (len(v) - 1))]
+    return None if math.isinf(x) else x
+
+
+np_vc: dict[str, dict] = {}
+for grp in OUTFIELD:
+    g = shot_rows.filter(pl.col("position_group") == grp)
+    g10 = g.filter(pl.col("n_shots") >= RATIO_MIN_N)
+    n, mu, ss = g10["n_shots"].to_list(), g10["mean_xg"].to_list(), g10["ss_xg"].to_list()
+    out = variance_components(n, mu, ss)
+    out["M_log_scale"] = variance_components(n, g10["mean_log_xg"].to_list(), g10["ss_log_xg"].to_list())["M"]
+    g5 = g.filter(pl.col("n_shots") >= 5)
+    out["M_min_n5"] = variance_components(g5["n_shots"].to_list(), g5["mean_xg"].to_list(), g5["ss_xg"].to_list())["M"]
+    rng = random.Random(f"{BOOTSTRAP_SEED}-{grp}")
+    boot = []
+    for _ in range(BOOTSTRAP_B):
+        idx = [rng.randrange(len(n)) for _ in range(len(n))]
+        boot.append(variance_components([n[i] for i in idx], [mu[i] for i in idx], [ss[i] for i in idx])["M"])
+    out["bootstrap"] = {"B": BOOTSTRAP_B, "seed": f"{BOOTSTRAP_SEED}-{grp}",
+                        "M_p05": quantile_inf(boot, 0.05), "M_p50": quantile_inf(boot, 0.50),
+                        "M_p95": quantile_inf(boot, 0.95),
+                        "no_signal_share": sum(b is None for b in boot) / BOOTSTRAP_B}
+    np_vc[grp] = out
+
+print(f"\nRatios: M per group (pool outfield rows, n ≥ {RATIO_MIN_N}; beta-binomial, or variance components for "
+      f"np_xg_per_shot), min_attempts = ⌈1.5·M⌉ (reliability {RELIABILITY_RATIO}); coverage = gated rows meeting it; "
+      "split-half cross-check at the gate. Reference populations (ADR 004 D19 clarification, M4c2): gated rows "
+      f"meeting min_attempts, one row per player per population (D3); a cell below MIN_COHORT_SIZE {MIN_COHORT_SIZE} "
+      "is flagged.")
 ratio_rows = []
-for name, (num, pos, neg) in RATIOS.items():
+ratio_json: dict[str, dict] = {}
+ratio_min_att: dict[tuple[str, str], int | None] = {}
+for name, (num, pos, neg) in RATIOS_ALL.items():
     den = sum(pl.col(c) for c in pos) - (sum(pl.col(c) for c in neg) if neg else 0)
-    rows_r = base.with_columns(den.alias("_n"), pl.col(num).alias("_k")).filter(pl.col("_n") >= 10)
+    rows_r = base.with_columns(den.alias("_n"), pl.col(num).alias("_k")).filter(pl.col("_n") >= RATIO_MIN_N)
     sh = split_half(halves.with_columns(den.alias("_n")).filter(pl.col("_n") > 0)
-                    .filter(pl.col("minutes_nominal_equiv") >= GATE), pl.col(num) / den)
-    for (grp,), sub in rows_r.group_by(["position_group"]):
-        k, n = sub["_k"].cast(pl.Float64), sub["_n"].cast(pl.Float64)
-        pbar = k.sum() / n.sum()
-        p = k / n
-        var_obs = ((p - pbar) ** 2).mean()
-        var_bin = (pbar * (1 - pbar) / n).mean()
-        var_true = var_obs - var_bin
-        M = pbar * (1 - pbar) / var_true if var_true > 0 else float("inf")
-        min_att = math.ceil(1.5 * M) if math.isfinite(M) else None
-        g_sub = gated.filter(pl.col("position_group") == grp).with_columns(den.alias("_n"))
+                    .filter("gate"), pl.col(num) / den)
+    ratio_json[name] = {"numerator": num, "denominator_plus": pos, "denominator_minus": neg, "groups": {}}
+    for grp in OUTFIELD:
+        if name == "np_xg_per_shot":
+            vc = np_vc[grp]
+            pbar, M = vc["mean"], vc["M"]
+        else:
+            sub = rows_r.filter(pl.col("position_group") == grp)
+            k, n = sub["_k"].cast(pl.Float64), sub["_n"].cast(pl.Float64)
+            pbar = k.sum() / n.sum()
+            p = k / n
+            var_obs = ((p - pbar) ** 2).mean()
+            var_bin = (pbar * (1 - pbar) / n).mean()
+            var_true = var_obs - var_bin
+            M = pbar * (1 - pbar) / var_true if var_true > 0 else None
+        min_att = math.ceil(1.5 * M) if M is not None else None
+        g_sub = gated.filter(pl.col("position_group") == grp).with_columns(den.alias("_n"),
+                                                                            (pl.col(num) / den).alias("_v"))
+        meets = (pl.col("_n") >= min_att) if min_att is not None else pl.lit(False)
+        meeting = g_sub.filter(meets)
+        ratio_min_att[(name, grp)] = min_att
+        # Filter by min_attempts first, then dedupe (user, 2026-10-04): a mover whose most-minutes row
+        # misses min_attempts is represented by his other row in the group if that one meets it.
+        ref_global = dedupe_global(meeting)
+        ref_l = dedupe_global(meeting, by=("competition_id", "position_group"))
+        ref_local = {str(c): ref_l.filter(pl.col("competition_id") == c).height for c in POOL_LEAGUES}
+        cell = {"n_gated": g_sub.height, "n_estimate_rows": rows_r.filter(pl.col("position_group") == grp).height,
+                "p_bar": pbar, "M": M, "no_signal": M is None, "min_attempts": min_att,
+                "coverage": meeting.height / g_sub.height, "split_half_r_full": sh.get(grp),
+                "ref_n_global": ref_global.height, "ref_n_local": ref_local}
+        if meeting.height:
+            cell["league_mean_global_pct"] = league_mean_global_pct(meeting, "_v", ref_global)
+            cell["possession"] = {proxy: possession_rho(ref_global, "_v", proxy)
+                                  for proxy in ("poss_dur_loo", "poss_pass_loo")}
+        if name == "np_xg_per_shot":
+            cell["variance_components"] = np_vc[grp]
+        ratio_json[name]["groups"][grp] = cell
         ratio_rows.append({"ratio": name, "group": grp, "p_bar": pbar, "M": M, "min_attempts": min_att,
-                           "gated_rows_meeting": (g_sub.filter(pl.col("_n") >= (min_att or 1e12)).height / g_sub.height),
-                           "split_half_r_full": sh.get(grp)})
+                           "gated_rows_meeting": cell["coverage"], "split_half_r_full": cell["split_half_r_full"],
+                           "ref_n_global": ref_global.height, "ref_n_local_min": min(ref_local.values()),
+                           "below_min_cohort": ref_global.height < MIN_COHORT_SIZE
+                                               or min(ref_local.values()) < MIN_COHORT_SIZE})
 show(pl.DataFrame(ratio_rows).sort("ratio", "group"), rows=60)
+
+# D17 over ratios and team_pass_share (stats-reviewer, user 2026-10-04): each ratio only on gated rows
+# meeting its min_attempts in that group (null otherwise); pairs use rows where both are non-null.
+EXTRA_COLS = [*RATIOS_ALL, "team_pass_share"]
+for grp in OUTFIELD:
+    sub = gated.filter(pl.col("position_group") == grp).select(
+        *P90, "team_pass_share",
+        *[pl.when(ratio_den(pos, neg) >= (ratio_min_att[(name, grp)] or math.inf))
+            .then(ratio_value(num, pos, neg)).alias(name) for name, (num, pos, neg) in RATIOS_ALL.items()])
+    for a in EXTRA_COLS:
+        for b in [*P90, *EXTRA_COLS[EXTRA_COLS.index(a) + 1:]]:
+            ab = sub.select(a, b).drop_nulls()
+            r = ab.select(pl.corr(a, b, method="spearman")).item() if ab.height >= 3 else None
+            if r is not None and not math.isnan(r) and abs(r) >= COLLINEAR_REPORT_FLOOR:
+                pairs.append({"group": grp, "a": a, "b": b, "rho": r})
+pairs.sort(key=lambda d: (d["a"], d["b"], d["group"]))
+extra_over = [d for d in pairs if abs(d["rho"]) >= COLLINEAR_RHO and (d["a"] in EXTRA_COLS or d["b"] in EXTRA_COLS)]
+print(f"D17 over ratios (rows meeting min_attempts) and team_pass_share, |ρ| ≥ {COLLINEAR_RHO}:")
+show(pl.DataFrame(extra_over) if extra_over else pl.DataFrame({"none": []}), rows=60)
 print(f"(current MIN_AERIAL_CONTESTS = {MIN_AERIAL_CONTESTS})")
-xs = split_half(halves.filter((pl.col("shots") > 0) & (pl.col("minutes_nominal_equiv") >= GATE)),
-                pl.col("xg") / pl.col("shots"))
-print("xg_per_shot split-half r_full at the gate:", {g: round(v, 3) if v is not None else None for g, v in xs.items()})
+print("np_xg_per_shot variance components (raw scale, pooled σ²_w; M_anova / M_row_variance / M_log_scale / "
+      "M_min_n5 recorded, not used):")
+show(pl.DataFrame([{"group": g, **{k: v for k, v in d.items() if k != "bootstrap"},
+                    **{f"boot_{k}": v for k, v in d["bootstrap"].items() if k not in ("B", "seed")}}
+                   for g, d in np_vc.items()]))
 
 # ── Signature traits ──────────────────────────────────────────────────────────
 section("Signature traits — zero-heavy metric × group: holders at minimum counts, reliability")
@@ -699,7 +932,7 @@ show(pl.DataFrame(st).sort("metric", "group"), rows=80)
 
 # ── D20 ───────────────────────────────────────────────────────────────────────
 section("D20 — extremes around the gate")
-sub_gate = base.filter(pl.col("minutes_nominal_equiv") < GATE)
+sub_gate = base.filter(~pl.col("gate"))
 ext = []
 for m in P90:
     ext.append({"metric": m, "gated_max": gated[m].max(), "gated_p99": gated[m].quantile(0.99),
@@ -723,22 +956,105 @@ else:
         played.group_by([*KEY, "half"]).agg(pl.col("open_play_passes_attempted").sum(),
                                             pl.col("team_open_play_passes_while_on").sum()),
         on=[*KEY, "half"], how="left").filter(pl.col("team_open_play_passes_while_on") > 0)
-    rel_tps = split_half(tps_halves.filter(pl.col("minutes_nominal_equiv") >= GATE),
+    rel_tps = split_half(tps_halves.filter("gate"),
                          pl.col("open_play_passes_attempted") / pl.col("team_open_play_passes_while_on"))
-    for grp in ("DM-CM", "CB"):
+    d12b_json: dict[str, dict] = {}
+    for grp in ("DM-CM", "CB"):   # pre-registered for these two groups only (ADR 004 D12)
         sub = gated.filter(pl.col("position_group") == grp)
         per = {}
         for proxy in ("poss_dur_loo", "poss_pass_loo"):
-            vals = [s.select(pl.corr(proxy, "team_pass_share", method="spearman")).item()
-                    for _, s in sub.group_by("competition_id")]
-            per[proxy] = sum(vals) / len(vals)
-            per[proxy + "_leagues"] = [round(v, 3) for v in vals]
+            per[proxy + "_detail"] = possession_rho(sub, "team_pass_share", proxy)
+            per[proxy] = per[proxy + "_detail"]["rho_within_mean"]
         r_full = rel_tps.get(grp)
+        d12b_json[grp] = {"n_gated": sub.height, "split_half_r_full": r_full,
+                          "possession": {proxy: per[proxy + "_detail"] for proxy in ("poss_dur_loo", "poss_pass_loo")}}
         d12b.append({"group": grp, "n": sub.height,
                      "rho_dur_mean": per["poss_dur_loo"], "rho_pass_mean": per["poss_pass_loo"],
-                     "rho_dur_by_league": str(per["poss_dur_loo_leagues"]),
+                     "rho_dur_by_league": str([round(v, 3) for v in per["poss_dur_loo_detail"]["by_league"].values()]),
                      "r_full": r_full,
                      "enters_dna": abs(per["poss_dur_loo"]) < 0.3 and abs(per["poss_pass_loo"]) < 0.3
                                    and r_full is not None and r_full >= 0.6})
     show(pl.DataFrame(d12b))
     print("compare: passes_attempted_p90 ρ (duration proxy) DM-CM 0.66, CB 0.74 (ADR 004 D12)")
+
+# ── --write-json: the registry measurements (plan 005 M4c2) ───────────────────
+if ARGS.write_json:
+    def sha256(path: Path) -> str:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            for block in iter(lambda: f.read(1 << 20), b""):
+                h.update(block)
+        return h.hexdigest()
+
+    def strip_sign(d: dict) -> dict:
+        """Measurements only: the sign test is a rule, applied in eleveniq from by_league."""
+        return {k: v for k, v in d.items() if k != "same_sign"}
+
+    for r_spec in ratio_json.values():
+        for cell in r_spec["groups"].values():
+            if "possession" in cell:
+                cell["possession"] = {k: strip_sign(v) for k, v in cell["possession"].items()}
+    for cell in d12b_json.values():
+        cell["possession"] = {k: strip_sign(v) for k, v in cell["possession"].items()}
+    zero_of = {(r["metric"], r["group"]): r["zero_share"] for r in zero.iter_rows(named=True)}
+    rfull_of = {(r["metric"], r["group"]): r["r_full"]
+                for r in rel.filter(pl.col("bin") == "gated(≥900)").iter_rows(named=True)}
+    d9_ok = {(r["metric"], r["group"]): r["global_ok"] for r in d9.iter_rows(named=True)}
+    metrics_json: dict[str, dict] = {}
+    for m in P90:
+        metrics_json[m] = {"count_column": COUNT_OF[m], "groups": {}}
+        for grp in OUTFIELD:
+            sub = gated.filter(pl.col("position_group") == grp)
+            cnt = sub[COUNT_OF[m]]
+            ordered = sorted(cnt.to_list())   # inverse ECDF: smallest c with share(count ≤ c) ≥ 0.9
+            count_p90 = ordered[math.ceil(SIGNATURE_COUNT_QUANTILE * len(ordered)) - 1]
+            metrics_json[m]["groups"][grp] = {
+                "n_gated": sub.height,
+                "zero_share": zero_of[(m, grp)],
+                "r_full": rfull_of.get((m, grp)),
+                "count_p90": count_p90,
+                "holders_at_count": {str(t): int((cnt >= t).sum()) for t in sorted({*TRAIT_COUNTS, count_p90})},
+                "global_ok": d9_ok[(m, grp)],
+                "league_mean_global_pct": d9_league_means[(m, grp)],
+                "possession": {proxy: strip_sign(d12_detail[(m, proxy, grp)]) for proxy in ("poss_dur_loo", "poss_pass_loo")},
+            }
+    cohorts = {}
+    for grp in OUTFIELD:
+        g = gated.filter(pl.col("position_group") == grp)
+        lg = lpop.filter(pl.col("position_group") == grp)
+        cohorts[grp] = {"n_gated": g.height, "ref_n_global": gpop.filter(pl.col("position_group") == grp).height,
+                        "ref_n_local": {str(c): lg.filter(pl.col("competition_id") == c).height
+                                        for c in POOL_LEAGUES}}
+    out = {
+        "schema_version": 1,
+        "generated_by": "spikes/m4_decision_measurements.py --write-json",
+        "provenance": {
+            "source": SOURCE, "season_id": SEASON,
+            "pool_competition_ids": list(POOL_LEAGUES), "competition_ids": sorted(LEAGUES),
+            "season_parquet": str(SEASON_PARQUET.relative_to(ROOT)), "season_parquet_sha256": sha256(SEASON_PARQUET),
+            "match_parquet": str(MATCH_PARQUET.relative_to(ROOT)), "match_parquet_sha256": sha256(MATCH_PARQUET),
+            "season_columns": pl.read_parquet_schema(SEASON_PARQUET).names(),
+        },
+        "population": {
+            "gated": "in_percentile_pool ∧ is_outfield ∧ meets_min_minutes (recomputed: minutes_nominal_equiv ≥ "
+                     f"{GATE:g} − {GATE_TOLERANCE:g}, asserted equal on every row)",
+            "reference": "gated rows, one row per (player_id, season_id, source) per population (D3: most minutes, "
+                         "then lowest competition_id, then lowest team_id); for a ratio, only rows meeting "
+                         "min_attempts (ADR 004 D19 clarification, M4c2)",
+            "r_full": "split-half, odd/even matches by date, demeaned within league × group, Spearman-Brown",
+            "possession": "Spearman ρ with leave-one-out team possession (duration, pass share) within each pool league",
+            "ratio_M": f"pool outfield rows with denominator ≥ {RATIO_MIN_N}; beta-binomial (np_xg_per_shot: "
+                       "variance components); min_attempts = ⌈1.5·M⌉; null when no signal",
+            "collinear_report_floor": COLLINEAR_REPORT_FLOOR,
+        },
+        "cohorts": cohorts,
+        "metrics": metrics_json,
+        "ratios": ratio_json,
+        "team_pass_share": d12b_json if "team_pass_share" in season.columns else None,
+        "collinear_pairs": pairs,
+    }
+    ARGS.write_json.parent.mkdir(parents=True, exist_ok=True)
+    with ARGS.write_json.open("w") as f:
+        json.dump(out, f, indent=1, sort_keys=True, allow_nan=False, ensure_ascii=False)
+        f.write("\n")
+    print(f"\nwrote {ARGS.write_json}")

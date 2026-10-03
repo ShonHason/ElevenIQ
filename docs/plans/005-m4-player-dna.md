@@ -383,6 +383,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - Used straight away on known 2015/16 pairs for a face-validity pass before the DNA vector, e.g. Kanté vs Busquets, Özil vs Payet, Messi vs Neymar, two CBs from opposite styles.
 
 ### M4f — Player DNA vector
+- **Per-family contribution report** (stats-reviewer, user 2026-10-04): for each group, each family's share of the distance between neighbours, next to the equal-family-weight sensitivity check (ADR 004 §10.8, §10.11).
 - `analytics/dna.py` + `pipeline/build_player_dna.py` → `player_dna.parquet`.
 - Per scored row:
   - the feature vector on the D10 basis (percentile and robust z, both stored);
@@ -391,6 +392,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - The D17 drops are applied through the registry, not in this code.
 
 ### M4g — Football validation (brief §20)
+- **Multi-split reliability averaging** (stats-reviewer, user 2026-10-04): r_full averaged over many random match splits instead of one odd/even split, applied to all metrics at once (never to single boundary cells). Then re-derive the registry. It addresses the cells decided by < 0.001 at the 0.6 cut-off, e.g. CB `interceptions` 0.599849 and ST `np_xg` 0.599369 (ADR 004 §10.11).
 Analyses in `spikes/m4_validation.py`, written up in `docs/reviews/m4-validation.md`:
 - threshold sensitivity (from D1);
 - split-half reliability per metric;
@@ -631,9 +633,58 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
 - The label is meaningful only for gated rows; M4e shows it only for `meets_min_minutes` rows. No 90-minute floor (user).
 - Integration test: a full per-row recomputation of the label (both directions); a mutation (0.12 in the pipeline) makes it fail.
 
+**M4c2 outcome (2026-10-04).** Details in ADR 004 §10.
+- **Stats-reviewer on the `np_xg_per_shot` M method: approved with conditions.**
+  - Variance components (the beta-binomial generalised), raw scale; the other variants are recorded, not used.
+  - Bootstrap interval; the CB minimum is recorded as unstable.
+  - `no_signal` gives null percentiles and no fallback.
+  - Spike guards on the per-shot data.
+- **User (2026-10-04):**
+  - a row below `min_attempts` is left out of the reference population (all ratios);
+  - the JSON records reference-population sizes, and M4d nulls a cell below `MIN_COHORT_SIZE`;
+  - direct free-kick shots go to the backlog;
+  - the gate uses `meets_min_minutes` semantics, recomputed and asserted on every row.
+- **Stats-reviewer on the registry list: approved with conditions.** All were applied after the user's decisions:
+  - **bugs fixed:** `shots_on_target_p90` counts penalties, so it is fixed display (D15); the spike's completion-rate denominators now subtract Injury Clearances (D13);
+  - the possession trigger applies to ratios (an amendment after seeing the data, which only removes DNA metrics). `pass_completion_pct` leaves CB, FB-WB, DM-CM and AM-Winger; `long_pass_completion_pct` enters the allow-list (≤ 0.55);
+  - the D3 dedupe runs after the group split (D9 161/210; `tackles_attempted` AM-Winger becomes `league_inconsistent`);
+  - the signature minimum is max(5, the group's P90 of the count). `restart_key_passes` minimums are 5 / 5 / 13 / 19 / 5, with holders 4 / 20 / 33 / 31 / 5 (CB / FB-WB / DM-CM / AM-Winger / ST);
+  - directions: `tackles_attempted`, `dribbles_attempted` and `pressures` are `style`;
+  - sign test: |ρ| < 0.05 has no sign;
+  - D17 also scans ratios and `team_pass_share` (none ≥ 0.85);
+  - `crosses_attempted` is re-cited (restart deliveries);
+  - kept D17 metrics must be DNA (validation);
+  - exact definitions of ρ, the allow-list max, inclusive bounds and the D9 band;
+  - M4f pre-registration: equal family weights, directional-only dimension scores, one percentile basis per vector. The missing-DNA-ratio policy is proposed in ADR 004 §10.8; **the user decides it before M4f**.
+- **`spikes/m4_decision_measurements.py --write-json`** writes `src/eleveniq/analytics/measurements/statsbomb_27.json`. Two runs agree within 1e-9.
+  - The spike's nominal minutes had been shadowed by the parquet column of the same name. They are now independent and asserted equal (2,628 rows).
+- **Code-review round (user, 2026-10-04):**
+  - ratio reference populations are built by filtering on `min_attempts`, then deduping (M4d uses the same order);
+  - the D17 ratio pairs use rows meeting `min_attempts`;
+  - possession ρ needs all 4 pool leagues (per-league n recorded);
+  - the trait minimum applies to integer count columns only;
+  - the stats-reviewer's concerns are recorded in ADR 004 §10.11, with no rule changes.
+
+  The lists are unchanged.
+- **Derived DNA counts (scratch prototype of `derive()`, before M4c2b):** CB 16, FB-WB 19, DM-CM 24, AM-Winger 21, ST 19. They replace the plan's 17 / 20 / 26 / 23 / 20. Every group has ≥ 6.
+
+### M4c2b — `np_shots_on_target` (user, 2026-10-04; before M4c3)
+- **Why:** `shots_on_target` counts penalties (376 on target in the pool leagues), which D15 removed from every other shot metric. It is now fixed display.
+- **Pattern** (the same as `np_shots`):
+  - spike and reference totals first, from raw events, without eleveniq;
+  - then the pipeline column `np_shots_on_target` with its p90;
+  - then a before/after against a snapshot: 0 flips and identical values on every existing column;
+  - identity test: `np_shots_on_target` + penalties on target = `shots_on_target`.
+- **Afterwards:** it goes through the registry rules like any metric, with no guaranteed DNA status. Re-run `--write-json`, re-derive, and update ADR 004 §10.6 and the expected counts.
+
 ---
 
 ## Backlog
+- **Empirical-Bayes shrinkage of ratios** (user, 2026-10-03): shrink each ratio toward its group mean by attempts, then re-evaluate `aerial_win_pct` for CB and FB-WB DNA. CB aerial ability is a known DNA gap: `aerial_win_pct` r 0.499 with 63.5% coverage, so only the aerial volumes are in DNA (ADR 004 §10.9).
+  - **Linked: ST DNA has no chance-quality metric.** np_xg 0.599, op_key_passes 0.540 and op_xg_assisted 0.534 are below 0.6, and `np_xg_per_shot` is display (r 0.464, coverage 61.4%).
+- **`op_crosses_attempted`** (stats-reviewer, user 2026-10-04; priority): crosses that are not restart deliveries. FB-WB DNA has no crossing metric, because `crosses_attempted` (r 0.787, 0% zeros) includes corners and free kicks and is fixed display (ADR 004 §10.3).
+- **Possession-relative completion** (stats-reviewer, 2026-10-04): player pass completion minus his team's completion while he is on, on the D12b pattern. `pass_completion_pct` left DNA in four groups through the possession trigger (ADR 004 §10.2).
+- **Direct free-kick shots in `np_xg_per_shot`** (user, 2026-10-04): 1,801 shots (4.7% of non-penalty shots) stay in. Taking free kicks is a team role (the D15 argument), and they pull down designated takers' xG per shot. Removing them needs a D15 amendment.
 - **Second-ball creation** (user, 2026-10-03): an open-play key pass within N seconds after a corner or free kick, in the same possession. It measures creation from set-piece second phases, which the key-pass split (ADR 004 §9) counts as open play. It needs its own definition (N, which restarts, same possession) and a measurement. No work now.
 - **Return the xG split instead of out-parameter dicts** (user, 2026-10-03): `compute_xg_assisted_per_player` fills `open_play_xga` / `restart_xga` (and `fallbacks`) passed in by the caller. Returning the parts (a small dataclass per player) would be a simpler API.
 

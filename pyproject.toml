@@ -20,6 +20,9 @@ dev = [
 where = ["src"]
 include = ["eleveniq*"]
 
+[tool.setuptools.package-data]
+"eleveniq.analytics" = ["measurements/*.json"]  # registry measurements (ADR 004 §10)
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
