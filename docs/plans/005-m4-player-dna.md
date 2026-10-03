@@ -599,8 +599,23 @@ These are folded into the definitions below. ADR 004 holds the final text.
 - **Reverse-direction consistency guard** added to both spikes (2015/16: 0).
 - **References written:** new keys only.
 
+**M4b3 outcome (2026-10-03):**
+- **Pipeline:** the six columns and their p90s; all reconcile tests pass with no fixture changes.
+- **Before/after against `m4b2_snapshot`:** every pre-existing column is identical, there are 0 flips, the invariant holds, and the tampered-list demo exits 1.
+- **Cleanup items 1–5 done.** Against `m4b3c_snapshot`, every column is identical, with 0 flips, and the references are byte-identical.
+- **D13:** 27 Injury Clearance crosses, measured.
+- **Step-e measurements:** in ADR 004 §9, for the M4c registry, with no decisions.
+
+**M4c list additions from the M4b3 reviews (user, 2026-10-03; record only):**
+- **Naming:** one convention for open-play columns (`op_` vs `open_play_`), resolved in the registry.
+- **Display-only:** `op_assists` and `restart_assists` (r_full ≈ 0 for CB; `restart_assists` is 86.5% zeros in the gated pool).
+- **UI label** "non-restart delivery" for the `op_` creation metrics (short-corner and short-free-kick routines count as `op_`; ADR 004 §9).
+- **Long-throw note:** throw-ins are 5.6% of restart key passes, so `restart_` slightly rewards long-throw specialists.
+- **One cohorts function builds every reference population and requires `meets_min_minutes`** (user, 2026-10-03). `in_percentile_pool` is only the coverage flag: 949 pool rows are below 900 nominal minutes and produce absurd per-90s (e.g. 13.6 key passes per 90 from 1 key pass in 6.6 min). Add a test that a below-gate row never enters any reference population. (AM-Winger `op_xg_assisted` possession ρ 0.42 is already on this list via ADR 004 §9.)
+
 ---
 
 ## Backlog
 - **Second-ball creation** (user, 2026-10-03): an open-play key pass within N seconds after a corner or free kick, in the same possession. It measures creation from set-piece second phases, which the key-pass split (ADR 004 §9) counts as open play. It needs its own definition (N, which restarts, same possession) and a measurement. No work now.
+- **Return the xG split instead of out-parameter dicts** (user, 2026-10-03): `compute_xg_assisted_per_player` fills `open_play_xga` / `restart_xga` (and `fallbacks`) passed in by the caller. Returning the parts (a small dataclass per player) would be a simpler API.
 

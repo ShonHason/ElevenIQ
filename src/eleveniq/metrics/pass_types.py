@@ -23,3 +23,19 @@ SET_PIECE_TYPES: frozenset[str] = frozenset(
 THROW_IN: str = "Throw-in"
 RESTART_TYPES: frozenset[str] = SET_PIECE_TYPES | {THROW_IN}
 
+
+def is_restart_type(pass_type_name: str | None) -> bool:
+    """True when a pass.type.name is a restart; None (open play) is not."""
+    return pass_type_name in RESTART_TYPES
+
+
+def is_restart(pass_data: dict) -> bool:
+    """
+    True when a StatsBomb `pass` payload is a restart (its type.name in
+    RESTART_TYPES). The one test used wherever open play and restarts are told
+    apart: open_play_passes_attempted (the team_pass_share numerator),
+    team_open_play_passes_while_on (its denominator), long passes and the ADR 004
+    §9 creation split, so they cannot drift apart.
+    """
+    return is_restart_type((pass_data.get("type") or {}).get("name"))
+

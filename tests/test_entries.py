@@ -7,7 +7,12 @@ from eleveniq.metrics.entries import (
     is_box_entry_pass,
     is_box_entry_carry,
 )
-from eleveniq.metrics.pass_types import RESTART_TYPES, SET_PIECE_TYPES
+from eleveniq.metrics.pass_types import (
+    RESTART_TYPES,
+    SET_PIECE_TYPES,
+    is_restart,
+    is_restart_type,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +52,17 @@ class TestRestartTypes:
     @pytest.mark.parametrize("ptype", ["Recovery", "Interception", None])
     def test_open_play_types_are_not_restarts(self, ptype):
         assert ptype not in RESTART_TYPES
+
+    @pytest.mark.parametrize("ptype", sorted(RESTART_TYPES))
+    def test_helpers_flag_every_restart(self, ptype):
+        assert is_restart_type(ptype)
+        assert is_restart({"type": {"name": ptype}})
+
+    @pytest.mark.parametrize("payload", [{}, {"type": None}, {"type": {"name": "Recovery"}},
+                                         {"type": {"name": "Interception"}}])
+    def test_helpers_treat_open_play_as_not_a_restart(self, payload):
+        assert not is_restart(payload)
+        assert not is_restart_type((payload.get("type") or {}).get("name"))
 
 
 # ---------------------------------------------------------------------------

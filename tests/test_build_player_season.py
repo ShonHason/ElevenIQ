@@ -116,6 +116,13 @@ def _match_row(
     long_passes_injury_clearance: int = 0,
     open_play_passes_attempted: int | None = None,
     team_open_play_passes_while_on: int = 0,
+    # ADR 004 §9: neutral defaults, everything open play (no restart key passes).
+    op_xg_assisted: float | None = None,
+    restart_xg_assisted: float = 0.0,
+    op_key_passes: int | None = None,
+    restart_key_passes: int = 0,
+    op_assists: int | None = None,
+    restart_assists: int = 0,
 ) -> dict:
     # Ensure per-group minutes are consistent with minutes_played when caller
     # does not specify them explicitly.
@@ -187,6 +194,12 @@ def _match_row(
         open_play_passes_attempted=(passes_attempted if open_play_passes_attempted is None
                                     else open_play_passes_attempted),
         team_open_play_passes_while_on=team_open_play_passes_while_on,
+        op_xg_assisted=xg_assisted if op_xg_assisted is None else op_xg_assisted,
+        restart_xg_assisted=restart_xg_assisted,
+        op_key_passes=key_passes if op_key_passes is None else op_key_passes,
+        restart_key_passes=restart_key_passes,
+        op_assists=assists if op_assists is None else op_assists,
+        restart_assists=restart_assists,
     )
 
 
@@ -1197,6 +1210,32 @@ class TestIntegration:
             f"shot-side xGA {shot_side_xga:.4f} != season xg_assisted "
             f"{season_df['xg_assisted'].sum():.4f}"
         )
+
+    @pytest.mark.parametrize("which", ["match", "season"])
+    def test_open_play_restart_parts_add_up_on_every_row(self, frames, which):
+        """ADR 004 §9 per row (the reference totals only check league sums, where
+        errors of opposite sign could cancel): op + restart = total, counts
+        exactly and xG within float rounding; no part is null or negative."""
+        df = frames[0] if which == "match" else frames[1]
+        for col in ("key_passes", "assists", "xg_assisted"):
+            op, rs = df[f"op_{col}"], df[f"restart_{col}"]
+            assert op.null_count() == 0 and rs.null_count() == 0, col
+            assert (op >= 0).all() and (rs >= 0).all(), col
+            diff = (op + rs - df[col]).abs()
+            tol = 0 if col != "xg_assisted" else 1e-9
+            bad = df.filter(diff > tol)
+            assert bad.is_empty(), f"{col}: {len(bad)} rows where op + restart != total"
+
+    def test_xg_split_agrees_with_key_pass_split_on_every_match_row(self, frames):
+        """The count split (_aggregate_events) and the xG split (xg_assisted.py) are
+        classified in two places: a match row with restart (or open-play) xG
+        assisted must have at least one restart (or open-play) key pass."""
+        match_df, _ = frames
+        for part in ("op", "restart"):
+            bad = match_df.filter((pl.col(f"{part}_xg_assisted") > 0)
+                                  & (pl.col(f"{part}_key_passes") == 0))
+            assert bad.is_empty(), (
+                f"{len(bad)} match rows with {part}_xg_assisted > 0 but no {part} key pass")
 
 
 # ---------------------------------------------------------------------------
@@ -2799,3 +2838,22 @@ class TestPositionMarginEdges:
         assert row["position_group_ambiguous"] is False
         assert row["second_position_group"] is None
         assert row["team_pass_share"] is None
+
+
+class TestOpenPlayRestartSeasonColumns:
+    """ADR 004 §9: the six split columns are summed and get p90s; open play +
+    restart = total on the season row (counts exact, xG within 1e-9)."""
+
+    def test_season_sums_p90s_and_invariant(self):
+        row = _season_one([
+            _match_row(xg_assisted=0.5, op_xg_assisted=0.3, restart_xg_assisted=0.2,
+                       key_passes=4, op_key_passes=3, restart_key_passes=1,
+                       assists=1, op_assists=0, restart_assists=1),
+            _match_row(xg_assisted=0.17, op_xg_assisted=0.17, key_passes=2, assists=0),
+        ], min_minutes=0)
+        assert row["op_key_passes"] + row["restart_key_passes"] == row["key_passes"] == 6
+        assert row["op_assists"] + row["restart_assists"] == row["assists"] == 1
+        assert row["op_xg_assisted"] + row["restart_xg_assisted"] == pytest.approx(
+            row["xg_assisted"], abs=1e-9)
+        assert row["restart_key_passes_p90"] == pytest.approx(1 / 180 * 90)
+        assert row["op_xg_assisted_p90"] == pytest.approx(0.47 / 180 * 90)

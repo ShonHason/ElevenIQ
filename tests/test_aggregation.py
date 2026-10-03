@@ -1488,3 +1488,58 @@ def test_goals_plus_own_goals_equal_match_scores(ref):
     )
 
 
+
+
+class TestKeyPassAssistSplit:
+    """ADR 004 §9: key_passes and assists split by the key pass's own type."""
+
+    @staticmethod
+    def _kp(ptype=None, goal=False, pattern="Regular Play"):
+        p = {"end_location": [100, 40], "shot_assist": not goal, "goal_assist": goal}
+        if ptype:
+            p["type"] = {"name": ptype}
+        return {"type": {"name": "Pass"}, "player": {"id": 1}, "location": [60, 40],
+                "play_pattern": {"name": pattern}, "pass": p}
+
+    def test_split_by_type_and_parts_add_up(self):
+        r = _aggregate_events([self._kp("Corner", goal=True), self._kp("Free Kick"),
+                               self._kp("Throw-in"), self._kp(None, pattern="From Corner"),
+                               self._kp(None, goal=True)], Counter())
+        assert (r["key_passes"], r["op_key_passes"], r["restart_key_passes"]) == (5, 2, 3)
+        assert (r["assists"], r["op_assists"], r["restart_assists"]) == (2, 1, 1)
+
+    def test_a_restart_without_an_assist_flag_counts_nowhere(self):
+        r = _aggregate_events([{**self._kp("Corner"), "pass": {"end_location": [100, 40],
+                                                               "type": {"name": "Corner"}}}],
+                              Counter())
+        assert r["key_passes"] == r["op_key_passes"] == r["restart_key_passes"] == 0
+
+
+class TestKeyPassSplitNullAndOutcomeFields:
+    """ADR 004 §9 with missing/null fields and non-complete outcomes: the split is
+    decided only by pass.type (RESTART_TYPES); a null type, a type with a null
+    name, a missing play_pattern or an Incomplete / Unknown / Out outcome never
+    drops a key pass from both parts, so op + restart = total."""
+
+    @staticmethod
+    def _kp(pass_type, *, outcome=None, goal=False):
+        p = {"end_location": [100, 40], "shot_assist": not goal, "goal_assist": goal,
+             "type": pass_type}
+        if outcome:
+            p["outcome"] = {"name": outcome}
+        return {"type": {"name": "Pass"}, "player": {"id": 1}, "location": [60, 40],
+                "pass": p}
+
+    def test_null_type_fields_are_open_play(self):
+        r = _aggregate_events([self._kp(None), self._kp({"name": None}, goal=True),
+                               self._kp({}), self._kp({"name": "Recovery"})], Counter())
+        assert (r["key_passes"], r["op_key_passes"], r["restart_key_passes"]) == (4, 4, 0)
+        assert (r["assists"], r["op_assists"], r["restart_assists"]) == (1, 1, 0)
+
+    @pytest.mark.parametrize("outcome", ["Incomplete", "Unknown", "Out", "Injury Clearance"])
+    def test_outcome_does_not_move_a_key_pass_out_of_its_part(self, outcome):
+        """A key pass is counted by its assist flag (ADR 002 §8), whatever the
+        outcome label says; the split must keep it in the part its type picks."""
+        r = _aggregate_events([self._kp({"name": "Corner"}, outcome=outcome),
+                               self._kp(None, outcome=outcome)], Counter())
+        assert (r["key_passes"], r["op_key_passes"], r["restart_key_passes"]) == (2, 1, 1)

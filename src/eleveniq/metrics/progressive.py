@@ -56,7 +56,7 @@ No start-zone exclusion applies to carries.
 from __future__ import annotations
 import math
 
-from eleveniq.metrics.pass_types import RESTART_TYPES
+from eleveniq.metrics.pass_types import is_restart_type
 
 OPPONENT_GOAL: tuple[float, float] = (120.0, 40.0)
 
@@ -112,7 +112,7 @@ def is_progressive_pass(
 
     See module docstring for the full progressive-pass definition.
     """
-    if outcome is not None or pass_type_name in RESTART_TYPES:
+    if outcome is not None or is_restart_type(pass_type_name):
         return False
     if start[0] < DEFENSIVE_40_THRESHOLD_X:
         return False

@@ -82,7 +82,8 @@ _GROUP_KEY = [
 
 
 # Columns that get a per-90 companion. Mostly integer counts but also includes
-# the Float64 metrics xg_assisted and xg_assisted_direct.
+# the Float64 metrics xg_assisted, xg_assisted_direct, np_xg, op_xg_assisted and
+# restart_xg_assisted.
 _COUNT_COLS: list[str] = [
     "goals", "shots", "shots_on_target",
     "np_shots", "np_xg",  # ADR 004 D15
@@ -110,6 +111,10 @@ _COUNT_COLS: list[str] = [
     "final_third_entries_carry",
     "box_entries_pass",
     "box_entries_carry",
+    # ADR 004 §9: open play vs restart (by the key pass's own type).
+    "op_xg_assisted", "restart_xg_assisted",
+    "op_key_passes", "restart_key_passes",
+    "op_assists", "restart_assists",
 ]
 
 # Columns that are summed directly but do NOT get per-90 values.

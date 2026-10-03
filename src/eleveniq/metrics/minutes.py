@@ -312,8 +312,29 @@ class PlayerTimeline:
         return sum(p.minutes for p in self.pieces)
 
     def covers(self, t: float) -> bool:
-        """True when elapsed time t is inside his credited time (closed intervals)."""
+        """
+        True when elapsed time t is inside his credited time, closed intervals:
+        the events_outside_credited_time test (ADR 002 §31.6), so an event at a
+        substitution instant is inside both players' time.
+        """
         return any(p.start - TIME_EPS <= t <= p.end + TIME_EPS for p in self.pieces)
+
+    def credits_pass_at(self, period: int, t: float, period_end: float) -> bool:
+        """
+        True when a team pass at elapsed time t in `period` (whose end is the
+        elapsed `period_end`) credits him (ADR 004 D12): t lies in one of his
+        non-empty pieces of that period, half-open [start, end), so a pass at a
+        substitution instant credits only the incoming player; or t is the
+        period's end and a piece ends there, so a piece ending at its period's
+        end is closed. Comparisons are within TIME_EPS: elapsed() and the piece
+        bounds come from different float sums. Contrast covers(), which is closed
+        on both sides.
+        """
+        return any(
+            p.period == period and p.end - p.start > TIME_EPS
+            and (p.start - TIME_EPS <= t < p.end - TIME_EPS
+                 or (abs(t - period_end) <= TIME_EPS and abs(p.end - period_end) <= TIME_EPS))
+            for p in self.pieces)
 
 
 def _subtract(

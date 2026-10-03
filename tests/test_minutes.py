@@ -1,8 +1,9 @@
 """Tests for src/metrics/minutes.py"""
 import pytest
 from eleveniq.metrics.minutes import (
-    PeriodClock, compute_match_duration, compute_period_ends, compute_player_minutes,
-    find_treatment_windows, is_playing_time, parse_mm_ss, player_timeline, stint_end_cap,
+    PeriodClock, PlayerTimeline, TimelinePiece, compute_match_duration, compute_period_ends,
+    compute_player_minutes, find_treatment_windows, is_playing_time, parse_mm_ss,
+    player_timeline, stint_end_cap,
 )
 
 
@@ -419,3 +420,129 @@ def test_parse_mm_ss_drops_fractional_seconds():
     assert parse_mm_ss("37:02.400") == 37 + 2 / 60
 
 
+
+
+class TestCreditsPassAt:
+    """ADR 004 D12: the team-pass credit window on a PlayerTimeline. Half-open
+    [start, end) within the pass's own period, closed at the period's end; contrast
+    covers(), closed on both sides. Clock: period 1 ends at 47:00, period 2 at 93:00."""
+
+    _CLOCK = PeriodClock({1: 47.0, 2: 93.0})
+
+    def _tl(self, *stints):
+        return player_timeline(
+            [{"position": "Center Back", "from": a, "from_period": fp, "to": b,
+              "to_period": tp, "start_reason": "Starting XI"} for a, fp, b, tp in stints],
+            self._CLOCK, exit_at=None, treatment_windows=())
+
+    def test_inside_a_piece_is_credited(self):
+        tl = self._tl(("00:00", 1, None, None))
+        assert tl.credits_pass_at(1, 10.0, 47.0)
+
+    def test_piece_end_mid_period_is_excluded_but_covered(self):
+        """Off at (2, 60:00) = elapsed 62.0: a pass then credits the incoming player only."""
+        tl = self._tl(("00:00", 1, "60:00", 2))
+        at = self._CLOCK.elapsed((2, 60.0))
+        assert not tl.credits_pass_at(2, at, self._CLOCK.offset(2) + self._CLOCK.length(2))
+        assert tl.covers(at)
+
+    def test_piece_start_is_included(self):
+        tl = self._tl(("60:00", 2, None, None))
+        at = self._CLOCK.elapsed((2, 60.0))
+        assert tl.credits_pass_at(2, at, self._CLOCK.offset(2) + self._CLOCK.length(2))
+
+    def test_period_end_is_closed_for_that_period_only(self):
+        """A pass at the period-1 whistle (elapsed 47.0) credits a first-half piece
+        ending there, not a second-half piece starting there."""
+        first = self._tl(("00:00", 1, "45:00", 2))
+        second = self._tl(("45:00", 2, None, None))
+        assert first.credits_pass_at(1, 47.0, 47.0)
+        assert not second.credits_pass_at(1, 47.0, 47.0)
+
+    def test_zero_length_piece_credits_nothing(self):
+        """A zero-length piece lying exactly on its period's end (elapsed 95.0) would
+        satisfy the period-end-closed branch; only the non-empty-piece guard stops it
+        crediting a pass at the whistle. player_timeline never emits such a piece, so
+        the timeline is built directly."""
+        period_end = self._CLOCK.offset(2) + self._CLOCK.length(2)
+        tl = PlayerTimeline(pieces=(TimelinePiece("Center Back", 2, period_end, period_end),),
+                            overlap_minutes=0.0, treatment_windows_inside_stints=0)
+        assert not tl.credits_pass_at(2, period_end, period_end)
+
+    def test_treatment_gap_splits_one_period_into_two_credited_pieces(self):
+        """A player who leaves for treatment at (1, 20:00) and returns at (1, 25:00)
+        has two period-1 pieces: a pass when he leaves or during the gap credits
+        him not; one at his return (piece start) and in first-half stoppage
+        (46:30, before the 47:00 whistle) do."""
+        tl = player_timeline(
+            [{"position": "Center Back", "from": "00:00", "from_period": 1, "to": None,
+              "to_period": None, "start_reason": "Starting XI"}],
+            self._CLOCK, exit_at=None, treatment_windows=[((1, 20.0), (1, 25.0))])
+        end1 = self._CLOCK.offset(1) + self._CLOCK.length(1)
+        at = lambda m: self._CLOCK.elapsed((1, m))  # noqa: E731
+        assert tl.credits_pass_at(1, at(19.9), end1)
+        assert not tl.credits_pass_at(1, at(20.0), end1)
+        assert not tl.credits_pass_at(1, at(22.0), end1)
+        assert tl.credits_pass_at(1, at(25.0), end1)
+        assert tl.credits_pass_at(1, at(46.5), end1)
+        # covers() stays closed at both treatment bounds (ADR 002 §31.6).
+        assert tl.covers(at(20.0)) and tl.covers(at(25.0)) and not tl.covers(at(22.0))
+
+
+class TestCreditsPassAtExitsAndExtraTime:
+    """ADR 004 D12 credit window under exits and extra time: a dismissal ends the
+    piece like a substitution (half-open), a stoppage-time exit before the whistle
+    is not closed by the period-end branch, and periods 3/4 follow the same rule.
+    Clock: 47:00 / 93:00 / 107:00 / 122:00 (lengths 47, 48, 17, 17)."""
+
+    _CLOCK = PeriodClock({1: 47.0, 2: 93.0, 3: 107.0, 4: 122.0})
+
+    def _tl(self, frm, fp, to=None, tp=None, *, exit_at=None, reason="Starting XI"):
+        return player_timeline(
+            [{"position": "Center Back", "from": frm, "from_period": fp, "to": to,
+              "to_period": tp, "start_reason": reason}],
+            self._CLOCK, exit_at=exit_at, treatment_windows=())
+
+    def _end(self, period):
+        return self._CLOCK.offset(period) + self._CLOCK.length(period)
+
+    def test_red_card_mid_period_ends_credit_at_the_dismissal(self):
+        """Sent off at (2, 70:00): a pass at that instant does not credit him (his
+        team is already a man down), one just before does; covers() is closed."""
+        tl = self._tl("00:00", 1, exit_at=(2, 70.0))
+        at = self._CLOCK.elapsed((2, 70.0))
+        assert tl.credits_pass_at(2, self._CLOCK.elapsed((2, 69.9)), self._end(2))
+        assert not tl.credits_pass_at(2, at, self._end(2))
+        assert not tl.credits_pass_at(2, self._CLOCK.elapsed((2, 80.0)), self._end(2))
+        assert tl.covers(at)
+
+    def test_stoppage_time_exit_before_the_whistle_is_not_credited_at_the_whistle(self):
+        """Off at (1, 46:00) in first-half stoppage: his piece ends 1 minute before
+        the 47:00 Half End, so the period-end closed branch must not credit him
+        at the whistle; the replacement is credited."""
+        off = self._tl("00:00", 1, "46:00", 1)
+        on = self._tl("46:00", 1, reason="Substitution")
+        whistle = self._end(1)
+        assert not off.credits_pass_at(1, whistle, whistle)
+        assert on.credits_pass_at(1, whistle, whistle)
+        assert on.credits_pass_at(1, self._CLOCK.elapsed((1, 46.0)), whistle)
+        assert not off.credits_pass_at(1, self._CLOCK.elapsed((1, 46.0)), whistle)
+
+    def test_extra_time_periods_follow_the_same_rule(self):
+        """An extra-time substitute on at (3, 100:00) is not credited for the
+        period-2 whistle or earlier ET play, is credited at the period-3 whistle
+        (closed) and through period 4 to the final whistle. A full-match player
+        is credited at every period end and is never credited for a pass labelled
+        with a period whose piece he lacks."""
+        sub = self._tl("100:00", 3, reason="Substitution")
+        full = self._tl("00:00", 1)
+        assert not sub.credits_pass_at(2, self._end(2), self._end(2))
+        assert not sub.credits_pass_at(3, self._CLOCK.elapsed((3, 95.0)), self._end(3))
+        assert sub.credits_pass_at(3, self._CLOCK.elapsed((3, 100.0)), self._end(3))
+        assert sub.credits_pass_at(3, self._end(3), self._end(3))
+        assert sub.credits_pass_at(4, self._CLOCK.elapsed((4, 105.0)), self._end(4))
+        assert sub.credits_pass_at(4, self._end(4), self._end(4))
+        for p in (1, 2, 3, 4):
+            assert full.credits_pass_at(p, self._end(p), self._end(p)), p
+        # A period-5 label (penalty shoot-out) has no piece: nobody is credited.
+        assert not full.credits_pass_at(5, self._end(4), self._end(4))

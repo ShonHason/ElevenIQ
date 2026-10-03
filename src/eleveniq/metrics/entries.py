@@ -13,7 +13,7 @@ passes).
 """
 from __future__ import annotations
 
-from eleveniq.metrics.pass_types import RESTART_TYPES
+from eleveniq.metrics.pass_types import is_restart_type
 from eleveniq.metrics.progressive import in_opponent_penalty_area
 
 FINAL_THIRD_X: float = 80.0
@@ -43,7 +43,7 @@ def is_final_third_entry_pass(
     return (
         start[0] < FINAL_THIRD_X
         and end[0] >= FINAL_THIRD_X
-        and pass_type_name not in RESTART_TYPES
+        and not is_restart_type(pass_type_name)
     )
 
 
@@ -79,7 +79,7 @@ def is_box_entry_pass(
     return (
         not in_opponent_penalty_area(*start)
         and in_opponent_penalty_area(*end)
-        and pass_type_name not in RESTART_TYPES
+        and not is_restart_type(pass_type_name)
     )
 
 

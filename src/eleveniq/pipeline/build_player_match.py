@@ -64,7 +64,7 @@ from eleveniq.metrics.entries import (
     is_box_entry_pass,
     is_box_entry_carry,
 )
-from eleveniq.metrics.pass_types import RESTART_TYPES
+from eleveniq.metrics.pass_types import is_restart
 from eleveniq.metrics.progressive import is_progressive_pass, is_progressive_carry
 from eleveniq.metrics.shots import KNOWN_SHOT_OUTCOMES, is_shot_on_target
 from eleveniq.metrics.tackles import KNOWN_DUEL_TYPES, KNOWN_TACKLE_OUTCOMES, is_tackle_won
@@ -319,6 +319,12 @@ _SCHEMA: dict[str, type] = {
     "switches": pl.Int32,
     "xg_assisted": pl.Float64,
     "xg_assisted_direct": pl.Float64,
+    "op_xg_assisted": pl.Float64,
+    "restart_xg_assisted": pl.Float64,
+    "op_key_passes": pl.Int32,
+    "restart_key_passes": pl.Int32,
+    "op_assists": pl.Int32,
+    "restart_assists": pl.Int32,
     "final_third_entries_pass": pl.Int32,
     "final_third_entries_carry": pl.Int32,
     "box_entries_pass": pl.Int32,
@@ -376,6 +382,10 @@ def _aggregate_events(
     progressive_passes = 0
     key_passes = 0
     assists = 0
+    op_key_passes = 0
+    restart_key_passes = 0
+    op_assists = 0
+    restart_assists = 0
     crosses_attempted = 0
     crosses_completed = 0
     crosses_unknown_outcome = 0
@@ -429,7 +439,8 @@ def _aggregate_events(
             elif outcome_name == INJURY_CLEARANCE_OUTCOME:
                 passes_injury_clearance += 1
             # ADR 004 D12: open play = every outcome, restarts excluded.
-            if pass_type_name not in RESTART_TYPES:
+            restart = is_restart(pass_data)
+            if not restart:
                 open_play_passes_attempted += 1
 
             loc = event.get("location")
@@ -445,10 +456,19 @@ def _aggregate_events(
                 ):
                     progressive_passes += 1
 
+            # ADR 004 §9: split by the key pass's own type, never by play_pattern.
             if pass_data.get("shot_assist") or pass_data.get("goal_assist"):
                 key_passes += 1
+                if restart:
+                    restart_key_passes += 1
+                else:
+                    op_key_passes += 1
             if pass_data.get("goal_assist"):
                 assists += 1
+                if restart:
+                    restart_assists += 1
+                else:
+                    op_assists += 1
 
             if pass_data.get("cross"):
                 crosses_attempted += 1
@@ -464,7 +484,7 @@ def _aggregate_events(
                 # One predicate for the long pass and all its parts (ADR 004 D14):
                 # restarts never count, so unknown and Injury Clearance long passes
                 # are always subsets of long_passes_attempted.
-                if pass_length >= LONG_PASS_THRESHOLD_UNITS and pass_type_name not in RESTART_TYPES:
+                if pass_length >= LONG_PASS_THRESHOLD_UNITS and not restart:
                     long_passes_attempted += 1
                     if outcome_name is None:
                         long_passes_completed += 1
@@ -597,6 +617,8 @@ def _aggregate_events(
         "passes_unknown_outcome": passes_unknown_outcome,
         "progressive_passes": progressive_passes,
         "key_passes": key_passes,
+        "op_key_passes": op_key_passes,
+        "restart_key_passes": restart_key_passes,
         "carries": carries,
         "progressive_carries": progressive_carries,
         "tackles_attempted": tackles_attempted,
@@ -609,6 +631,8 @@ def _aggregate_events(
         "fouls_committed": fouls_committed,
         "fouls_won": fouls_won,
         "assists": assists,
+        "op_assists": op_assists,
+        "restart_assists": restart_assists,
         "crosses_attempted": crosses_attempted,
         "crosses_completed": crosses_completed,
         "crosses_unknown_outcome": crosses_unknown_outcome,
@@ -652,11 +676,9 @@ def team_open_play_pass_credits(
     credited to a count outside MIN_PLAYERS_PER_PASS..MAX_PLAYERS_PER_PASS, the
     team mismatches).
 
-    A teammate is credited when the pass's elapsed instant lies in one of his
-    timeline pieces of the pass's own period, half-open [start, end), or is that
-    period's end and the piece ends there (a piece ending at its period's end is
-    closed). Comparisons are within TIME_EPS: elapsed() and the piece bounds come
-    from different float sums. Zero-length pieces credit nothing. The passer is
+    A teammate is credited when PlayerTimeline.credits_pass_at holds for the pass's
+    period and elapsed instant (that method is the one statement of the window
+    rule). The passer is
     always credited, even when the pass lies outside his own credited time: that
     is a timeline inconsistency, not absence, and it is reported as
     events_outside_credited_time (ADR 002 §31.6; user decision 2026-10-03). So
@@ -671,7 +693,7 @@ def team_open_play_pass_credits(
     mismatches: list[dict] = []
     for e in play_events:
         if (e["type"]["name"] != "Pass" or not e.get("player")
-                or ((e.get("pass") or {}).get("type") or {}).get("name") in RESTART_TYPES):
+                or is_restart(e.get("pass") or {})):
             continue
         period = e["period"]
         start = clock.offset(period)
@@ -692,10 +714,7 @@ def team_open_play_pass_credits(
             timeline = timelines.get(pid)
             if pid == passer or timeline is None:
                 continue
-            if any(piece.period == period and piece.end - piece.start > TIME_EPS
-                   and (piece.start - TIME_EPS <= at < piece.end - TIME_EPS
-                        or (abs(at - end) <= TIME_EPS and abs(piece.end - end) <= TIME_EPS))
-                   for piece in timeline.pieces):
+            if timeline.credits_pass_at(period, at, end):
                 credited.add(pid)
         for pid in credited:
             credits[pid] += 1
@@ -763,8 +782,11 @@ def _process_match(
 
     # Compute xg_assisted per player (requires full match event list for cross-player lookup)
     xga_fallbacks: Counter[str] = Counter()
+    op_xga: dict[int, float] = {}
+    restart_xga: dict[int, float] = {}
     xga_by_player = compute_xg_assisted_per_player(
-        play_events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS, fallbacks=xga_fallbacks
+        play_events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS, fallbacks=xga_fallbacks,
+        open_play_xga=op_xga, restart_xga=restart_xga,
     )
 
     starting_xi = _starting_xi_by_team(events)
@@ -986,6 +1008,8 @@ def _process_match(
                     **_aggregate_events(player_events.get(player_id, []), event_issues),
                     "xg_assisted": xga,
                     "xg_assisted_direct": xga_direct,
+                    "op_xg_assisted": op_xga.get(player_id, 0.0),
+                    "restart_xg_assisted": restart_xga.get(player_id, 0.0),
                 },
                 positions,
             ))

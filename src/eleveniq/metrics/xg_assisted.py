@@ -22,6 +22,12 @@ xg_assisted_direct:
     Each fallback, a dangling assisted_shot_id and a pass with no assister are
     counted in `fallbacks` (report-only quality issues in the pipeline).
 
+open play vs restart (ADR 004 §9):
+    xg_assisted is also split by the key pass's own pass.type: a restart
+    (RESTART_TYPES) or open play. Never by play_pattern. Both parts use the same
+    linkage as the total, so open play + restart = xg_assisted per player (within
+    float rounding: the three sums are accumulated separately).
+
 See ADR 002 §25 and §26 for the full definition and La Liga 2015/16 reference figures.
 """
 from __future__ import annotations
@@ -29,6 +35,9 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter, defaultdict
+from collections.abc import MutableMapping
+
+from eleveniq.metrics.pass_types import is_restart
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +58,8 @@ def compute_xg_assisted_per_player(
     *,
     max_carry_units: float,
     fallbacks: Counter[str],
+    open_play_xga: MutableMapping[int, float],
+    restart_xga: MutableMapping[int, float],
 ) -> dict[int, tuple[float, float]]:
     """
     Return {player_id: (xg_assisted, xg_assisted_direct)} for all passers.
@@ -61,6 +72,9 @@ def compute_xg_assisted_per_player(
         fallbacks:       Incremented per XGA_FALLBACKS case (required keyword, so
                          no caller can drop them). 2015/16: 6 no-receipt shots,
                          all in La Liga 3825848; 0 of the others.
+        open_play_xga, restart_xga:
+                         Filled with each passer's open-play and restart parts of
+                         xg_assisted (ADR 004 §9; required keywords).
 
     Assisted shots with missing statsbomb_xg are logged (WARNING) and excluded
     from both totals.
@@ -116,6 +130,8 @@ def compute_xg_assisted_per_player(
             continue
 
         xga[assister_id] += xg
+        part = restart_xga if is_restart(p) else open_play_xga
+        part[assister_id] = part.get(assister_id, 0.0) + xg
 
         # ── direct check ─────────────────────────────────────────────────────
         shooter_id: int | None = shot_ev.get("player", {}).get("id")

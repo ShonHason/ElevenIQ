@@ -240,3 +240,155 @@ class TestOpenPlayRestartSplitSpikes:
         assert (t["assists"], t["op_assists"], t["restart_assists"]) == (1, 0, 1)
         assert t["key_passes_type_restart_pattern_open"] == 1
         assert t["key_passes_type_open_pattern_restart"] == 1
+
+
+class TestBeforeAfterEmptyInput:
+    """spikes/m4b_before_after.py exits with a clear error (code 2), not a crash, when
+    any input frame is empty."""
+
+    def test_empty_snapshot_exits_2_with_a_message(self, tmp_path, monkeypatch, capsys):
+        import m4b_before_after as ba
+        frame = pl.DataFrame({"player_id": [1]})
+        empty = pl.DataFrame({"player_id": []}, schema={"player_id": pl.Int64})
+        frames = {"player_match_stats.parquet": empty, "player_season_stats.parquet": frame}
+
+        def fake_read(path):
+            return frames.get(Path(path).name, frame)
+        monkeypatch.setattr(ba.pl, "read_parquet", fake_read)
+        expected = tmp_path / "expected.json"
+        expected.write_text('{"meets_min_minutes": [], "unchanged_flags": []}')
+        monkeypatch.setattr(sys, "argv", ["m4b_before_after.py", "--snapshot", str(tmp_path),
+                                          "--expected", str(expected)])
+        assert ba.main() == 2
+        assert "empty input frame(s): snapshot match" in capsys.readouterr().out
+
+
+class TestBeforeAfterEdgeCases:
+    """spikes/m4b_before_after.py: --snapshot is required; a row-count mismatch exits
+    1 before any column compare; with --all-columns-identical, one changed value
+    exits 1 (TestSplitInvariantProblems covers the null checks)."""
+
+    @staticmethod
+    def _season(n: int, minutes=None) -> pl.DataFrame:
+        return pl.DataFrame({"player_id": list(range(n)), "team_id": [1] * n,
+                             "competition_id": [2] * n, "season_id": [27] * n,
+                             "source": ["statsbomb"] * n,
+                             "minutes_played": minutes or [90.0] * n})
+
+    @staticmethod
+    def _run(monkeypatch, tmp_path, frames: dict, extra_args=()):
+        import m4b_before_after as ba
+        monkeypatch.setattr(ba.pl, "read_parquet", lambda path: frames[str(path)])
+        expected = tmp_path / "expected.json"
+        expected.write_text('{"meets_min_minutes": [], "unchanged_flags": []}')
+        monkeypatch.setattr(sys, "argv", ["m4b_before_after.py", "--snapshot", str(tmp_path),
+                                          "--expected", str(expected), *extra_args])
+        return ba.main()
+
+    def test_snapshot_is_required(self, monkeypatch):
+        import m4b_before_after as ba
+        monkeypatch.setattr(sys, "argv", ["m4b_before_after.py"])
+        with pytest.raises(SystemExit) as exc:
+            ba.main()
+        assert exc.value.code == 2
+
+    def test_row_count_mismatch_exits_before_column_compare(self, monkeypatch, tmp_path, capsys):
+        import m4b_before_after as ba
+        match_old = pl.DataFrame({"match_id": [1, 1], "player_id": [1, 2]})
+        match_new = pl.DataFrame({"match_id": [1], "player_id": [1]})
+        frames = {str(tmp_path / "player_match_stats.parquet"): match_old,
+                  str(tmp_path / "player_season_stats.parquet"): self._season(2),
+                  str(ba.NEW_MATCH): match_new, str(ba.NEW_SEASON): self._season(2)}
+        code = self._run(monkeypatch, tmp_path, frames, ["--all-columns-identical"])
+        out = capsys.readouterr().out
+        assert code == 1
+        assert "match rows differ: 2 → 1" in out and "columns not compared" in out
+
+    def test_one_changed_value_exits_1(self, monkeypatch, tmp_path, capsys):
+        """Mutation-style: the rebuild differs from the snapshot in one season value
+        (minutes 90.0 → 91.0 for one row); the identical check must stop with exit 1."""
+        import m4b_before_after as ba
+        match = pl.DataFrame({"match_id": [1, 1], "player_id": [0, 1]})
+        frames = {str(tmp_path / "player_match_stats.parquet"): match,
+                  str(tmp_path / "player_season_stats.parquet"): self._season(2),
+                  str(ba.NEW_MATCH): match,
+                  str(ba.NEW_SEASON): self._season(2, minutes=[90.0, 91.0])}
+        code = self._run(monkeypatch, tmp_path, frames, ["--all-columns-identical"])
+        out = capsys.readouterr().out
+        assert code == 1
+        assert "season column minutes_played changed" in out
+        assert "pre-existing columns changed" in out
+
+
+class TestColumnDifferences:
+    """spikes/m4b_before_after.column_differences: what counts as a change."""
+
+    KEY = ["id"]
+
+    def _diff(self, old: dict, new: dict):
+        import m4b_before_after as ba
+        return ba.column_differences(pl.DataFrame(old), pl.DataFrame(new), self.KEY)
+
+    def test_identical_frames_in_another_row_order_have_no_difference(self):
+        assert self._diff({"id": [1, 2], "x": [1.0, 2.0]}, {"id": [2, 1], "x": [2.0, 1.0]}) == []
+
+    def test_float_within_tolerance_is_identical(self):
+        assert self._diff({"id": [1], "x": [1.0]}, {"id": [1], "x": [1.0 + 1e-12]}) == []
+
+    @pytest.mark.parametrize("old, new, fragment", [
+        ({"id": [1], "x": [1.0]}, {"id": [1], "x": [1.1]}, "column x changed"),
+        ({"id": [1], "x": [1]}, {"id": [1], "x": [2]}, "column x changed"),
+        ({"id": [1], "x": [1.0]}, {"id": [1], "x": pl.Series([None], dtype=pl.Float64)},
+         "nulls differ True"),
+        ({"id": [1], "x": [1.0]}, {"id": [1], "x": [float("nan")]}, "NaNs differ True"),
+        ({"id": [1], "x": [1]}, {"id": [1], "x": [1.0]}, "dtype"),
+        ({"id": [1], "x": [1]}, {"id": [1]}, "missing after the rebuild"),
+    ])
+    def test_each_kind_of_change_is_reported(self, old, new, fragment):
+        (msg,) = self._diff(old, new)
+        assert fragment in msg
+
+
+class TestSplitInvariantProblems:
+    """spikes/m4b_before_after.split_invariant_problems (ADR 004 §9 invariant)."""
+
+    @staticmethod
+    def _frame(**over):
+        base = {"key_passes": [3], "op_key_passes": [2], "restart_key_passes": [1],
+                "assists": [1], "op_assists": [1], "restart_assists": [0],
+                "xg_assisted": [0.5], "op_xg_assisted": [0.3], "restart_xg_assisted": [0.2]}
+        return pl.DataFrame({**base, **over})
+
+    def test_consistent_frame_has_no_problems(self):
+        import m4b_before_after as ba
+        assert ba.split_invariant_problems(self._frame()) == []
+
+    def test_count_mismatch_is_reported(self):
+        import m4b_before_after as ba
+        (msg,) = ba.split_invariant_problems(self._frame(restart_key_passes=[2]))
+        assert "op + restart key_passes" in msg
+
+    def test_all_null_xg_column_is_reported_not_raised(self):
+        import m4b_before_after as ba
+        frame = self._frame(op_xg_assisted=pl.Series([None], dtype=pl.Float64))
+        (msg,) = ba.split_invariant_problems(frame)
+        assert "null values in compared columns" in msg and "op_xg_assisted" in msg
+
+    @pytest.mark.parametrize("col", ["op_key_passes", "restart_assists", "key_passes"])
+    def test_null_count_column_is_reported(self, col):
+        """A comparison with a null is itself null and would be filtered away."""
+        import m4b_before_after as ba
+        frame = self._frame(**{col: pl.Series([None], dtype=pl.Int64)})
+        (msg,) = ba.split_invariant_problems(frame)
+        assert col in msg
+
+    def test_holds_is_printed_only_when_every_check_passed(self, capsys):
+        import m4b_before_after as ba
+        ba.split_invariant_problems(self._frame(restart_key_passes=[2]))
+        assert "holds" not in capsys.readouterr().out
+        ba.split_invariant_problems(self._frame())
+        assert "holds" in capsys.readouterr().out
+
+    def test_pre_m4b3_frame_is_skipped(self):
+        import m4b_before_after as ba
+        assert ba.split_invariant_problems(pl.DataFrame({"key_passes": [1]})) == []

@@ -205,6 +205,7 @@
 - 2,459 passes (La Liga 548, PL 360, Serie A 825, Ligue 1 660, Bundesliga 66).
 - **Excluded from the completion denominators** (`pass_completion_pct`, `long_pass_completion_pct`), like Unknown. `passes_attempted` stays a volume count that includes them.
 - New stored column: `passes_injury_clearance` (and its long-pass part), so the denominator `attempted − unknown − injury_clearance` can be recomputed.
+- **Crosses keep Injury Clearances in their denominator** (measured 2026-10-03, M4b3): 27 crosses are Injury Clearances (La Liga 6, PL 11, Serie A 5, Ligue 1 5, Bundesliga 0) of 38,757 crosses in the 5 leagues (0.07%). `cross_completion_pct` is display-only (D19), so this is left as is and recorded, not changed.
 - **Effect:**
   - mean `pass_completion_pct` +0.1–0.2 pp (max +1.2 pp);
   - local percentile shift max 5.6 pts, 27 rows ≥ 3 pts;
@@ -526,4 +527,37 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 - **Reason:** `play_pattern` labels the whole possession by how it started, including long open-play sequences after a throw-in or a goal kick. About half of all xG assisted would be "restart" under it. It measures how a possession began, not who delivered the set piece. The plan's 10% agreement gate assumed both definitions measure the same thing; the data shows they do not, so the gate was dropped (user).
 - **Consistency guard** (both spikes): a restart key pass in an open-play-labelled possession fails the spike. 2015/16: 0 in all 5 leagues. A positive count on a future source means its restart labelling differs and must be investigated.
 - **Second-ball creation** (an open-play key pass shortly after a corner or free kick, in the same possession) is a separate future item (plan 005 backlog).
+- **"Open play" here means "not a restart delivery", not the industry's open play** (M4b3 stats review, measured on raw events). A cross after a short corner or a short free kick is a rehearsed set-piece routine, but its key pass is not itself a restart, so it counts as `op_`. Of the 23,353 non-restart key passes in the 5 leagues (27,605 key passes = 23,353 + 4,252 restart), 1,710 are in From Corner possessions and 3,136 in From Free Kick possessions: 4,846, or 20.8% (`spikes/m4b3_short_routine_counts.py`, which fails unless the parts add up to the reference totals). So `op_xg_assisted` includes short-routine chances for designated set-piece takers. An earlier draft quoted 21,937 / 1,509 / 2,933, which could not be reproduced (they do not add up to 27,605). The UI should label the `op_` creation metrics "non-restart delivery" (plan 005 M4c list).
+- **Two linkages, one rule** (M4b3 code review). The key-pass and assist split follows the pass's `shot_assist` / `goal_assist` flags, while the xG split follows `pass.assisted_shot_id` → Shot.
+  - A pass with a linked shot but neither flag adds its xG to the `op_` or `restart_` xG part (by its type) and to no key-pass count, as the totals already do (unit test `TestXgAssistedLinkWithoutFlags`).
+  - 2015/16: **0** such passes (measured by `spikes/m4b3_short_routine_counts.py`). So on real data the two splits agree on every row, which an integration test checks.
+- **Throw-ins are restarts** (D14): 240 of the 4,252 restart key passes (5.6%) are throw-ins. So the `restart_` columns slightly reward long-throw specialists, unlike set-piece metrics that leave throw-ins out.
+
+**Pipeline and before/after (M4b3, 2026-10-03).**
+- **Reconcile:** the pipeline computes the six columns, plus p90s. All 15 reconcile tests pass, with no fixture changes.
+- **Before/after against `data/interim/m4b2_snapshot`** (`spikes/m4b_before_after.py --all-columns-identical`): all 72 pre-existing match columns and 130 season columns are identical. The flag flips match `spikes/expected_m4b3_flips.json` (none). The invariant holds on every row: counts exact, xG max |Δ| 1.8e-15. A tampered expected list exits 1.
+- **The M4b3 cleanup** (`is_restart` / `is_restart_type`, `PlayerTimeline.credits_pass_at`) is behaviour-neutral on its own. Against `data/interim/m4b3c_snapshot`, taken after the pipeline step was green, all 78 match and 142 season columns are identical, with 0 flips, and the reference totals are byte-identical.
+
+**Measurements on the M4b3 output (report only, no decision; the M4c registry decides).**
+- r_full at the gate (D19 bar 0.6):
+
+  | Metric | AM-Winger | CB | DM-CM | FB-WB | ST |
+  |---|---|---|---|---|---|
+  | `op_xg_assisted_p90` | 0.623 | 0.185 | 0.715 | 0.551 | 0.534 |
+  | `op_key_passes_p90` | 0.726 | 0.449 | 0.693 | 0.714 | 0.540 |
+  | `op_assists_p90` | 0.486 | −0.005 | 0.290 | 0.299 | 0.238 |
+  | `restart_xg_assisted_p90` | 0.814 | 0.781 | 0.868 | 0.664 | 0.912 |
+  | `restart_key_passes_p90` | 0.838 | 0.719 | 0.932 | 0.747 | 0.930 |
+  | `restart_assists_p90` | 0.361 | −0.000 | 0.603 | 0.547 | 0.596 |
+  | for comparison, `xg_assisted_p90` | 0.706 | 0.261 | 0.806 | 0.597 | 0.578 |
+
+- **Possession (D12, trigger 0.4 with the same sign in all 4 leagues):**
+  - `op_xg_assisted_p90` triggers for AM-Winger: mean within-league ρ 0.421 (duration) and 0.419 (pass share).
+  - No other split cell triggers. Max |ρ|: `op_key_passes` 0.375, `op_assists` 0.326; the `restart_` columns are ≤ 0.13.
+- **Zero-heavy (> 30% zeros, D11):**
+  - `restart_xg_assisted` and `restart_key_passes` in CB, DM-CM, FB-WB and ST;
+  - `restart_assists` in every group;
+  - `op_assists` in CB, DM-CM and FB-WB.
+
+  These are signature-trait candidates (§1). For the xG columns, the trait table's count thresholds are not meaningful, because the count column is xG, not a count.
 

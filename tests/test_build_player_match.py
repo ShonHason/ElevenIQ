@@ -3116,3 +3116,57 @@ class TestXgAssistedFallbackLimits:
         assert len(_bpm.report_only_limit_failures(
             [{"issue": issue, "match_id": 1, "count": 2}, {"issue": issue, "match_id": 2, "count": 2}],
             380)) == 1
+
+
+class TestProcessMatchOpenPlayRestartColumns:
+    """ADR 004 §9 end to end: _process_match writes op_/restart_ parts of
+    key_passes, assists and xg_assisted, split by the key pass's own pass.type
+    (never play_pattern). The count split (_aggregate_events) and the xG split
+    (compute_xg_assisted_per_player) are computed in two places, so on one row
+    they must agree with each other and add up to their totals."""
+
+    def _key_pass(self, minute, shot_id, *, ptype=None, goal=False, pattern="Regular Play"):
+        p = {"end_location": [110, 40], "assisted_shot_id": shot_id,
+             "shot_assist": not goal, "goal_assist": goal}
+        if ptype:
+            p["type"] = {"name": ptype}
+        return {**_ev("Pass", _STARTER, minute=minute), "index": minute, "possession": minute,
+                "location": [100, 10] if ptype == "Corner" else [80, 40],
+                "play_pattern": {"name": pattern}, "pass": p}
+
+    def _shot(self, minute, shot_id, key_pass, xg, outcome):
+        receipt = {**_ev("Ball Receipt*", _BENCH, minute=minute), "index": minute,
+                   "possession": key_pass["possession"], "possession_team": {"id": _TEAM}}
+        shot = {**_ev("Shot", _BENCH, minute=minute), "id": shot_id, "index": minute + 1,
+                "possession": key_pass["possession"], "possession_team": {"id": _TEAM},
+                "location": [110, 40], "play_pattern": key_pass["play_pattern"],
+                "shot": {"statsbomb_xg": xg, "outcome": {"name": outcome},
+                         "type": {"name": "Open Play"}, "key_pass_id": key_pass["id"]}}
+        return [receipt, shot]
+
+    def test_corner_assist_and_from_corner_open_play_key_pass(self, tmp_path):
+        corner = self._key_pass(20, "shot-c", ptype="Corner", goal=True, pattern="From Corner")
+        # An open-play pass in a possession that began with a corner: open play.
+        second_ball = self._key_pass(40, "shot-o", pattern="From Corner")
+        events = [_xi_event(_TEAM, [_STARTER, _BENCH]),
+                  corner, *self._shot(21, "shot-c", corner, 0.4, "Goal"),
+                  second_ball, *self._shot(41, "shot-o", second_ball, 0.1, "Saved"),
+                  _HALF_END]
+        lineups = _quality_lineups(bench_positions=[_spell("00:00", None, "Starting XI")])
+        _write_match(tmp_path, 8100, events, lineups)
+        rows, _ = _process_match(8100, 99, 1, data_root=tmp_path)
+        by_id = {r["player_id"]: r for r in rows}
+
+        passer = by_id[_STARTER]
+        assert (passer["key_passes"], passer["op_key_passes"], passer["restart_key_passes"]) == (2, 1, 1)
+        assert (passer["assists"], passer["op_assists"], passer["restart_assists"]) == (1, 0, 1)
+        assert passer["restart_xg_assisted"] == pytest.approx(0.4)
+        assert passer["op_xg_assisted"] == pytest.approx(0.1)
+        assert passer["op_xg_assisted"] + passer["restart_xg_assisted"] == pytest.approx(
+            passer["xg_assisted"], abs=1e-9)
+
+        # The shooter assisted nothing: zeros, never null (season sums and p90s).
+        shooter = by_id[_BENCH]
+        for col in ("op_xg_assisted", "restart_xg_assisted", "op_key_passes",
+                    "restart_key_passes", "op_assists", "restart_assists"):
+            assert shooter[col] == 0, col

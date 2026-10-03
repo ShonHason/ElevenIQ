@@ -17,7 +17,16 @@ A failure is to be brought to the user, not explained away.
 
 No eleveniq imports (tests/test_spikes_independent.py).
 
-Usage: .venv/bin/python spikes/m4b_before_after.py [--expected PATH]
+M4b3 (ADR 004 §9) and the M4b3 cleanup run it with --snapshot and
+--all-columns-identical: every column present in the snapshot must be identical in the
+rebuild (exact for non-floats, 1e-9 for floats), and the open-play + restart split must
+add up to its total on every row.
+
+Usage: .venv/bin/python spikes/m4b_before_after.py --snapshot DIR [--expected PATH]
+       [--all-columns-identical]
+--snapshot is required: there is one snapshot per chunk (m4a_snapshot for M4b2,
+m4b2_snapshot for M4b3, m4b3c_snapshot for the M4b3 cleanup), and a default would
+compare against the wrong one by mistake.
 """
 from __future__ import annotations
 
@@ -29,7 +38,6 @@ from pathlib import Path
 import polars as pl
 
 ROOT = Path(__file__).resolve().parents[1]
-SNAPSHOT = ROOT / "data" / "interim" / "m4a_snapshot"
 NEW_MATCH = ROOT / "data" / "interim" / "player_match_stats.parquet"
 NEW_SEASON = ROOT / "data" / "processed" / "player_season_stats.parquet"
 DEFAULT_EXPECTED = Path(__file__).resolve().parent / "expected_m4b_flips.json"
@@ -67,22 +75,108 @@ def second_group(row: dict) -> tuple[str | None, float]:
     return best_g, best_m
 
 
+def column_differences(old: pl.DataFrame, new: pl.DataFrame, key: list[str]) -> list[str]:
+    """
+    Every column of `old` must be in `new` with identical values on the same rows
+    (sorted by `key`): exact for non-floats, within TOL for floats, the same nulls
+    and NaNs, the same dtype. Returns one message per differing column.
+    """
+    o, n = old.sort(key), new.sort(key)
+    out = []
+    for col in old.columns:
+        if col not in new.columns:
+            out.append(f"column {col} is missing after the rebuild")
+            continue
+        a, b = o[col], n[col]
+        if a.dtype != b.dtype:
+            out.append(f"column {col} dtype {a.dtype} → {b.dtype}")
+        elif a.dtype.is_float():
+            nulls_differ = (a.is_null() != b.is_null()).any()
+            nans_differ = (a.is_nan() != b.is_nan()).fill_null(False).any()
+            diff = (a - b).abs().max()
+            if nulls_differ or nans_differ or (diff is not None and diff > TOL):
+                out.append(f"column {col} changed (max |Δ| {diff}, nulls differ {nulls_differ}, "
+                           f"NaNs differ {nans_differ})")
+        elif not a.equals(b, null_equal=True):
+            out.append(f"column {col} changed")
+    return out
+
+
+def split_invariant_problems(df: pl.DataFrame) -> list[str]:
+    """
+    ADR 004 §9: open play + restart = total for key_passes and assists (exact) and
+    xg_assisted (within TOL). A null in any compared column is reported as a
+    problem (a comparison with a null would be dropped silently). "holds" is printed
+    only when every check passed. A frame without the split columns
+    (pre-M4b3) has no problems.
+    """
+    if "op_key_passes" not in df.columns:
+        return []
+    compared = [f"{part}{total}" for total in ("key_passes", "assists", "xg_assisted")
+                for part in ("", "op_", "restart_")]
+    nulls = {c: df[c].null_count() for c in compared if df[c].null_count()}
+    if nulls:
+        # A comparison with a null is itself null and would be dropped silently.
+        return [f"null values in compared columns {nulls}"]
+    problems = []
+    for total in ("key_passes", "assists"):
+        bad = df.filter(pl.col(f"op_{total}") + pl.col(f"restart_{total}") != pl.col(total)).height
+        if bad:
+            problems.append(f"{bad} rows where op + restart {total} != {total}")
+    dx = (df["op_xg_assisted"] + df["restart_xg_assisted"] - df["xg_assisted"]).abs().max()
+    if dx > TOL:
+        problems.append(f"op + restart xg_assisted differs from xg_assisted by {dx}")
+    if not problems:
+        print(f"op + restart = total holds on {df.height} rows (max xG |Δ| {dx:.2e})")
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--expected", type=Path, default=DEFAULT_EXPECTED)
+    ap.add_argument("--snapshot", type=Path, required=True)
+    ap.add_argument("--all-columns-identical", action="store_true")
     args = ap.parse_args()
     expected = json.loads(args.expected.read_text())
 
-    old_m = pl.read_parquet(SNAPSHOT / "player_match_stats.parquet")
-    old_s = pl.read_parquet(SNAPSHOT / "player_season_stats.parquet")
+    old_m = pl.read_parquet(args.snapshot / "player_match_stats.parquet")
+    old_s = pl.read_parquet(args.snapshot / "player_season_stats.parquet")
+    print(f"snapshot: {args.snapshot}; expected: {args.expected}")
     new_m = pl.read_parquet(NEW_MATCH)
     new_s = pl.read_parquet(NEW_SEASON)
+    empty = [label for label, df in (("snapshot match", old_m), ("snapshot season", old_s),
+                                      ("new match", new_m), ("new season", new_s))
+             if df.height == 0]
+    if empty:
+        print(f"ERROR: empty input frame(s): {', '.join(empty)}. Nothing to compare: rebuild "
+              "the pipeline or check --snapshot.")
+        return 2
 
-    # Rows and minutes: unchanged.
+    # Rows: unchanged. A mismatch stops here, before any column-by-column compare
+    # (which assumes the same rows in the same order).
+    rows_differ = []
     for label, old, new, key in (("match", old_m, new_m, ["match_id", "player_id"]),
                                  ("season", old_s, new_s, KEY)):
         if old.height != new.height or old.select(key).sort(key).rows() != new.select(key).sort(key).rows():
-            stop(f"{label} rows differ: {old.height} → {new.height}")
+            rows_differ.append(f"{label} rows differ: {old.height} → {new.height}")
+    if rows_differ:
+        for msg in rows_differ:
+            print(f"STOP: {msg}")
+        print("STOP: row sets differ; columns not compared. Bring this to the user.")
+        return 1
+
+    if args.all_columns_identical:
+        changed = []
+        for label, old, new, key in (("match", old_m, new_m, ["match_id", "player_id"]),
+                                     ("season", old_s, new_s, KEY)):
+            changed += [f"{label} {msg}" for msg in column_differences(old, new, key)]
+            added = [c for c in new.columns if c not in old.columns]
+            print(f"{label}: {len(old.columns)} columns identical-checked; new columns: {added}")
+        if changed:
+            for msg in changed:
+                print(f"STOP: {msg}")
+            print("STOP: pre-existing columns changed. Bring this to the user.")
+            return 1
     joined = old_s.join(new_s, on=KEY, how="inner", suffix="_new")
     for col in MINUTE_COLS:
         diff = (joined[col] - joined[f"{col}_new"]).abs().max()
@@ -142,6 +236,12 @@ def main() -> int:
             bad_margin += 1
     if bad_margin:
         stop(f"{bad_margin} rows: position margin columns differ from the recomputation")
+
+
+    # ADR 004 §9 invariant: open play + restart = total, on both outputs.
+    for label, df in (("match", new_m), ("season", new_s)):
+        for msg in split_invariant_problems(df):
+            stop(f"{label}: {msg}")
 
     # Flags (STOP rule).
     exp_rows = {(e["player_id"], e["team_id"], e["competition_id"], e["season_id"], e["source"]):
