@@ -428,50 +428,101 @@ M4 closes when this review is signed off. Any failure goes back to the decision 
 ### Scope (from ADR 004)
 | # | Change | Stored columns | Rows affected |
 |---|---|---|---|
-| D1 | Gate on nominal-equivalent minutes | season: `minutes_nominal_equiv`; `meets_min_minutes` now reads it | 28 pool outfield rows fall below (expected list); 0 rise |
+| D1 | Gate on nominal-equivalent minutes (`≥ 900 − 1e-6`; nominal length 120 with extra time) | season: `minutes_nominal_equiv`; `meets_min_minutes` now reads it | 31 rows fall below (28 pool outfield, 2 pool GK, 1 Bundesliga); 0 rise |
 | D5 | Position margin flags | season: `position_group_margin_pct`, `position_group_share`, `position_group_ambiguous` (config `AMBIGUOUS_POSITION_MARGIN = 0.05`) | 13 gated rows flagged |
-| D12 | Team pass share | match: `team_passes_while_on`; season: the same total and `team_pass_share` | new columns only |
+| D12 | Team pass share, open play only | match + season: `open_play_passes_attempted`, `team_open_play_passes_while_on`; season: `team_pass_share` | new columns only |
 | D13 | Injury Clearance out of the completion denominators | match + season: `passes_injury_clearance`, `long_passes_injury_clearance`; new denominators for `pass_completion_pct` and `long_pass_completion_pct` | small pct shifts |
-| D14 | Throw-ins out of progressive passes and pass entries | none; definition change to `progressive_passes`, `final_third_entries_pass`, `box_entries_pass` | most FB-WB rows (−28% progressive passes) |
+| D14 | Restarts (`RESTART_TYPES` = set pieces + throw-ins) out of progressive passes, pass entries and long passes | match + season: `long_passes_unknown_outcome` predicate aligned; definition change to `progressive_passes`, `final_third_entries_pass`, `box_entries_pass`, `long_passes_attempted`, `long_passes_completed` | progressive passes −16.1% overall; most FB-WB rows |
 | D15 | Non-penalty xG and shots | match + season: `np_xg`, `np_shots`; season: `np_xg_p90`, `np_shots_p90`, `np_xg_per_shot` | new columns only |
-| D16 | xGA fallbacks are not direct | definition change to `xg_assisted_direct`; new report-only counters | 6 passers, −0.37 xG in total |
+| D16 | xGA fallbacks are not direct; the receipt must follow the key pass | definition change to `xg_assisted_direct`; new report-only counters | 6 passers, −0.37 xG in total |
 | D22 | Limits for report-only issues | config: per-issue limit per 100 matches (3 × worst 2015/16 rate, floor 3 per competition-season), `STINT_LATE_START_FAIL_MINUTES = 2.0` | 0 failures expected |
 
 Not in M4b:
 - D3 (dedupe), D4 (statuses), D9 (`global_ok`), D11 (Hazen, cohort size) and D19 (`min_attempts`) are analytics: M4c and M4d.
-- Throw-ins stay in crosses and long passes (ADR 004 D14).
+- Crosses and switches keep restarts (ADR 004 D14): both are StatsBomb's own flags and display-only in DNA.
 
-### Definitions to pin before code (the stats-reviewer reviews these)
-- **`team_passes_while_on`** = the team's Pass events in periods 1–4 (including the player's own) whose instant falls inside the player's credited time.
-  - Credited time is the union of his ADR 002 §31 timeline pieces, on the elapsed clock.
-  - Pieces are half-open [start, end), so a pass at a substitution instant counts for the incoming player only.
-  - All Pass types count, including set pieces and throw-ins. The share measures how much of the team's passing goes through him, not its quality.
-- **`team_pass_share`** = `passes_attempted / team_passes_while_on`, from season totals (never an average of match ratios, ADR 002 §6a). Null when the denominator is 0.
-  - Edge: his passes outside credited time (`events_outside_credited_time`) are in the numerator but not the denominator. In 2015/16 that is at most 11 events, one player. Accepted and documented.
-- **Throw-in:** `pass.type.name == "Throw-in"`.
+### Stats-reviewer conditions on the M4b definitions (2026-10-02): APPROVE WITH CONDITIONS; user decisions applied
+These are folded into the definitions below. ADR 004 holds the final text.
+- **C1/C2 (`team_open_play_passes_while_on`):**
+  - key the team on `team.id`;
+  - pieces are half-open, but a piece ending at its period's end is closed there, judged by the event's own period;
+  - the player's own passes always count in his denominator (share ≤ 1);
+  - add a check that every team open-play pass is credited to 7–11 players (the Laws minimum to the maximum; 2015/16 observed 8–11). The lower bound catches a pass credited to its passer only.
+- **C3 (user: approved):** open play only, in both numerator and denominator. New columns `open_play_passes_attempted` and `team_open_play_passes_while_on`. This is the only candidate tested (pre-registered).
+- **C4 (user: approved):** one exclusion set, `RESTART_TYPES = SET_PIECE_TYPES ∪ {"Throw-in"}`, for progressive passes, both entry metrics and long passes.
+  - The long-pass unknown-outcome and Injury Clearance counts use the identical predicate.
+  - Crosses and switches keep restarts.
+  - ADR 004 records that the earlier "throw-ins stay in long passes" line was unmeasured and has been reversed.
+- **C5 (nominal minutes):**
+  - gate at `≥ 900 − 1e-6` (float fragility: Lindsay Rose sums to exactly 900);
+  - `nominal_length` is 120 for extra-time matches;
+  - add a test with 10 full matches of non-round durations.
+- **C6:** the expected `meets_min_minutes` flips are **31 down** (28 pool outfield, 2 pool GK, 1 Bundesliga), 0 up, written from all rows.
+- **Second group:** null at 0 minutes, alphabetical ties, never GK for an outfield row.
+- **Penalties:** `np_xg` and `np_shots` identities get an integration test.
+- **xGA:** the receipt must come after the key pass; otherwise the no-receipt fallback applies.
+- **D22:** the late start is measured as `parse(from) − end[from_period]`. Bale and Dembélé are 1 s.
+- **Tests to add:**
+  - a pass at the final whistle, and one at the period-1 Half End with a half-time substitution;
+  - the passer's own pass at a substitution instant;
+  - the 7–11 credit check, including a pass credited to its passer only;
+  - a long throw-in excluded from attempted, unknown and Injury Clearance alike;
+  - the float gate;
+  - extra-time nominal minutes;
+  - second group null or tied;
+  - the `np_xg` identity;
+  - the receipt-before-key-pass guard.
+- **Known red after M4b1:** the reconcile tests for `progressive_passes`, both pass entries, `long_passes_*`, `long_pass_completion_pct` and `xg_assisted_direct`.
+
+### Definitions (final, after the review; ADR 004 holds the full text)
+- **Restarts:** `RESTART_TYPES = SET_PIECE_TYPES ∪ {"Throw-in"}`, one shared constant.
+  - Excluded from `progressive_passes`, both pass entry metrics, `long_passes_attempted` / `_completed`, and the open-play pass columns.
+  - `long_passes_unknown_outcome` and `long_passes_injury_clearance` use the identical long-pass predicate.
   - `is_progressive_pass` gets a required keyword `pass_type_name`, the same contract as the entry functions: omitting it raises `TypeError`.
-  - Entries exclude `SET_PIECE_TYPES ∪ {"Throw-in"}`. Long passes keep excluding `SET_PIECE_TYPES` only.
+- **`open_play_passes_attempted`** = the player's Pass events in periods 1–4 whose type is not in `RESTART_TYPES`, any outcome.
+- **`team_open_play_passes_while_on`** = his team's (`team.id`) open-play passes that credit him:
+  - the pass's instant lies in his credited time (the union of his ADR 002 §31 pieces);
+  - pieces are half-open [start, end), except that a piece ending at its period's end is closed there, judged by the pass's own period;
+  - instants are compared within 1e-9;
+  - **his own passes always count.**
+  - Every pass must credit 7–11 players, otherwise the build fails.
+- **`team_pass_share`** = `open_play_passes_attempted / team_open_play_passes_while_on`, from season totals (never an average of match ratios, ADR 002 §6a). It is null when the denominator is 0, and ≤ 1 by construction.
 - **Penalty:** `shot.type.name == "Penalty"`. `np_xg` sums the xG of non-penalty shots; a shot without xG behaves as for `xg` (H1.4).
 - **Injury Clearance:** `pass.outcome.name == "Injury Clearance"`.
   - `pass_completion_pct = completed / (attempted − unknown − injury_clearance)`; the long-pass ratio follows the same rule.
   - The pass is never completed, so the numerators are unchanged.
-- **Nominal minutes:** `Σ_matches minutes_played × 90 / match_duration`, computed in `build_player_season` from the match parquet. `meets_min_minutes = minutes_nominal_equiv ≥ MIN_MINUTES_THRESHOLD`. Per-90s keep `minutes_played`.
+- **Nominal minutes:** `Σ_matches minutes_played × nominal_length / match_duration` (90, or 120 with extra time), computed in `build_player_season` from the match parquet. `meets_min_minutes = minutes_nominal_equiv ≥ MIN_MINUTES_THRESHOLD − 1e-6`. Per-90s keep `minutes_played`.
 
 ### M4b1 — Spikes and references (spikes/ + tests/fixtures/ + docs)
 1. **The stats-reviewer reviews the definitions above.** Its conditions are folded in here, before any code.
 2. Extend the independent spikes (stdlib only, no `eleveniq` imports) to the new definitions:
-   - `verify_core_metrics.py`: `progressive_passes` without throw-ins; `np_xg`, `np_shots`; `passes_injury_clearance`; `team_passes_while_on` (from its own `player_minutes` pieces);
-   - `verify_chunk_a_metrics.py`: `long_passes_injury_clearance`;
-   - `verify_chunk_b_metrics.py`: the entries without throw-ins, and `xg_assisted_direct` with the new fallback.
+   - `verify_core_metrics.py`: `progressive_passes` without restarts; `np_xg`, `np_shots`; `passes_injury_clearance`; `open_play_passes_attempted`; `team_open_play_passes_while_on` (from its own `player_minutes` pieces, with the 7–11 check);
+   - `verify_chunk_a_metrics.py`: long passes without restarts; `long_passes_unknown_outcome`, `long_passes_injury_clearance`;
+   - `verify_chunk_b_metrics.py`: the pass entries without restarts, and `xg_assisted_direct` with the new fallback and receipt guard.
 3. Rewrite `tests/fixtures/reference_totals/*.json` for the 5 leagues. Every unchanged column must come out identical (an assertion, as in H4a).
-4. **Known red state:** the integration reconcile tests for `progressive_passes`, entries and `xg_assisted_direct` fail until M4b2. Recorded in `/finish-chunk`.
+4. **Known red state:** the integration reconcile tests for chunk A, chunk B and core fail until M4b2. Recorded in `/finish-chunk`.
+
+**M4b1 outcome (2026-10-02).**
+- The 3 spikes ran for all 5 leagues. Every recorded reference value outside the M4b set is unchanged, enforced before any write by `update_reference` (core) and `guard_unchanged` (chunk A `base` and `chunk_a`, and `chunk_b`).
+- **Reference changes:**
+  - `progressive_passes`: −26,173 over 5 leagues (−16.1%). Throw-ins 16,671, free kicks 5,007, corners 4,478, kick-offs 17. By league: La Liga −6,517, PL −6,028, Serie A −6,046, Ligue 1 −6,871, Bundesliga −711.
+  - The pass entries and `long_passes_*` lose their restarts; `xg_assisted_direct` loses its 6 La Liga no-receipt shots.
+  - New: `np_xg`, `np_shots`, `passes_injury_clearance`, `open_play_passes_attempted`, `team_open_play_passes_while_on`, `long_passes_unknown_outcome`, `long_passes_injury_clearance`.
+- **Pass credit:** 8–11 players per open-play pass in every league (11: 96.2–98.2%). The spike fails below 7, the Laws minimum.
+  - A float-tolerance bug in the spike first credited 16–27 second-half kick-off passes per league to the passer alone. It was fixed, recorded in ADR 004 D12, and covered by a unit test.
+- **Tests:** the fast suite is green. Integration: exactly the expected 15 red tests (the chunk A, chunk B and core reconcile tests in all 5 leagues). They turn green in M4b2.
 
 ### M4b2 — Pipeline (src/ + tests/)
 1. **Snapshot** the current parquets to `data/interim/m4a_snapshot/`.
 2. **Code:**
-   - `metrics/progressive.py`, `metrics/entries.py`: throw-in rules;
-   - `metrics/xg_assisted.py`: fallbacks and counters;
-   - `pipeline/build_player_match.py`: new match columns; `team_passes_while_on` from `player_timeline` and `PeriodClock.elapsed`; D22 limits checked per competition-season in `build_competition_season`; late-start limit in `_stint_bound_issues`;
+   - `metrics/entries.py`: `RESTART_TYPES`; `metrics/progressive.py`: the restart rule and the required `pass_type_name`;
+   - `metrics/xg_assisted.py`: fallbacks, receipt guard and counters;
+   - `pipeline/build_player_match.py`:
+     - new match columns;
+     - long passes on `RESTART_TYPES`;
+     - `team_open_play_passes_while_on` from `player_timeline` and `PeriodClock.elapsed`. **Every open-play pass must credit 7–11 players (a failing quality issue, the same bound as the spike).**
+     - D22 limits checked per competition-season in `build_competition_season`;
+     - the late-start limit in `_stint_bound_issues`;
    - `pipeline/build_player_season.py`: nominal minutes, gate, margin flags, np columns and ratios, new pct denominators;
    - `config.py`: the new constants.
 3. **Tests**, unit first:
@@ -479,7 +530,7 @@ Not in M4b:
    - penalty split;
    - Injury Clearance denominators;
    - fallbacks not direct;
-   - `team_passes_while_on`: a sub at the pass instant, treatment windows, a dismissal;
+   - `team_open_play_passes_while_on`: the final whistle, the half-time whistle (with a full-match teammate), a sub at the pass instant, treatment windows, a dismissal, restarts excluded, float rounding at a second-half kick-off, and the 7–11 bound;
    - nominal gate: a short match gives nominal > elapsed;
    - margin flags, including a 3-way near tie;
    - the D22 limits and the late-start limit.
@@ -488,7 +539,7 @@ Not in M4b:
 4. **Rebuild:** `build_player_match --force`, then `build_player_season`. Expect 0 failing issues.
 5. **`spikes/m4b_before_after.py`** (snapshot vs rebuild), per league:
    - Δ per changed column;
-   - every flag flip, against `spikes/expected_m4b_flips.json`, which is written **before** the rebuild from the M4a spike: the 28 `meets_min_minutes` rows going down and 0 going up; `position_group`, `is_primary_stint`, `is_outfield` and `in_percentile_pool` unchanged.
+   - every flag flip, against `spikes/expected_m4b_flips.json`, which is written **before** the rebuild from all rows: the 31 `meets_min_minutes` rows going down and 0 going up; `position_group`, `is_primary_stint`, `is_outfield` and `in_percentile_pool` unchanged.
    - **STOP rule** as in plan 004: any other flip, or a spike/pipeline mismatch, is explained case by case and the user decides.
 6. **Re-run `spikes/m4_decision_measurements.py` on the new output:**
    - D17 and D19 on the M4b columns;

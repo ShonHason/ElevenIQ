@@ -29,6 +29,8 @@ from reference_totals import (
     load_matches,
     parse_args,
     reconcile_goals,
+    guard_unchanged,
+    load_reference,
     write_reference,
 )
 
@@ -358,8 +360,14 @@ def section_dribbled_past(events: list[dict]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 LONG_PASS_THRESHOLD = 30.0
-# Set-piece pass types excluded from long passes (ADR 002 §19).
+# Restart pass types excluded from long passes: set pieces (ADR 002 §19) plus
+# throw-ins (ADR 004 D14, plan 005 M4b). Unknown-outcome and Injury Clearance long
+# passes use this same predicate, so they are subsets of the attempted count.
 SET_PIECE_TYPES = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off"})
+RESTART_TYPES = SET_PIECE_TYPES | {"Throw-in"}
+# Plan 005 M4b: the only recorded chunk_a values allowed to change (ADR 004 D14);
+# every base value must come out unchanged. New keys may be added.
+CHUNK_A_CHANGED_BY_M4B = frozenset({"long_passes_attempted", "long_passes_completed"})
 # Sub-payloads that carry aerial_won on the winner's event (ADR 002 §20).
 AERIAL_WON_KEYS = {"Pass": "pass", "Clearance": "clearance", "Shot": "shot",
                    "Miscontrol": "miscontrol"}
@@ -382,7 +390,7 @@ def section_reference_totals(matches: list[dict], events: list[dict]) -> tuple[d
         "dispossessed", "miscontrols", "pressures", "ball_recoveries",
         "ball_recoveries_failed", "dribbled_past", "aerials_won", "aerials_lost",
         "long_passes_attempted", "long_passes_completed", "passes_missing_length",
-        "switches",
+        "switches", "long_passes_unknown_outcome", "long_passes_injury_clearance",
     )}
     crosses_attempted = crosses_completed = 0
 
@@ -413,9 +421,12 @@ def section_reference_totals(matches: list[dict], events: list[dict]) -> tuple[d
             length = pd.get("length")
             if length is None:
                 a["passes_missing_length"] += 1
-            elif length >= LONG_PASS_THRESHOLD and (pd.get("type") or {}).get("name") not in SET_PIECE_TYPES:
+            elif length >= LONG_PASS_THRESHOLD and (pd.get("type") or {}).get("name") not in RESTART_TYPES:
                 a["long_passes_attempted"] += 1
                 a["long_passes_completed"] += completed
+                outcome = (pd.get("outcome") or {}).get("name")
+                a["long_passes_unknown_outcome"] += outcome == "Unknown"
+                a["long_passes_injury_clearance"] += outcome == "Injury Clearance"
 
     base = {
         "matches": len(matches),
@@ -448,6 +459,12 @@ def main() -> None:
     section_dribbled_past(events)
     base, chunk_a = section_reference_totals(matches, events)
 
+    # Merge into base: the core spike owns base.dismissals and base.match_duration.
+    old_base = load_reference(args.competition_id, args.season_id).get("base", {})
+    base = {**old_base, **base}
+    guard_unchanged(args.competition_id, args.season_id, "base", base, frozenset())
+    guard_unchanged(args.competition_id, args.season_id, "chunk_a", chunk_a,
+                    CHUNK_A_CHANGED_BY_M4B)
     if not args.no_write:
         write_reference(args.competition_id, args.season_id, "base", base)
         write_reference(args.competition_id, args.season_id, "chunk_a", chunk_a)

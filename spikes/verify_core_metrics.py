@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Spike: core DNA metric reference totals for one competition-season (plan 004 H2, H4a).
+Spike: core DNA metric reference totals for one competition-season (plan 004 H2, H4a;
+plan 005 M4b1).
 
 Computes league totals of the core columns from raw StatsBomb JSON and writes
 them to the "core" section of
@@ -33,6 +34,16 @@ windows are subtracted; a player's stints count as their union; the position
 at time t is that of the stint with the latest start at or before t (at one
 start instant, a stint started by a Tactical Shift, then the stint listed
 first). The §31 fail-loud rules stop the spike.
+
+M4b (ADR 004): progressive passes exclude restarts (D14: corners, free kicks, goal
+kicks, kick-offs, throw-ins); np_xg / np_shots leave out penalties (D15);
+passes_injury_clearance (D13); open_play_passes_attempted and
+team_open_play_passes_while_on (D12). A team open-play pass is credited to each
+player of the passing team whose credited time holds its instant (pieces
+half-open, a piece ending at its period's end closed there, judged by the event's
+own period) and always to its passer; every pass must be credited to 7-11
+players (the Laws minimum on the pitch), otherwise the spike fails. Only progressive_passes may change against an
+existing core section; every other value must come out identical.
 
 Scope rule shared by every column: period-5 (shootout) events are excluded
 (ADR 002 §3). Events are counted league-wide, not per output row: a dropped
@@ -98,6 +109,13 @@ PROG_PASS_UNITS = 10.0
 PROG_CARRY_UNITS = 5.0
 PROG_CARRY_MIN_LENGTH = 5.0
 GOAL_CENTRE = (120.0, 40.0)
+# ADR 004 D12: an open-play pass is credited to 7-11 players of its team. 7 is the
+# Laws of the Game minimum on the pitch (2015/16 observed: 8-11), so a pass credited
+# to fewer (e.g. only its passer) is a timeline or clock error, not football.
+MIN_PLAYERS_PER_PASS = 7
+MAX_PLAYERS_PER_PASS = 11
+# ADR 004 D14: restarts, excluded from progressive passes and the open-play columns.
+RESTART_TYPES = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off", "Throw-in"})
 BOX_X_MIN, BOX_Y_MIN, BOX_Y_MAX = 102.0, 18.0, 62.0
 
 # ADR 002 §30: exact StatsBomb casing ("Saved to Post", lower-case "to").
@@ -185,6 +203,11 @@ KINDS = {
     "interceptions": "independent", "clearances": "independent",
     "blocks": "second implementation (§13)",
     "fouls_committed": "independent", "fouls_won": "independent", "carries": "independent",
+    "np_xg": "independent (shot.type, ADR 004 D15)",
+    "np_shots": "independent (shot.type, ADR 004 D15)",
+    "passes_injury_clearance": "independent (pass.outcome, ADR 004 D13)",
+    "open_play_passes_attempted": "independent (pass.type, ADR 004 D12)",
+    "team_open_play_passes_while_on": "second implementation (ADR 004 D12) + 7-11 credit check",
     **{col: "second implementation (§31.4) + event-position oracle"
        for col in GROUP_COLUMN.values()},
 }
@@ -238,10 +261,15 @@ def count_events(events: list[dict], t: Counter) -> None:
         if kind == "Pass":
             p = e.get("pass") or {}
             t["passes_attempted"] += 1
-            completed = (p.get("outcome") or {}).get("name") is None
-            if completed:
+            outcome = (p.get("outcome") or {}).get("name")
+            restart = (p.get("type") or {}).get("name") in RESTART_TYPES
+            if not restart:
+                t["open_play_passes_attempted"] += 1
+            if outcome == "Injury Clearance":
+                t["passes_injury_clearance"] += 1
+            if outcome is None:
                 t["passes_completed"] += 1
-                if _progressive_pass(e["location"], p["end_location"]):
+                if not restart and _progressive_pass(e["location"], p["end_location"]):
                     t["progressive_passes"] += 1
             if p.get("shot_assist") or p.get("goal_assist"):
                 t["key_passes"] += 1
@@ -253,6 +281,9 @@ def count_events(events: list[dict], t: Counter) -> None:
             if (s.get("outcome") or {}).get("name") in ON_TARGET:
                 t["shots_on_target"] += 1
             t["xg"] += s["statsbomb_xg"]  # a missing xG raises: H1.4 says 0 occur
+            if (s.get("type") or {}).get("name") != "Penalty":
+                t["np_shots"] += 1
+                t["np_xg"] += s["statsbomb_xg"]
         elif kind == "Carry":
             t["carries"] += 1
             if _progressive_carry(e["location"], e["carry"]["end_location"]):
@@ -542,6 +573,52 @@ def match_minutes(
     return teams, clock
 
 
+def team_open_play_pass_credits(
+    mid: int, events: list[dict], teams: list[dict], clock: Clock, credits: Counter,
+) -> int:
+    """
+    ADR 004 D12: Σ over the match's open-play passes (periods 1-4) of the number of
+    players credited with each, i.e. the league total of team_open_play_passes_while_on.
+    A player of the passing team (`team.id`) is credited when the pass's elapsed
+    instant t lies in one of his timeline segments [a, b) inside the pass's own
+    period, or t is that period's end and a segment ends there (all comparisons
+    within TIME_EPS); the passer is always credited. Fails unless every pass is
+    credited to MIN_PLAYERS_PER_PASS-MAX_PLAYERS_PER_PASS players. `credits` gets the
+    distribution of players per pass.
+    """
+    segments = {t["team_id"]: {p["player_id"]: p["segments"] for p in t["players"]}
+                for t in teams}
+    total = 0
+    for e in events:
+        if (e["period"] > 4 or e["type"]["name"] != "Pass" or not e.get("player")
+                or ((e.get("pass") or {}).get("type") or {}).get("name") in RESTART_TYPES):
+            continue
+        p = e["period"]
+        start = clock.offset[p]
+        end = start + clock.length(p)
+        at = clock.elapsed(_at(e))
+        passer = e["player"]["id"]
+        n = 0
+        for pid, segs in segments[e["team"]["id"]].items():
+            if pid == passer:
+                continue
+            # Compared within TIME_EPS: elapsed() and the segment bounds are built by
+            # different float sums (e.g. 48.633333333333326 vs 48.63333333333333 at a
+            # second-half kick-off). Zero-length segments credit nothing.
+            if any(b - a > TIME_EPS
+                   and ((a - TIME_EPS <= at < b - TIME_EPS
+                         and start - TIME_EPS <= at < end - TIME_EPS)
+                        or (abs(at - end) <= TIME_EPS and abs(b - end) <= TIME_EPS))
+                   for a, b, _ in segs):
+                n += 1
+        n += 1  # the passer
+        if not MIN_PLAYERS_PER_PASS <= n <= MAX_PLAYERS_PER_PASS:
+            raise SystemExit(f"FAIL: match {mid}: pass {e['id']} credited to {n} players")
+        credits[n] += 1
+        total += n
+    return total
+
+
 def _group(mid: int, name: str | None, where: str) -> str:
     """§4 group of a position name; an unmapped or missing name fails (as in §31.4)."""
     group = POSITION_GROUP.get(name)
@@ -650,6 +727,7 @@ def main() -> None:
     tactics_rows: list[dict] = []
     outside_rows: list[dict] = []
     match_duration = 0.0
+    pass_credits: Counter = Counter()
     for m in matches:
         mid = m["match_id"]
         events = json.loads((DATA_ROOT / "events" / f"{mid}.json").read_text())
@@ -657,6 +735,8 @@ def main() -> None:
         count_events(events, totals)
         teams, clock = match_minutes(mid, events, lineups, counts)
         match_duration += clock.duration
+        totals["team_open_play_passes_while_on"] += team_open_play_pass_credits(
+            mid, events, teams, clock, pass_credits)
         outside_rows.extend({"match_id": mid, **r}
                             for r in events_outside_credited_time(events, teams, clock))
         for t in teams:
@@ -682,6 +762,10 @@ def main() -> None:
               f"{r['at'][1]:.2f}")
     print(f"  {'overlap minutes deduplicated':<32} {counts['overlap_minutes']:.2f}")
     print(f"  {'unpaired-Off minutes removed':<32} {counts['unpaired_off_minutes']:.2f}")
+
+    n_passes = sum(pass_credits.values())
+    print(f"\nOpen-play passes credited (ADR 004 D12): {n_passes:,} passes; players per pass "
+          + ", ".join(f"{k}: {v:,} ({v / n_passes:.2%})" for k, v in sorted(pass_credits.items())))
 
     # Structural minutes check (the per-period ceiling already ran per team).
     groups_sum = sum(totals[c] for c in GROUP_COLUMN.values())
@@ -743,7 +827,7 @@ def main() -> None:
         raise SystemExit(f"FAIL: {len(unexplained)} player-matches fail the position checks")
 
     core = {col: (round(totals[col], 4)
-                  if col in ("xg", "minutes_played") or col in GROUP_COLUMN.values()
+                  if col in ("xg", "np_xg", "minutes_played") or col in GROUP_COLUMN.values()
                   else totals[col])
             for col in KINDS}
     print()
@@ -758,6 +842,10 @@ def main() -> None:
                      write=not args.no_write)
 
 
+# Plan 005 M4b: the only recorded core value allowed to change (ADR 004 D14).
+CHANGED_BY_M4B = frozenset({"progressive_passes"})
+
+
 def update_reference(
     competition_id: int, season_id: int, core: dict, dismissals: int, match_duration: float,
     *, write: bool,
@@ -766,25 +854,29 @@ def update_reference(
     Write the core section, base.dismissals and base.match_duration (Σ of the
     §31.1 match_duration over the league's matches, for the exact GK identity
     in tests/test_reference_totals.py). When the reference file already
-    has a core section, every non-minutes core value and the dismissal count
-    must come out exactly as recorded (H4 changes only the minutes). A league
-    with no reference file, or none of these sections yet, is written as new.
+    has a core section, every recorded value except those in CHANGED_BY_M4B, and
+    the dismissal count, must come out exactly as recorded (M4b changes only the
+    progressive-pass definition; new columns are added). A league with no
+    reference file, or none of these sections yet, is written as new.
     """
     path = REFERENCE_DIR / f"{competition_id}_{season_id}.json"
     ref = json.loads(path.read_text()) if path.exists() else {}
     old_core, old_base = ref.get("core", {}), ref.get("base", {})
-    minute_cols = {"minutes_played", *GROUP_COLUMN.values()}
     changed = {col: (old, core.get(col)) for col, old in old_core.items()
-               if col not in minute_cols and core.get(col) != old}
+               if col not in CHANGED_BY_M4B and core.get(col) != old}
     old_dismissals = old_base.get("dismissals")
-    if changed or (old_dismissals is not None and old_dismissals != dismissals):
-        raise SystemExit(f"FAIL: non-minutes values changed: {changed}; dismissals "
-                         f"{old_dismissals} → {dismissals}")
+    old_duration = old_base.get("match_duration")
+    if (changed or (old_dismissals is not None and old_dismissals != dismissals)
+            or (old_duration is not None and old_duration != match_duration)):
+        raise SystemExit(f"FAIL: values outside {sorted(CHANGED_BY_M4B)} changed: {changed}; "
+                         f"dismissals {old_dismissals} → {dismissals}; match_duration "
+                         f"{old_duration} → {match_duration}")
     print()
-    for col in ["minutes_played", *GROUP_COLUMN.values()]:
+    for col in core:
         old = old_core.get(col)
-        delta = "new" if old is None else f"Δ {core[col] - old:+,.4f}"
-        print(f"  {col:<22} {old} → {core[col]:,} ({delta})")
+        if old is None or col in CHANGED_BY_M4B:
+            delta = "new" if old is None else f"Δ {core[col] - old:+,}"
+            print(f"  {col:<30} {old} → {core[col]:,} ({delta})")
     if write:
         write_reference(competition_id, season_id, "core", core)
         write_reference(competition_id, season_id, "base",

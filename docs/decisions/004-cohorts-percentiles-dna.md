@@ -48,7 +48,11 @@
 ## 2. Gates and cohort membership
 
 ### D1 — Minutes gate: nominal-equivalent minutes (decided by default)
-- **Gate:** `minutes_nominal_equiv = Σ_matches minutes_played × 90 / match_duration ≥ MIN_MINUTES_THRESHOLD` (900). It is a new stored season column (M4b), so the gate can be recomputed.
+- **Gate:** `minutes_nominal_equiv = Σ_matches minutes_played × nominal_length / match_duration ≥ MIN_MINUTES_THRESHOLD − 1e-6` (900).
+  - `nominal_length` is 90 for a match with periods 1–2 and 120 for one with extra time (periods 3–4).
+  - The 1e-6 tolerance is needed because a full match often gives 89.99999999999999 rather than 90: 10,804 of 24,021 full player-matches do. Lindsay Rose sums to exactly 900, so summation order alone could otherwise move him across the gate. The spike and the pipeline use the same rule.
+  - It is a new stored season column (M4b), so the gate can be recomputed.
+  - `meets_min_minutes` is stored on every row. In M4b, 31 rows go down (28 pool outfield, 2 pool GK, 1 Bundesliga outfield) and 0 go up.
 - **Two clocks.** The gate measures exposure ("ten full matches' worth"). The per-90 is a rate over real elapsed time (ADR 002 §31). They use different clocks on purpose:
   - an elapsed-minute gate is looser in leagues with more stoppage (900 elapsed ≈ 840 nominal in the PL, 861 in La Liga);
   - a nominal per-90 would drop real playing time from the denominator.
@@ -101,6 +105,11 @@
 
 ### D5 — Near-tie season groups (decided by default)
 - Store `position_group_margin_pct` = (top − second group minutes) / minutes, and `position_group_share` = top group minutes / minutes.
+- **Second group (M4b review spec):**
+  - the group with the second-most minutes among GK and the 5 outfield groups; `minutes_unknown` is not a group (it is 0, and UNKNOWN minutes fail the build);
+  - **null when its minutes are 0** (14 gated rows have one group only), and the margin is then 1.0;
+  - ties are broken by the same alphabetical rule as `position_group` (ADR 002 §11.5);
+  - for an outfield row, GK is never used as a display-only second cohort.
 - `position_group_ambiguous` = margin < 5%: **13 gated rows**.
 - Margin quantiles: P1 0.045, P5 0.20, P10 0.39. Rows below 2% / 5% / 10% / 20%: 6 / 13 / 32 / 62. Top-group share below 50%: 9; below 60%: 73.
 - An ambiguous row is a member of its top group's cohort. It is also scored against its second group, but that percentile is **display-only**: never in DNA, similarity or rarity.
@@ -174,7 +183,17 @@
 - `final_third_entries_pass` for DM-CM follows D17 (it pairs with `progressive_passes` at 0.88).
 
 **Candidate replacement for pass volume (user, 2026-10-02): share of team passes while on the pitch.**
-- **Definition:** a player's passes divided by his team's passes during his credited minutes (the ADR 002 §31 timeline), summed over the season: `team_pass_share = Σ player passes / Σ team passes while on`. Numerator and denominator are stored, so it can be recomputed.
+- **Definition (amended after the M4b definitions review, user 2026-10-02): open play only.**
+  - Numerator: `open_play_passes_attempted`, the player's Pass events in periods 1–4 whose `pass.type.name` is not in `RESTART_TYPES` (§D14). Every outcome counts, including Unknown and Injury Clearance, because the share measures volume.
+  - Denominator: `team_open_play_passes_while_on`, the open-play Pass events of his team (`team.id`) that he is credited with:
+    - a pass counts when its instant lies in his credited time (the union of his ADR 002 §31 timeline pieces);
+    - pieces are half-open [start, end), except that a piece ending at its period's end is closed there. The test uses the event's own period, so a pass at the half-time whistle counts for the first-half players;
+    - **his own passes always count**, so the numerator is a subset of the denominator and the share is ≤ 1.
+    - instants are compared within 1e-9 min: the elapsed instant of a second-half kick-off and the start of a second-half segment come from different float sums (48.633333333333326 vs 48.63333333333333). Without the tolerance, 16–27 passes per league were credited to their passer only (found by the M4b1 spike).
+  - `team_pass_share = Σ open_play_passes_attempted / Σ team_open_play_passes_while_on` over the season, never a mean of match ratios. It is null when the denominator is 0. Both totals are stored.
+  - Why open play: taking corners, free kicks and throw-ins is a role assignment, not involvement in circulation. Set pieces are 20.6% of FB-WB own passes (median), and including them moves local percentiles by up to 54 pts (reviewer measurement).
+  - **Pre-registered:** this is the only candidate tested. The all-types variant is not tested.
+- **Check (fails the build, spike and pipeline):** every team open-play pass is credited to **7–11** players, the Laws minimum to the maximum on the pitch. 2015/16 open play: 8–11 (11 on: 96.2–98.2% by league). The lower bound catches a pass credited to its passer only, the shape of the float bug found in M4b1.
 - **Measured in M4b.** It enters DNA for **DM-CM and CB** as the possession-neutral replacement for raw pass volume only if both hold in that group:
   - |ρ| with the leave-one-out team possession share < 0.3 (the D12 method);
   - split-half r_full ≥ 0.6 (the D19 method).
@@ -189,11 +208,27 @@
   - local percentile shift max 5.6 pts, 27 rows ≥ 3 pts;
   - long-pass completion: one ST row +15 pp, all other groups ≤ 4 pp.
 
-### D14 — Throw-ins (decided by user: excluded from entries and progressive passes)
-- **Decision:** a pass with `pass.type.name == "Throw-in"` counts toward none of `progressive_passes`, `final_third_entries_pass` or `box_entries_pass`.
-  - This amends ADR 002 §1 (progressive pass definition) and §27 (entries).
-  - Crosses keep throw-ins (≤ 3.3% in any group), since a cross is StatsBomb's own flag.
-  - A full before/after goes with the M4b rebuild.
+### D14 — Restarts (decided by user; amended 2026-10-02 after the M4b definitions review)
+- **Decision:** one shared exclusion set, `RESTART_TYPES = SET_PIECE_TYPES ∪ {"Throw-in"}` = {Corner, Free Kick, Goal Kick, Kick Off, Throw-in}. A pass of these types counts toward none of:
+  - `progressive_passes` (amends ADR 002 §1, which had no type filter: progressive set pieces are now excluded too);
+  - `final_third_entries_pass` and `box_entries_pass` (amends §27, which excluded set pieces only);
+  - `long_passes_attempted` and `long_passes_completed` (amends §19, which excluded set pieces only). `long_passes_unknown_outcome` and `long_passes_injury_clearance` use the **identical** predicate, length ≥ `LONG_PASS_THRESHOLD_UNITS` ∧ type ∉ `RESTART_TYPES`. 404 of the 2,459 Injury Clearances are throw-ins, so a mismatched filter would subtract passes that are not attempts;
+  - the D12 open-play pass columns.
+- **Reversal recorded:** the first version of this decision said "throw-ins stay in long passes". **That line was not measured**, and the M4b review measurement reverses it:
+
+  | Group | Throw-in share of `long_passes_attempted` | of `long_passes_completed` |
+  |---|---|---|
+  | FB-WB | 10.6% (row P90 17.9%, max 32.0%) | 13.1% |
+  | CB | 1.0% (max 22.8%) | 0.9% |
+  | AM-Winger | 1.0% (max 34.2%) | 0.9% |
+  | ST | 0.6% | 0.3% |
+  | DM-CM | 0.3% | 0.3% |
+
+  - Top long throw-ins: Fuchs 126 (29.7% of his long passes), Capa 112, Walker 108, Luis Hernández (CB) 89, Rosales 84, Rose 58, Antonio (AM-Winger) 56 (34.2%).
+  - The effect on local `long_passes_attempted_p90` percentiles: FB-WB max 27.6 pts (42 rows ≥ 10); Luis Hernández 60 → 19.
+  - ADR 002 §19's own reason for excluding set pieces ("restarts, not distribution actions") applies to throw-ins.
+- **Kept:** `crosses_*` (≤ 3.3% throw-ins in any group) and `switches` (FB-WB 2.4%, ≤ 0.4% elsewhere) keep restarts. Both are StatsBomb's own flags, and both are display-only in DNA (D18, D19).
+- A full before/after goes with the M4b rebuild.
 - Throw-ins are counted today in entries, progressive passes and crosses. Their share of each count, by group:
 
   | Group | Box entries (pass) | Final-third entries (pass) | Progressive passes | Crosses |
@@ -206,6 +241,9 @@
 
 ### D15 — Penalties (decided by default)
 - Add `np_xg`, `np_shots` and `np_xg_per_shot`. DNA uses the non-penalty forms.
+  - A penalty is `shot.type.name == "Penalty"` (410 in periods 1–4, none missing xG).
+  - `np_xg_per_shot` is null when `np_shots` is 0.
+  - Identities, checked in an integration test: `np_xg + penalty xG = xg` and `np_shots + penalty shots = shots`.
 - Penalty share of xG: ST 11.2%, AM-Winger 9.1%, DM-CM 7.5%, FB-WB 5.0%, CB 0.9%.
 - Top-10 by xG/90: Messi and Agüero leave and Fedor Flores and Benteke enter under np_xg.
 
@@ -214,7 +252,8 @@
   - That match has 401 Ball Receipt events for 910 passes, so it is a data gap. They are not genuine first-touch shots: only 1 of the 6 is `first_time`.
 - **Rule:**
   - an assisted shot with no Ball Receipt*, or with no shooter or possession, counts toward `xg_assisted` but **not** `xg_assisted_direct`;
-  - new counters for each fallback, for dangling `assisted_shot_id` and for a missing assister.
+  - new counters for each fallback, for dangling `assisted_shot_id` and for a missing assister;
+  - **receipt guard (M4b review):** the shooter's receipt counts only if it comes after the key pass (receipt index > pass index). Otherwise the shot takes the no-receipt fallback. This stops an earlier receipt from silently defining the window. 0 cases in 2015/16.
 - 2015/16 effect: `xg_assisted_direct` −0.37 xG in total for 6 passers.
 - Dangling ids, missing shooters and missing assisters: 0.
 
@@ -301,7 +340,7 @@ Rule:
 **Rule:**
 - Per competition-season, an issue fails the build when its count exceeds `max(3 × worst 2015/16 league rate × matches, 3)`.
 - `events_outside_credited_time` is counted per player-match.
-- `STINT_LATE_START_FAIL_MINUTES = 2.0`. The two 2015/16 cases, Bale 3825739 and Dembélé 3900571, start at (1, 46:01) and (1, 46:33), both within 2 min of the whistle.
+- `STINT_LATE_START_FAIL_MINUTES = 2.0`, measured as `parse(from) − end[from_period]`. The two 2015/16 cases, Bale 3825739 (1, 46:01) and Dembélé 3900571 (1, 46:33), start **1 s** after their Half End.
 
 **2015/16 counts** (entries / player-matches; the limit is scaled to a 380-match season):
 

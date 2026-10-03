@@ -1067,9 +1067,9 @@ class TestIntegration:
 
     @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
     def test_chunk_b_metrics_reconcile(self, frames, ref):
-        """Chunk B totals must match spikes/verify_chunk_b_metrics.py (ADR 002 §§25-27),
-        which applies its own SET_PIECE_TYPES exclusion without importing entries.py,
-        and equal match-level totals."""
+        """Chunk B totals must match spikes/verify_chunk_b_metrics.py (ADR 002 §§25-27,
+        ADR 004 D14/D16), which applies its own RESTART_TYPES exclusion (set pieces and
+        throw-ins) without importing entries.py, and equal match-level totals."""
         match_df, season_df = frames
         m, season = _league(match_df, ref), _league(season_df, ref)
         for col, expected in ref["chunk_b"].items():
@@ -1082,14 +1082,15 @@ class TestIntegration:
     def test_core_metrics_reconcile(self, frames, ref):
         """Core DNA totals must match spikes/verify_core_metrics.py (plan 004 H2), which
         re-derives them from raw StatsBomb JSON without importing eleveniq, and equal
-        match-level totals. Exact for counts; abs=0.001 for xg. The minutes columns
-        are checked in test_core_minutes_reconcile."""
+        match-level totals. Exact for counts; abs=0.001 for the float xG columns (the
+        references are rounded to 4 decimals). The minutes columns are checked in
+        test_core_minutes_reconcile."""
         match_df, season_df = frames
         m, season = _league(match_df, ref), _league(season_df, ref)
         for col, expected in ref["core"].items():
             if col.startswith("minutes_"):
                 continue
-            if col == "xg":
+            if col in ("xg", "np_xg"):
                 assert season[col].sum() == pytest.approx(expected, abs=0.001), col
                 assert season[col].sum() == pytest.approx(m[col].sum(), abs=0.001), (
                     f"{col}: season sum != match sum"

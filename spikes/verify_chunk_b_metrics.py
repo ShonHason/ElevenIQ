@@ -34,6 +34,7 @@ from reference_totals import (
     competition_label,
     load_matches,
     parse_args,
+    guard_unchanged,
     reconcile_goals,
     write_reference,
 )
@@ -51,6 +52,12 @@ MIN_MINUTES = 900.0
 # Defined here independently (no import from entries.py) so the spike is a true
 # independent verification of the pipeline's exclusion logic.
 SET_PIECE_TYPES: frozenset[str] = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off"})
+# Restarts excluded from the pass entry metrics (ADR 004 D14, plan 005 M4b): set
+# pieces plus throw-ins.
+RESTART_TYPES: frozenset[str] = SET_PIECE_TYPES | {"Throw-in"}
+# Plan 005 M4b: the only recorded chunk_b values allowed to change (ADR 004 D14, D16).
+CHUNK_B_CHANGED_BY_M4B: frozenset[str] = frozenset(
+    {"final_third_entries_pass", "box_entries_pass", "xg_assisted_direct"})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,7 +165,7 @@ def section_xg_assisted(
                 poss_player_events[(poss, pid)].append(e)
         # Sort each group by index
         for key in poss_player_events:
-            poss_player_events[key].sort(key=lambda x: x.get("index", 0))
+            poss_player_events[key].sort(key=lambda x: x["index"])
 
         for e in evs:
             etype = e["type"]["name"]
@@ -233,24 +240,26 @@ def section_xg_assisted(
             # ── carry-between analysis ────────────────────────────────────────
             shooter_id = shot_ev.get("player", {}).get("id")
             shot_poss = shot_ev.get("possession")
-            shot_idx = shot_ev.get("index", 0)
+            shot_idx = shot_ev["index"]
             shooter_team_id = shot_ev.get("possession_team", {}).get("id")
             if shooter_id is None or shot_poss is None:
                 continue
 
             poss_events = poss_player_events.get((shot_poss, shooter_id), [])
 
-            # Find the LAST "Ball Receipt*" (exact name) before the shot
+            # Find the LAST "Ball Receipt*" (exact name) between the key pass and the
+            # shot. A receipt before the key pass does not define the window (ADR 004 D16).
+            pass_idx = e["index"]
             receipt_idx = None
             for pe in poss_events:
-                if pe["type"]["name"] == "Ball Receipt*" and pe.get("index", 0) < shot_idx:
-                    receipt_idx = pe.get("index", 0)
+                if (pe["type"]["name"] == "Ball Receipt*"
+                        and pass_idx < pe["index"] < shot_idx):
+                    receipt_idx = pe["index"]
 
             if receipt_idx is None:
-                # No receipt found (shooter's first touch is the shot)
+                # No receipt found: the window cannot be checked, so the shot is not
+                # direct (ADR 004 D16; 2015/16: 6 shots, all in La Liga 3825848).
                 xga_shots_no_receipt_found += 1
-                xga_direct_total += xg
-                # still check for any-carry/dribble reporting (none possible)
                 continue
 
             # Scan window: receipt_idx < index < shot_idx
@@ -259,7 +268,7 @@ def section_xg_assisted(
             has_any_action = False   # for the 47% / 34.6% figures
             blocked_direct = False
             for pe in poss_events:
-                pe_idx = pe.get("index", 0)
+                pe_idx = pe["index"]
                 if pe_idx <= receipt_idx or pe_idx >= shot_idx:
                     continue
                 if pe.get("possession_team", {}).get("id") != shooter_team_id:
@@ -327,7 +336,7 @@ def section_xg_assisted(
     print(f"    Direct ratio                           : {100*xga_direct_total/total_assisted_xg:.1f}%"
           if total_assisted_xg else "")
     print(f"    Shots with no Ball Receipt* found      : {xga_shots_no_receipt_found:,}  "
-          f"({100*xga_shots_no_receipt_found/resolves_to_shot:.1f}%)  -> counted as direct"
+          f"({100*xga_shots_no_receipt_found/resolves_to_shot:.1f}%)  -> not direct (ADR 004 D16)"
           if resolves_to_shot else "")
 
     print(f"\n1f. Any-carry/dribble between Receipt and Shot (47%/34.6% figures)")
@@ -390,7 +399,7 @@ def section_final_third(events: list[dict]) -> dict:
     print("=" * 72)
 
     pass_type_counter: Counter = Counter()  # all completed passes crossing x=80 (pre-exclusion)
-    pass_ft_total = 0                       # after SET_PIECE_TYPES exclusion (pipeline metric)
+    pass_ft_total = 0                       # after RESTART_TYPES exclusion (pipeline metric)
     carry_ft_total = 0
 
     player_pass_ft: dict[int, int] = defaultdict(int)
@@ -419,7 +428,7 @@ def section_final_third(events: list[dict]) -> dict:
                 ptype = p.get("type", {})
                 type_name = ptype.get("name") if isinstance(ptype, dict) else None
                 pass_type_counter[type_name or "(open play)"] += 1  # pre-exclusion
-                if type_name in SET_PIECE_TYPES:
+                if type_name in RESTART_TYPES:
                     continue
                 pass_ft_total += 1  # pipeline metric: open play only
                 if pid:
@@ -436,16 +445,16 @@ def section_final_third(events: list[dict]) -> dict:
                     player_carry_ft[pid] += 1
 
     pass_ft_raw = sum(pass_type_counter.values())
-    excluded_ft = sum(pass_type_counter.get(t, 0) for t in SET_PIECE_TYPES)
+    excluded_ft = sum(pass_type_counter.get(t, 0) for t in RESTART_TYPES)
     print(f"\nCompleted passes: start x<80, end x>=80 (all)            : {pass_ft_raw:,}")
-    print(f"  Set-piece excluded (Corner/FK/GK/Kick Off)               : {excluded_ft:,}")
+    print(f"  Restarts excluded (Corner/FK/GK/Kick Off/Throw-in)       : {excluded_ft:,}")
     print(f"  Open play (after exclusion) [pipeline metric]            : {pass_ft_total:,}")
     print(f"\n  By pass.type.name (pre-exclusion):")
     print(f"  {'pass.type.name':<35} {'count':>7}  {'%':>6}")
     print("  " + "-" * 52)
     for name, cnt in sorted(pass_type_counter.items(), key=lambda x: -x[1]):
         pct = 100 * cnt / pass_ft_raw if pass_ft_raw else 0
-        excl = " (EXCLUDED)" if name in SET_PIECE_TYPES else ""
+        excl = " (EXCLUDED)" if name in RESTART_TYPES else ""
         print(f"  {name:<35} {cnt:>7,}  {pct:>5.1f}%{excl}")
 
     print(f"\nCarries: start x<80, end x>=80           : {carry_ft_total:,}")
@@ -471,7 +480,7 @@ def section_box_entries(events: list[dict]) -> dict:
     print("=" * 72)
 
     pass_box_raw = 0                        # pre-exclusion (all completed passes)
-    pass_box_total = 0                      # after SET_PIECE_TYPES exclusion (pipeline metric)
+    pass_box_total = 0                      # after RESTART_TYPES exclusion (pipeline metric)
     pass_box_cross = 0                      # cross=True on pre-exclusion basis
     pass_box_setpiece: Counter = Counter()  # type breakdown, pre-exclusion
 
@@ -505,7 +514,7 @@ def section_box_entries(events: list[dict]) -> dict:
                 pass_box_setpiece[type_name or "(open play)"] += 1  # pre-exclusion
                 if p.get("cross") is True:
                     pass_box_cross += 1  # cross count on pre-exclusion basis
-                if type_name in SET_PIECE_TYPES:
+                if type_name in RESTART_TYPES:
                     continue
                 pass_box_total += 1  # pipeline metric: open play only
                 if pid:
@@ -521,9 +530,9 @@ def section_box_entries(events: list[dict]) -> dict:
                 if pid:
                     player_carry_box[pid] += 1
 
-    excluded_box = sum(pass_box_setpiece.get(t, 0) for t in SET_PIECE_TYPES)
+    excluded_box = sum(pass_box_setpiece.get(t, 0) for t in RESTART_TYPES)
     print(f"\nCompleted passes: start outside box, end inside box (all) : {pass_box_raw:,}")
-    print(f"  Set-piece excluded (Corner/FK/GK/Kick Off)                : {excluded_box:,}")
+    print(f"  Restarts excluded (Corner/FK/GK/Kick Off/Throw-in)        : {excluded_box:,}")
     print(f"  Open play (after exclusion) [pipeline metric]             : {pass_box_total:,}")
     if pass_box_raw:
         print(f"  of which cross=True (pre-exclusion basis)               : {pass_box_cross:,}  "
@@ -531,7 +540,7 @@ def section_box_entries(events: list[dict]) -> dict:
     if pass_box_setpiece:
         print(f"\n  By pass.type.name (pre-exclusion):")
         for name, cnt in sorted(pass_box_setpiece.items(), key=lambda x: -x[1]):
-            excl = " (EXCLUDED)" if name in SET_PIECE_TYPES else ""
+            excl = " (EXCLUDED)" if name in RESTART_TYPES else ""
             print(f"    {name:<20} {cnt:>6,}  ({100*cnt/pass_box_raw:.1f}%){excl}")
 
     print(f"\nCarries: start outside box, end inside box           : {carry_box_total:,}")
@@ -651,6 +660,8 @@ def main() -> None:
     print("REFERENCE TOTALS (chunk_b)")
     for k, v in chunk_b.items():
         print(f"  {k:<28} {v:>12,}")
+    guard_unchanged(args.competition_id, args.season_id, "chunk_b", chunk_b,
+                    CHUNK_B_CHANGED_BY_M4B)
     if not args.no_write:
         write_reference(args.competition_id, args.season_id, "chunk_b", chunk_b)
 

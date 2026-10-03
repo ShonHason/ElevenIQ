@@ -67,9 +67,10 @@ class TestReferenceTotalsFixtures:
 
     @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
     def test_core_section_present(self, cs):
-        """Plan 004 H2/H4a: every reference file has the core section from
-        spikes/verify_core_metrics.py, including the per-group minutes (ADR 002
-        §31.6), and base carries the dismissal count and Σ match_duration."""
+        """Plan 004 H2/H4a, plan 005 M4b1: every reference file has the core section
+        from spikes/verify_core_metrics.py, including the per-group minutes (ADR 002
+        §31.6) and the ADR 004 columns, and base carries the dismissal count and
+        Σ match_duration."""
         ref = _load(cs)
         assert set(ref["core"]) == {
             "minutes_played", "shots", "shots_on_target", "xg", "passes_attempted",
@@ -77,6 +78,8 @@ class TestReferenceTotalsFixtures:
             "assists", "tackles_attempted", "tackles_won", "dribbles_attempted",
             "dribbles_completed", "interceptions", "clearances", "blocks",
             "fouls_committed", "fouls_won", "carries",
+            "np_xg", "np_shots", "passes_injury_clearance", "open_play_passes_attempted",
+            "team_open_play_passes_while_on",
             "minutes_am_winger", "minutes_cb", "minutes_dm_cm", "minutes_fb_wb",
             "minutes_gk", "minutes_st",
         }
@@ -118,3 +121,29 @@ class TestReferenceTotalsFixtures:
         assert core["tackles_won"] <= core["tackles_attempted"]
         assert core["dribbles_completed"] <= core["dribbles_attempted"]
         assert core["progressive_carries"] <= core["carries"]
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_m4b_columns_are_subsets_of_their_totals(self, cs):
+        """ADR 004 D12-D15 on the committed totals: penalties are a subset of shots
+        and xG; Injury Clearances are incomplete passes; open-play passes are a subset
+        of all passes; long-pass unknown and Injury Clearance outcomes share the
+        long-pass predicate, so both are incomplete long passes."""
+        ref = _load(cs)
+        core, a = ref["core"], ref["chunk_a"]
+        assert core["np_shots"] <= core["shots"]
+        assert 0 <= core["np_xg"] <= core["xg"]
+        assert core["passes_injury_clearance"] <= core["passes_attempted"] - core["passes_completed"]
+        assert core["open_play_passes_attempted"] <= core["passes_attempted"]
+        assert (a["long_passes_unknown_outcome"] + a["long_passes_injury_clearance"]
+                <= a["long_passes_attempted"] - a["long_passes_completed"])
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_team_open_play_passes_credit_seven_to_eleven_players(self, cs):
+        """ADR 004 D12: each team open-play pass is credited to 7-11 players (the
+        Laws minimum to the maximum on the pitch; the spike fails otherwise), so the
+        league total of team_open_play_passes_while_on lies between 7x and 11x the
+        open-play passes (2015/16: about 10.97x)."""
+        core = _load(cs)["core"]
+        n = core["open_play_passes_attempted"]
+        assert 7 * n <= core["team_open_play_passes_while_on"] <= 11 * n
+        assert core["team_open_play_passes_while_on"] / n > 10.5
