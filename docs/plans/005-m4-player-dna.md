@@ -551,6 +551,24 @@ These are folded into the definitions below. ADR 004 holds the final text.
    - ADR 002 §1, §14, §19, §26 and §27 get "amended by ADR 004" notes.
 8. Integration suite green. The stats-reviewer reviews the run output, then `/finish-chunk` (code-reviewer, qa-tester).
 
+**M4b2 outcome (2026-10-03).** Details are in ADR 004 §7.
+- **Pipeline vs references:** all 15 reconcile tests pass, with no fixture changes.
+- **STOP rule:** exactly the 31 expected `meets_min_minutes` flips and no other flag flip. A tampered list makes `spikes/m4b_before_after.py` exit 1.
+- **D12b:** `team_pass_share` enters DNA for DM-CM; it fails for CB (ρ 0.36).
+- **New guard:** `tests/test_spikes_independent.py` fails on any eleveniq import in spikes/. The imports were stripped from `m4_decision_measurements.py` and `profile_2015_16_leagues.py`; the profile output is byte-identical.
+- **Test fixtures:**
+  - The fixture `synthetic_small_teams` (MIN_PLAYERS_PER_PASS = 1, patched in build_player_match) is applied explicitly to the 16 tests on minimal synthetic teams.
+  - Two extra-time tests had their input times corrected for the D22 late-start limit; their assertions are unchanged.
+- **Fix round (2026-10-03):**
+  - a pass outside its passer's credited time is still credited to him and to his teammates on the pitch, and reported as `events_outside_credited_time`. A first version excluded it; the spike's guard caught Serie A moving by −11 (Milinković-Savić, Lazio 3879637), and the user reverted it;
+  - a pass after the whistle is clamped to the whistle (tested);
+  - the xG-assisted fallback counters get D22 limits;
+  - a restored assertion, an end-to-end fallback-report test and wording fixes.
+- **Recorded for later (ADR 004 §8):**
+  - M4c: `np_xg_per_shot` minimum shots; a `second_position_group` minimum share.
+  - **New chunk M4b3 before M4c:** open-play `xg_assisted` / `key_passes` / `assists` (spike and references first), with set-piece delivery as a displayed signature trait. Reason: restarts are 13.4% of PL xG assisted (Payet 41%, Özil 31%).
+- **User decisions (2026-10-03, ADR 004 §7):** H1 test reads the references; `np_xg` is out of ST DNA (r_full 0.599 < 0.6, no raw-xG substitute); no allow-list for newly triggered D12 cells; FB-WB `progressive_passes` recorded only; the team key is the event `team.id`, with a failing `pass_team_mismatch`.
+
 ### Verification
 - Fast suite: `.venv/bin/python -m pytest tests/ -q -m "not integration"`.
 - The 3 verify spikes for all 5 leagues: references equal the pipeline totals in every league.

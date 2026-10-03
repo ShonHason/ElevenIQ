@@ -1055,15 +1055,13 @@ class TestAggregateEventsChunkA:
         r = _aggregate_events([_long_pass_event(length=20.0, pass_type="Corner")], Counter())
         assert r["long_passes_attempted"] == 0
 
-    def test_throw_in_long_pass_counts_as_open_play(self):
-        # ADR 002 §19: only Corner, Goal Kick, Free Kick are excluded.
-        # A Throw-in is not in _SET_PIECE_TYPES and must be counted if >= threshold.
+    def test_throw_in_long_pass_excluded(self):
+        """ADR 004 D14 (amends ADR 002 §19): a throw-in is a restart, so a 35-unit
+        long throw counts toward no long-pass column."""
         event = _long_pass_event(length=35.0, pass_type="Throw-in")
         r = _aggregate_events([event], Counter())
-        assert r["long_passes_attempted"] == 1, (
-            "ADR §19: Throw-in is not in the set-piece exclusion list; "
-            "a 35-yard throw-in must count as a long pass"
-        )
+        assert r["long_passes_attempted"] == 0
+        assert r["long_passes_completed"] == 0
 
     def test_multiple_new_metric_events_accumulate_independently(self):
         # Regression: new metrics added via elif must not prevent each other
@@ -1247,12 +1245,12 @@ class TestAggregateEventsChunkBEntries:
         ], Counter())
         assert r["final_third_entries_pass"] == 0
 
-    def test_throw_in_pass_into_final_third_counted(self):
-        # ADR §27: Throw-in not in SET_PIECE_TYPES → included.
+    def test_throw_in_pass_into_final_third_excluded(self):
+        """ADR 004 D14 (amends ADR 002 §27): a throw-in is a restart, never an entry."""
         r = _aggregate_events([
             _entry_pass_event(start=[70.0, 40.0], end=[85.0, 40.0], pass_type="Throw-in")
         ], Counter())
-        assert r["final_third_entries_pass"] == 1
+        assert r["final_third_entries_pass"] == 0
 
     def test_pass_both_in_final_third_not_counted(self):
         # Start already in final third → no entry.
@@ -1304,12 +1302,12 @@ class TestAggregateEventsChunkBEntries:
         ], Counter())
         assert r["box_entries_pass"] == 0
 
-    def test_throw_in_into_box_counted(self):
-        # ADR §27: throw-ins included (≈4% of pre-exclusion total).
+    def test_throw_in_into_box_excluded(self):
+        """ADR 004 D14 (amends ADR 002 §27): a throw-in is a restart, never an entry."""
         r = _aggregate_events([
             _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0], pass_type="Throw-in")
         ], Counter())
-        assert r["box_entries_pass"] == 1
+        assert r["box_entries_pass"] == 0
 
     def test_pass_start_inside_box_not_counted(self):
         # Start already inside the penalty area → NOT an entry.

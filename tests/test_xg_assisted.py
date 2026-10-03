@@ -1,6 +1,14 @@
 """Tests for eleveniq/metrics/xg_assisted.py."""
+from collections import Counter
+
 import pytest
-from eleveniq.metrics.xg_assisted import compute_xg_assisted_per_player
+from eleveniq.metrics.xg_assisted import (
+    XGA_DANGLING_SHOT_ID,
+    XGA_MISSING_ASSISTER,
+    XGA_MISSING_SHOOTER,
+    XGA_NO_RECEIPT,
+    compute_xg_assisted_per_player,
+)
 
 MAX_CARRY = 10.0  # default threshold used across tests
 
@@ -126,7 +134,7 @@ class TestBasicCredit:
             _receipt(2, idx=2),
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][0] == pytest.approx(0.2)
         assert result[1][1] == pytest.approx(0.2)  # direct (short receipt→shot window)
 
@@ -138,7 +146,7 @@ class TestBasicCredit:
             _receipt(2, idx=2),
             _shot(shot_id, shooter_id=2, xg=0.5, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][0] == pytest.approx(0.5)
 
     def test_no_assist_pass_not_credited(self):
@@ -156,7 +164,7 @@ class TestBasicCredit:
             _receipt(2, idx=2),
             _shot("shot-1", shooter_id=2, xg=0.3, idx=5),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert 1 not in result
 
     def test_two_passers_each_credited_their_own_shot(self):
@@ -170,7 +178,7 @@ class TestBasicCredit:
             _shot("s2", shooter_id=20, xg=0.3, idx=15, possession=2,
                   key_pass_id="pass-2-10"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][0] == pytest.approx(0.1)
         assert result[2][0] == pytest.approx(0.3)
         assert 20 not in result  # shooters get no credit
@@ -190,7 +198,7 @@ class TestBasicCredit:
             # shot with no key_pass_id — should not appear in xga sum
             _shot("unassisted", shooter_id=30, xg=0.40, idx=20, possession=3),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         total_xga = sum(v[0] for v in result.values())
         shot_side = sum(
             e["shot"]["statsbomb_xg"]
@@ -214,7 +222,7 @@ class TestXgAssistedDirect:
             _receipt(2, idx=2),
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.2)
         assert xga_d == pytest.approx(0.2)
@@ -228,7 +236,7 @@ class TestXgAssistedDirect:
             _carry(2, [100.0, 40.0], [105.0, 40.0], idx=3),  # 5 units
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][1] == pytest.approx(0.2)
 
     def test_long_carry_exceeds_threshold_not_direct(self):
@@ -240,7 +248,7 @@ class TestXgAssistedDirect:
             _carry(2, [80.0, 40.0], [95.0, 40.0], idx=3),  # 15 units
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.2)
         assert xga_d == pytest.approx(0.0)
@@ -255,7 +263,7 @@ class TestXgAssistedDirect:
             _carry(2, [96.0, 40.0], [102.0, 40.0], idx=4),  # 6 units (total 12)
             _shot(shot_id, shooter_id=2, xg=0.3, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.3)
         assert xga_d == pytest.approx(0.0)
@@ -269,7 +277,7 @@ class TestXgAssistedDirect:
             _dribble(2, idx=3),
             _shot(shot_id, shooter_id=2, xg=0.25, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.25)
         assert xga_d == pytest.approx(0.0)
@@ -284,24 +292,29 @@ class TestXgAssistedDirect:
             _dribble(2, idx=4),
             _shot(shot_id, shooter_id=2, xg=0.15, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][1] == pytest.approx(0.0)
 
-    def test_no_receipt_before_shot_counts_as_direct(self):
-        """No Ball Receipt* found → first touch is the shot → direct."""
+    def test_no_receipt_before_shot_is_not_direct(self):
+        """ADR 004 D16: with no Ball Receipt* the window cannot be checked, so the
+        shot counts toward xg_assisted but not xg_assisted_direct, and the fallback
+        is counted."""
         shot_id = "s1"
         events = [
             _pass(1, shot_id, idx=1),
             # No receipt event for shooter (id=2)
             _shot(shot_id, shooter_id=2, xg=0.35, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        fallbacks: Counter = Counter()
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=fallbacks)
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.35)
-        assert xga_d == pytest.approx(0.35)
+        assert xga_d == 0.0
+        assert fallbacks == Counter({XGA_NO_RECEIPT: 1})
 
-    def test_receipt_after_shot_does_not_count(self):
-        """A Ball Receipt* with index > shot index is not 'before the shot'."""
+    def test_receipt_after_shot_does_not_define_the_window(self):
+        """ADR 004 D16: a Ball Receipt* after the shot is not in the window, so the
+        shot takes the no-receipt fallback: not direct."""
         shot_id = "s1"
         events = [
             _pass(1, shot_id, idx=1),
@@ -309,9 +322,10 @@ class TestXgAssistedDirect:
             _receipt(2, idx=10),
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
-        # No receipt before shot → counted as direct
-        assert result[1][1] == pytest.approx(0.2)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
+        # No receipt before shot → not direct (D16)
+        assert result[1][0] == pytest.approx(0.2)
+        assert result[1][1] == 0.0
 
     def test_uses_last_receipt_before_shot(self):
         """With two receipts before the shot, only carries AFTER the LAST one matter."""
@@ -330,7 +344,7 @@ class TestXgAssistedDirect:
         ]
         # Last receipt is at index 4; only carry at index 5 (5 units) is in window
         # 5 units ≤ 10 → direct
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][1] == pytest.approx(0.2)
 
 
@@ -359,7 +373,7 @@ class TestTeamOwnershipGuard:
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5,
                   possession_team_id=100, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         # Foreign-team carry is ignored; no other blocking action → direct
         assert result[1][1] == pytest.approx(0.2)
 
@@ -378,7 +392,7 @@ class TestXgAssistedEdgeCases:
             _carry(2, [90.0, 40.0], [100.0, 40.0], idx=3),  # exactly 10 units
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         # 10.0 is not > 10.0, so still direct
         assert result[1][1] == pytest.approx(0.2), (
             "Carry sum equal to max_carry_units must still be direct "
@@ -394,7 +408,7 @@ class TestXgAssistedEdgeCases:
             _carry(2, [90.0, 40.0], [100.1, 40.0], idx=3),  # 10.1 units
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][1] == pytest.approx(0.0), (
             "Carry sum just over max_carry_units must not be direct"
         )
@@ -419,7 +433,7 @@ class TestXgAssistedEdgeCases:
             _receipt(2, idx=2),
             null_shot,
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert 1 not in result, (
             "Assisted shot with missing statsbomb_xg must be excluded from result; "
             "assister (player 1) must not appear in the output dict"
@@ -448,10 +462,11 @@ class TestXgAssistedEdgeCases:
             },
         ]
         with pytest.raises(KeyError):
-            compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+            compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
 
-    def test_shot_missing_shooter_id_credited_as_direct(self):
-        """Shot with no player.id → assister is credited as direct (permissive fallback)."""
+    def test_shot_missing_shooter_id_is_not_direct(self):
+        """ADR 004 D16: a shot with no player.id has no window to check, so the
+        assister gets xg_assisted but not xg_assisted_direct."""
         shot_id = "s-no-shooter"
         events = [
             _pass(1, shot_id, idx=1),
@@ -465,11 +480,11 @@ class TestXgAssistedEdgeCases:
                 "shot": {"statsbomb_xg": 0.3, "key_pass_id": "pass-1-1"},
             },
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.3)
-        assert xga_d == pytest.approx(0.3), (
-            "Cannot determine possession window without shooter id — credited as direct"
+        assert xga_d == 0.0, (
+            "ADR 004 D16: no possession window without a shooter id, so not direct"
         )
 
     def test_xg_assisted_direct_never_exceeds_xg_assisted(self):
@@ -489,7 +504,7 @@ class TestXgAssistedEdgeCases:
             _shot(shot_id_b, shooter_id=10, xg=0.3, idx=15, possession=2,
                   key_pass_id="pass-1-10"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.5)
         assert xga_d == pytest.approx(0.2)
@@ -512,7 +527,7 @@ class TestXgAssistedEdgeCases:
             _shot(sid_c, shooter_id=10, xg=0.3, idx=25, possession=3,
                   key_pass_id="pass-1-20"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result[1][0] == pytest.approx(0.6), (
             "xg_assisted must accumulate across all assisted shots for the same passer"
         )
@@ -542,7 +557,7 @@ class TestXgAssistedEdgeCases:
             },
             carry_event,
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         # The pass resolved to a carry, not a shot → no credit
         assert 1 not in result, (
             "assisted_shot_id resolving to a non-Shot event must not credit the passer"
@@ -550,11 +565,11 @@ class TestXgAssistedEdgeCases:
 
     def test_empty_event_list_returns_empty_dict(self):
         """An empty event list must return an empty dict without error."""
-        result = compute_xg_assisted_per_player([], max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player([], max_carry_units=MAX_CARRY, fallbacks=Counter())
         assert result == {}, "Empty event list must produce an empty result dict"
 
-    def test_shot_missing_possession_credited_as_direct(self):
-        """ADR §26: shot with possession=None → shooter window unknown → credited as direct."""
+    def test_shot_missing_possession_is_not_direct(self):
+        """ADR 004 D16: shot with possession=None → shooter window unknown → not direct."""
         shot_id = "s-no-poss"
         events = [
             _pass(1, shot_id, idx=1),
@@ -568,12 +583,12 @@ class TestXgAssistedEdgeCases:
                 "shot": {"statsbomb_xg": 0.4, "key_pass_id": "pass-1-1"},
             },
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         xga, xga_d = result[1]
         assert xga == pytest.approx(0.4)
-        assert xga_d == pytest.approx(0.4), (
-            "Shot with missing possession cannot have its carry window located; "
-            "must be credited as direct (permissive fallback per ADR 002 §26)"
+        assert xga_d == 0.0, (
+            "ADR 004 D16: a shot with missing possession cannot have its carry "
+            "window located, so it is not direct"
         )
 
     def test_passer_without_player_id_not_credited(self):
@@ -592,7 +607,7 @@ class TestXgAssistedEdgeCases:
             _receipt(2, idx=2),
             _shot(shot_id, shooter_id=2, xg=0.3, idx=5, key_pass_id="pass-no-player"),
         ]
-        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
         # No player id on the pass → assister_id is None → no entry in result
         assert not any(k is None for k in result), (
             "None must not appear as a key in the result dict"
@@ -622,4 +637,56 @@ class TestXgAssistedEdgeCases:
             _shot(shot_id, shooter_id=2, xg=0.2, idx=5, key_pass_id="pass-1-1"),
         ]
         with pytest.raises(KeyError):
-            compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY)
+            compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=Counter())
+
+
+class TestXgAssistedFallbacksD16:
+    """ADR 004 D16: the receipt must follow the key pass, and every fallback and
+    broken link is counted (report-only issues in the pipeline)."""
+
+    def test_receipt_before_the_key_pass_does_not_define_the_window(self):
+        """The shooter's only receipt (index 0) precedes the key pass (index 1):
+        not direct, counted as no-receipt."""
+        events = [
+            _receipt(2, idx=0),
+            _pass(1, "s1", idx=1),
+            _shot("s1", shooter_id=2, xg=0.3, idx=5, key_pass_id="pass-1-1"),
+        ]
+        fallbacks: Counter = Counter()
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=fallbacks)
+        assert result[1] == (pytest.approx(0.3), 0.0)
+        assert fallbacks == Counter({XGA_NO_RECEIPT: 1})
+
+    def test_receipt_after_the_key_pass_is_direct_and_counts_nothing(self):
+        events = [
+            _pass(1, "s1", idx=1),
+            _receipt(2, idx=2),
+            _shot("s1", shooter_id=2, xg=0.3, idx=5, key_pass_id="pass-1-1"),
+        ]
+        fallbacks: Counter = Counter()
+        result = compute_xg_assisted_per_player(events, max_carry_units=MAX_CARRY, fallbacks=fallbacks)
+        assert result[1] == (pytest.approx(0.3), pytest.approx(0.3))
+        assert not fallbacks
+
+    def test_dangling_assisted_shot_id_is_counted(self):
+        fallbacks: Counter = Counter()
+        result = compute_xg_assisted_per_player(
+            [_pass(1, "missing-shot", idx=1)], max_carry_units=MAX_CARRY, fallbacks=fallbacks)
+        assert result == {}
+        assert fallbacks == Counter({XGA_DANGLING_SHOT_ID: 1})
+
+    def test_missing_shooter_and_missing_assister_are_counted(self):
+        no_shooter = {"id": "s1", "index": 5, "type": {"name": "Shot"}, "player": {},
+                      "possession": 1, "possession_team": {"id": 100},
+                      "shot": {"statsbomb_xg": 0.3, "key_pass_id": "pass-1-1"}}
+        no_assister = {**_pass(1, "s2", idx=6), "player": {}, "id": "pass-x"}
+        fallbacks: Counter = Counter()
+        compute_xg_assisted_per_player(
+            [_pass(1, "s1", idx=1), no_shooter, no_assister,
+             _shot("s2", shooter_id=2, xg=0.1, idx=8, key_pass_id="pass-x")],
+            max_carry_units=MAX_CARRY, fallbacks=fallbacks)
+        assert fallbacks == Counter({XGA_MISSING_SHOOTER: 1, XGA_MISSING_ASSISTER: 1})
+
+    def test_fallbacks_is_a_required_keyword(self):
+        with pytest.raises(TypeError):
+            compute_xg_assisted_per_player([], max_carry_units=MAX_CARRY)

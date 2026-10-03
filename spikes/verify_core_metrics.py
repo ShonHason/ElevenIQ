@@ -41,8 +41,10 @@ passes_injury_clearance (D13); open_play_passes_attempted and
 team_open_play_passes_while_on (D12). A team open-play pass is credited to each
 player of the passing team whose credited time holds its instant (pieces
 half-open, a piece ending at its period's end closed there, judged by the event's
-own period) and always to its passer; every pass must be credited to 7-11
-players (the Laws minimum on the pitch), otherwise the spike fails. Only progressive_passes may change against an
+own period) and always to its passer, even outside his own credited time (a
+timeline inconsistency, reported as events_outside_credited_time); every pass must
+be credited to 7-11 players (the Laws minimum on the pitch), otherwise the spike
+fails. Only progressive_passes may change against an
 existing core section; every other value must come out identical.
 
 Scope rule shared by every column: period-5 (shootout) events are excluded
@@ -582,7 +584,9 @@ def team_open_play_pass_credits(
     A player of the passing team (`team.id`) is credited when the pass's elapsed
     instant t lies in one of his timeline segments [a, b) inside the pass's own
     period, or t is that period's end and a segment ends there (all comparisons
-    within TIME_EPS); the passer is always credited. Fails unless every pass is
+    within TIME_EPS); the passer is always credited, even outside his own
+    credited time (a timeline inconsistency, reported as
+    events_outside_credited_time). Fails unless every pass is
     credited to MIN_PLAYERS_PER_PASS-MAX_PLAYERS_PER_PASS players. `credits` gets the
     distribution of players per pass.
     """

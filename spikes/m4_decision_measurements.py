@@ -4,33 +4,66 @@ Reads data/processed/player_season_stats.parquet, data/interim/player_match_stat
 matches.json (dates) and the raw events. Writes nothing: it prints one section per
 D-item, and the figures go into ADR 004.
 
-This is a measurement, not an independent check. It imports pass/entry predicates and
-constants from eleveniq.metrics (D14, D17) so the counts match the stored columns, and
-the D22 section re-runs the pipeline's own _process_match to collect report-only counts.
+This is a measurement, not an independent check. It never imports eleveniq
+(tests/test_spikes_independent.py): the pass geometry (ADR 002 §1, §27), the position
+taxonomy (§4) and the restart set (ADR 004 D14) are written out below. The D22 rates
+were measured once with the pipeline (plan 005 M4a) and are recorded in ADR 004; that
+section was removed with the eleveniq import (plan 005 M4b2).
 
 "Gated" below means the D1 default: in_percentile_pool ∧ is_outfield ∧ nominal-equivalent
 minutes ≥ 900, where nominal = Σ_matches minutes × 90 / match_duration.
 
-Usage: .venv/bin/python spikes/m4_decision_measurements.py [--skip-d22]
+Usage: .venv/bin/python spikes/m4_decision_measurements.py
 """
 from __future__ import annotations
 
 import json
 import math
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
 import polars as pl
 
-from eleveniq.config import LONG_PASS_THRESHOLD_UNITS, MIN_AERIAL_CONTESTS
-from eleveniq.metrics.entries import (
-    SET_PIECE_TYPES,
-    is_box_entry_pass,
-    is_final_third_entry_pass,
-)
-from eleveniq.metrics.positions import POSITION_GROUP_MAP
-from eleveniq.metrics.progressive import is_progressive_pass
+# Written out instead of imported from eleveniq (see the module docstring).
+LONG_PASS_THRESHOLD_UNITS = 30.0  # ADR 002 §19
+MIN_AERIAL_CONTESTS = 10  # ADR 002 Chunk A decisions (config default)
+SET_PIECE_TYPES = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off"})
+RESTART_TYPES = SET_PIECE_TYPES | {"Throw-in"}  # ADR 004 D14
+DEFENSIVE_40_X, PROG_PASS_UNITS, FINAL_THIRD_X = 48.0, 10.0, 80.0  # ADR 002 §1, §27
+GOAL_CENTRE = (120.0, 40.0)
+POSITION_GROUP_MAP = {  # ADR 002 §4
+    "Goalkeeper": "GK",
+    **dict.fromkeys(["Center Back", "Left Center Back", "Right Center Back"], "CB"),
+    **dict.fromkeys(["Left Back", "Right Back", "Left Wing Back", "Right Wing Back"], "FB-WB"),
+    **dict.fromkeys(["Defensive Midfield", "Center Defensive Midfield", "Left Defensive Midfield",
+                     "Right Defensive Midfield", "Center Midfield", "Left Center Midfield",
+                     "Right Center Midfield"], "DM-CM"),
+    **dict.fromkeys(["Attacking Midfield", "Center Attacking Midfield", "Left Midfield",
+                     "Right Midfield", "Left Wing", "Right Wing", "Left Attacking Midfield",
+                     "Right Attacking Midfield"], "AM-Winger"),
+    **dict.fromkeys(["Center Forward", "Left Center Forward", "Right Center Forward",
+                     "Secondary Striker"], "ST"),
+}
+
+
+def _in_box(p: tuple[float, float]) -> bool:
+    return p[0] >= 102.0 and 18.0 <= p[1] <= 62.0
+
+
+def _completed_progressive(s, t, outcome) -> bool:
+    """ADR 002 §1 geometry, completed passes; the restart rule is applied by the caller."""
+    if outcome is not None or s[0] < DEFENSIVE_40_X:
+        return False
+    closer = math.dist(s, GOAL_CENTRE) - math.dist(t, GOAL_CENTRE)
+    return closer >= PROG_PASS_UNITS or (not _in_box(s) and _in_box(t))
+
+
+def _completed_box_entry(s, t, outcome) -> bool:
+    return outcome is None and not _in_box(s) and _in_box(t)
+
+
+def _completed_final_third_entry(s, t, outcome) -> bool:
+    return outcome is None and s[0] < FINAL_THIRD_X <= t[0]
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw" / "statsbomb"
@@ -341,14 +374,15 @@ for match_id, comp in pool_match_ids.iter_rows():
             length = p.get("length")
             if outcome == "Injury Clearance":
                 pm[(match_id, pid, "ic")] += 1
-                if length is not None and length >= LONG_PASS_THRESHOLD_UNITS and ptype not in SET_PIECE_TYPES:
+                if length is not None and length >= LONG_PASS_THRESHOLD_UNITS and ptype not in RESTART_TYPES:
                     pm[(match_id, pid, "ic_long")] += 1
             if loc and end:
                 s, t = (loc[0], loc[1]), (end[0], end[1])
-                prog = is_progressive_pass(s, t, outcome=outcome)
-                box = is_box_entry_pass(s, t, outcome=outcome, pass_type_name=ptype)
-                fte = is_final_third_entry_pass(s, t, outcome=outcome, pass_type_name=ptype)
-                if box and prog:
+                # Geometry only; throw-ins are counted on their own below (D14 history).
+                prog = _completed_progressive(s, t, outcome)
+                box = _completed_box_entry(s, t, outcome)
+                fte = _completed_final_third_entry(s, t, outcome)
+                if box and prog and ptype not in RESTART_TYPES:
                     pm[(match_id, pid, "box_and_prog")] += 1
                 if ptype == "Throw-in":
                     pm[(match_id, pid, "ti_prog")] += prog
@@ -535,7 +569,7 @@ print(f"local pass_completion percentile shift: max {(lc['a'] - lc['b']).abs().m
       f"rows ≥ 1 rank step-ish (≥ 3 pts): {((lc['a'] - lc['b']).abs() >= 3).sum()}")
 
 # ── D14 ───────────────────────────────────────────────────────────────────────
-section("D14 — throw-ins inside entry / progressive / cross counts")
+section("D14 — throw-ins inside entry / progressive / cross counts (M4a history: meaningful on pre-M4b output only; after M4b the columns already exclude restarts)")
 show(gated.group_by("position_group").agg(
     (pl.col("ti_box").sum() / pl.col("box_entries_pass").sum()).alias("box_entries_pass_share"),
     (pl.col("ti_fte").sum() / pl.col("final_third_entries_pass").sum()).alias("final_third_entries_pass_share"),
@@ -678,33 +712,33 @@ for m in P90:
         above |= set(sub.filter(pl.col(m) > p99)["player_name"].to_list())
 print(f"distinct gated rows above their group P99 on ≥ 1 metric (to trace in M4g): {len(above)}")
 
-# ── D22 ───────────────────────────────────────────────────────────────────────
-if "--skip-d22" not in sys.argv:
-    section("D22 — report-only issue rates per competition-season (pipeline _process_match)")
-    from eleveniq.pipeline.build_player_match import PERIOD_AWARE_REPORT_ONLY_ISSUES, _process_match
-
-    rates = defaultdict(Counter)
-    player_matches = defaultdict(set)
-    late = []
-    n_matches = Counter()
-    for match_id, comp in match.select("match_id", "competition_id").unique().iter_rows():
-        _, report = _process_match(match_id, comp, SEASON)
-        n_matches[comp] += 1
-        for d in report:
-            issue = d.get("issue")
-            if issue in PERIOD_AWARE_REPORT_ONLY_ISSUES:
-                rates[comp][issue] += 1
-                player_matches[(comp, issue)].add((match_id, d.get("player_id")))
-                if issue == "stint_after_period_end":
-                    late.append({k: v for k, v in d.items()})
-    out = []
-    for issue in PERIOD_AWARE_REPORT_ONLY_ISSUES:
-        row = {"issue": issue}
-        for comp in LEAGUES:
-            row[LEAGUES[comp]] = f"{rates[comp][issue]} / {len(player_matches[(comp, issue)])} pm"
-        worst = max(len(player_matches[(c, issue)]) / n_matches[c] * 100 for c in LEAGUES)
-        row["worst_rate_per_100_matches"] = worst
-        row["limit_per_380"] = max(3 * worst * 380 / 100, 3)
-        out.append(row)
-    show(pl.DataFrame(out))
-    print("stint_after_period_end entries:", late)
+# ── D12b ──────────────────────────────────────────────────────────────────────
+section("D12b — team_pass_share (open play) for DM-CM and CB: possession ρ and split-half "
+        "(ADR 004 D12, pre-registered: enters DNA iff |ρ| < 0.3 and r_full ≥ 0.6)")
+if "team_pass_share" not in season.columns:
+    print("team_pass_share not in the season parquet (pre-M4b output): skipped")
+else:
+    d12b = []
+    tps_halves = halves.join(
+        played.group_by([*KEY, "half"]).agg(pl.col("open_play_passes_attempted").sum(),
+                                            pl.col("team_open_play_passes_while_on").sum()),
+        on=[*KEY, "half"], how="left").filter(pl.col("team_open_play_passes_while_on") > 0)
+    rel_tps = split_half(tps_halves.filter(pl.col("minutes_nominal_equiv") >= GATE),
+                         pl.col("open_play_passes_attempted") / pl.col("team_open_play_passes_while_on"))
+    for grp in ("DM-CM", "CB"):
+        sub = gated.filter(pl.col("position_group") == grp)
+        per = {}
+        for proxy in ("poss_dur_loo", "poss_pass_loo"):
+            vals = [s.select(pl.corr(proxy, "team_pass_share", method="spearman")).item()
+                    for _, s in sub.group_by("competition_id")]
+            per[proxy] = sum(vals) / len(vals)
+            per[proxy + "_leagues"] = [round(v, 3) for v in vals]
+        r_full = rel_tps.get(grp)
+        d12b.append({"group": grp, "n": sub.height,
+                     "rho_dur_mean": per["poss_dur_loo"], "rho_pass_mean": per["poss_pass_loo"],
+                     "rho_dur_by_league": str(per["poss_dur_loo_leagues"]),
+                     "r_full": r_full,
+                     "enters_dna": abs(per["poss_dur_loo"]) < 0.3 and abs(per["poss_pass_loo"]) < 0.3
+                                   and r_full is not None and r_full >= 0.6})
+    show(pl.DataFrame(d12b))
+    print("compare: passes_attempted_p90 ρ (duration proxy) DM-CM 0.66, CB 0.74 (ADR 004 D12)")

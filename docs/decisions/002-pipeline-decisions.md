@@ -10,6 +10,8 @@ Section 6 records aggregation principles to be implemented in Milestone 2.
 
 ## 1. Progressive Pass Definition
 
+**Amended by ADR 004 D14 (plan 005 M4b, 2026-10-03):** a restart (corner, free kick, goal kick, kick-off, throw-in; `metrics/pass_types.RESTART_TYPES`) is never progressive. `is_progressive_pass` requires `pass_type_name`.
+
 **File:** `src/eleveniq/metrics/progressive.py`
 **Function:** `is_progressive_pass(start, end, *, outcome, threshold=10.0) -> bool`
 
@@ -992,6 +994,8 @@ counter with `not block_data.get("offensive") and not block_data.get("save_block
 
 ## 14. Pass Completion Denominator and Unknown-Outcome Passes
 
+**Amended by ADR 004 D13 (plan 005 M4b):** Injury Clearance passes (`passes_injury_clearance`) also leave the `pass_completion_pct` denominator.
+
 ### Formula
 
 ```
@@ -1136,6 +1140,8 @@ defined.
 
 ## 17. `meets_min_minutes` — Per-Stint Minutes (Default Until M4)
 
+**Superseded by ADR 004 D1–D3 (plan 005 M4b):** the gate reads `minutes_nominal_equiv ≥ 900 − 1e-6`; each stint is gated on its own; there is no combined gate.
+
 `meets_min_minutes` in `player_season_stats.parquet` is computed from
 `minutes_played`, which is the per-stint total (one team's contribution to the
 season).  For a player who transfers mid-season, each stint is evaluated
@@ -1186,6 +1192,8 @@ player-DNA feature set.
 ---
 
 ## 19. Long-Pass Threshold
+
+**Amended by ADR 004 D13/D14 (plan 005 M4b):** long passes exclude every restart (set pieces and throw-ins). `long_passes_unknown_outcome` and `long_passes_injury_clearance` use the same predicate, and Injury Clearances leave the `long_pass_completion_pct` denominator.
 
 A long pass is a pass with `pass.length >= LONG_PASS_THRESHOLD_UNITS` (30 units,
 from `config.py`) **and** `pass.type.name NOT IN SET_PIECE_TYPES`
@@ -1427,6 +1435,8 @@ confirmed fact.
 
 ## 26. xG Assisted Direct
 
+**Amended by ADR 004 D16 (plan 005 M4b):** a shot with no Ball Receipt* between the key pass and the shot, or with no shooter or possession, is not direct. Fallbacks are counted as report-only issues.
+
 **File:** `src/eleveniq/metrics/xg_assisted.py` (same function, second element of returned tuple)
 
 ### Definition
@@ -1493,6 +1503,8 @@ to test at Milestone 4, not a known fact.
 ---
 
 ## 27. Final-Third and Box Entry Metrics
+
+**Amended by ADR 004 D14 (plan 005 M4b):** pass entries exclude throw-ins as well as set pieces (`RESTART_TYPES`).
 
 **File:** `src/eleveniq/metrics/entries.py`
 

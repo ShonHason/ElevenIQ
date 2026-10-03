@@ -881,16 +881,17 @@ class TestSpikeTeamPassCreditExitsAndTeams:
         assert total == 5
 
     def test_passer_outside_his_credited_time_still_counts_once(self):
-        """Data quality: player 3 passes at (2, 70:00) after his own substitution at
-        (2, 60:00) (wrong timeline). He is credited exactly once (as passer, not
-        twice), plus the 2 teammates on the pitch."""
+        """ADR 004 D12 (user decision 2026-10-03): player 3 passes at (2, 70:00)
+        after his own substitution at (2, 60:00), a timeline inconsistency. The pass
+        is credited to him exactly once (as passer) plus the 2 teammates on the
+        pitch; the event is reported as events_outside_credited_time."""
         ev = TestSpikeTeamOpenPlayPassCredits._clock_only()
         self._pass(ev, 2, 70.0, 3)
-        total, _ = self._credits(ev, [_team(1, {
+        total, dist = self._credits(ev, [_team(1, {
             1: [_stint("Center Back", 0, 1)],
             2: [_stint("Right Back", 60, 2, reason="Substitution")],
             3: [_stint("Right Back", 0, 1, 60, 2)]})])
-        assert total == 3
+        assert total == 3 and dist == Counter({3: 1})
 
     def test_shootout_passes_are_not_credited(self):
         ev = TestSpikeTeamOpenPlayPassCredits._clock_only()

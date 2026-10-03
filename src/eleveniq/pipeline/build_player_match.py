@@ -59,21 +59,26 @@ from eleveniq.metrics.positions import (
 )
 from eleveniq.metrics.aerials import has_aerial_won, is_aerial_lost
 from eleveniq.metrics.entries import (
-    SET_PIECE_TYPES,
     is_final_third_entry_pass,
     is_final_third_entry_carry,
     is_box_entry_pass,
     is_box_entry_carry,
 )
+from eleveniq.metrics.pass_types import RESTART_TYPES
 from eleveniq.metrics.progressive import is_progressive_pass, is_progressive_carry
 from eleveniq.metrics.shots import KNOWN_SHOT_OUTCOMES, is_shot_on_target
 from eleveniq.metrics.tackles import KNOWN_DUEL_TYPES, KNOWN_TACKLE_OUTCOMES, is_tackle_won
-from eleveniq.metrics.xg_assisted import compute_xg_assisted_per_player
+from eleveniq.metrics.xg_assisted import XGA_FALLBACKS, compute_xg_assisted_per_player
 from eleveniq.config import (
     COMPETITION_SEASONS,
     LONG_PASS_THRESHOLD_UNITS,
+    MAX_PLAYERS_PER_PASS,
+    MIN_PLAYERS_PER_PASS,
     PERIOD_SHORT_FAIL_MINUTES,
+    REPORT_ONLY_LIMIT_FLOOR,
+    REPORT_ONLY_LIMITS_PER_100_MATCHES,
     SOURCE_STATSBOMB,
+    STINT_LATE_START_FAIL_MINUTES,
     XG_ASSISTED_MAX_CARRY_UNITS,
     CompetitionSeason,
     select_competition_seasons,
@@ -144,6 +149,11 @@ EVENT_QUALITY_ISSUES = frozenset({
 # Pass outcome StatsBomb records when the result is unknown. Such passes stay in
 # the attempted counts but leave the completion denominators (ADR 002 §14, §15, §19).
 UNKNOWN_PASS_OUTCOME = "Unknown"
+# A deliberate kick out of play for an injured player: never completed, and left out
+# of the completion denominators (ADR 004 D13).
+INJURY_CLEARANCE_OUTCOME = "Injury Clearance"
+# ADR 004 D15: shot.type.name of a penalty, left out of np_shots and np_xg.
+PENALTY_SHOT_TYPE = "Penalty"
 
 # Dropped events (a player.id with no output row) that do not fail the build:
 # cards shown to a bench player who never entered the pitch (empty positions
@@ -182,6 +192,18 @@ OVERLAPPING_STINTS = "overlapping_stints"
 UNPAIRED_PLAYER_OFF_CAPPED = "unpaired_player_off_capped"
 EVENTS_OUTSIDE_CREDITED_TIME = "events_outside_credited_time"
 
+# ADR 004 D12: an open-play pass credited to fewer than MIN_PLAYERS_PER_PASS or more
+# than MAX_PLAYERS_PER_PASS players. Fails the build.
+PASS_CREDIT_OUT_OF_RANGE = "pass_credit_out_of_range"
+# ADR 004 D12: a pass whose event team.id differs from the passer's lineup team.
+# Fails the build.
+PASS_TEAM_MISMATCH = "pass_team_mismatch"
+# ADR 004 D22: a stint starting more than STINT_LATE_START_FAIL_MINUTES after its
+# period's Half End. Fails the build.
+STINT_LATE_START_EXCEEDS_LIMIT = "stint_late_start_exceeds_limit"
+# ADR 004 D22: a report-only issue over its per-competition-season limit.
+REPORT_ONLY_LIMIT_EXCEEDED = "report_only_limit_exceeded"
+
 # Report-only period-aware issues, counted by summarise_quality_report.
 PERIOD_AWARE_REPORT_ONLY_ISSUES = (
     PERIOD_END_BEFORE_NOMINAL,
@@ -193,6 +215,9 @@ PERIOD_AWARE_REPORT_ONLY_ISSUES = (
     DISMISSAL_AFTER_MATCH_END,
     EVENTS_OUTSIDE_CREDITED_TIME,
 )
+
+# Counted per player-match, not per entry (ADR 004 D22).
+_LIMIT_COUNTED_PER_PLAYER_MATCH = frozenset({EVENTS_OUTSIDE_CREDITED_TIME})
 
 # Event types a player may have after his unpaired Player Off (§31.2): a card can
 # be shown off the pitch, and an injured player is formally replaced after he
@@ -220,6 +245,9 @@ FAILING_QUALITY_ISSUES = EVENT_QUALITY_ISSUES | {
     STINT_AFTER_SUBSTITUTION,
     TEAM_MINUTES_EXCEED_CEILING,
     PLAYER_MINUTES_EXCEED_DURATION,
+    PASS_CREDIT_OUT_OF_RANGE,
+    PASS_TEAM_MISMATCH,
+    STINT_LATE_START_EXCEEDS_LIMIT,
 }
 
 _SCHEMA: dict[str, type] = {
@@ -233,6 +261,7 @@ _SCHEMA: dict[str, type] = {
     "source": pl.Utf8,
     "minutes_played": pl.Float64,
     "match_duration": pl.Float64,
+    "match_nominal_duration": pl.Float64,
     "position_raw": pl.Utf8,
     "position_group": pl.Utf8,
     "goals": pl.Int32,
@@ -240,7 +269,12 @@ _SCHEMA: dict[str, type] = {
     "shots_on_target": pl.Int32,
     "xg": pl.Float64,
     "shots_missing_xg": pl.Int32,
+    "np_shots": pl.Int32,
+    "np_xg": pl.Float64,
     "passes_attempted": pl.Int32,
+    "open_play_passes_attempted": pl.Int32,
+    "team_open_play_passes_while_on": pl.Int32,
+    "passes_injury_clearance": pl.Int32,
     "passes_completed": pl.Int32,
     "passes_unknown_outcome": pl.Int32,
     "progressive_passes": pl.Int32,
@@ -280,6 +314,7 @@ _SCHEMA: dict[str, type] = {
     "long_passes_attempted": pl.Int32,
     "long_passes_completed": pl.Int32,
     "long_passes_unknown_outcome": pl.Int32,
+    "long_passes_injury_clearance": pl.Int32,
     "passes_missing_length": pl.Int32,
     "switches": pl.Int32,
     "xg_assisted": pl.Float64,
@@ -331,7 +366,11 @@ def _aggregate_events(
     shots_on_target = 0
     xg = 0.0
     shots_missing_xg = 0
+    np_shots = 0
+    np_xg = 0.0
     passes_attempted = 0
+    open_play_passes_attempted = 0
+    passes_injury_clearance = 0
     passes_completed = 0
     passes_unknown_outcome = 0
     progressive_passes = 0
@@ -362,6 +401,7 @@ def _aggregate_events(
     long_passes_attempted = 0
     long_passes_completed = 0
     long_passes_unknown_outcome = 0
+    long_passes_injury_clearance = 0
     passes_missing_length = 0
     switches = 0
     final_third_entries_pass = 0
@@ -381,10 +421,16 @@ def _aggregate_events(
             # Completed pass = no outcome field (None); any outcome string = incomplete.
             # Using (... or {}) guards against explicit JSON null on the outcome key.
             outcome_name: str | None = (pass_data.get("outcome") or {}).get("name")
+            pass_type_name: str | None = (pass_data.get("type") or {}).get("name")
             if outcome_name is None:
                 passes_completed += 1
             elif outcome_name == UNKNOWN_PASS_OUTCOME:
                 passes_unknown_outcome += 1
+            elif outcome_name == INJURY_CLEARANCE_OUTCOME:
+                passes_injury_clearance += 1
+            # ADR 004 D12: open play = every outcome, restarts excluded.
+            if pass_type_name not in RESTART_TYPES:
+                open_play_passes_attempted += 1
 
             loc = event.get("location")
             end_loc = pass_data.get("end_location")
@@ -395,6 +441,7 @@ def _aggregate_events(
                     (loc[0], loc[1]),
                     (end_loc[0], end_loc[1]),
                     outcome=outcome_name,
+                    pass_type_name=pass_type_name,
                 ):
                     progressive_passes += 1
 
@@ -410,17 +457,21 @@ def _aggregate_events(
                 elif outcome_name == UNKNOWN_PASS_OUTCOME:
                     crosses_unknown_outcome += 1
 
-            pass_type_name: str | None = (pass_data.get("type") or {}).get("name")
             pass_length = pass_data.get("length")
             if pass_length is None:
                 passes_missing_length += 1
             else:
-                if pass_length >= LONG_PASS_THRESHOLD_UNITS and pass_type_name not in SET_PIECE_TYPES:
+                # One predicate for the long pass and all its parts (ADR 004 D14):
+                # restarts never count, so unknown and Injury Clearance long passes
+                # are always subsets of long_passes_attempted.
+                if pass_length >= LONG_PASS_THRESHOLD_UNITS and pass_type_name not in RESTART_TYPES:
                     long_passes_attempted += 1
                     if outcome_name is None:
                         long_passes_completed += 1
                     elif outcome_name == UNKNOWN_PASS_OUTCOME:
                         long_passes_unknown_outcome += 1
+                    elif outcome_name == INJURY_CLEARANCE_OUTCOME:
+                        long_passes_injury_clearance += 1
 
             if outcome_name is None and loc and end_loc:
                 start = (loc[0], loc[1])
@@ -444,12 +495,18 @@ def _aggregate_events(
             if shot_outcome == "Goal":
                 goals += 1
             xg_value = shot_data.get("statsbomb_xg")
+            # ADR 004 D15: a penalty (shot.type "Penalty") is left out of np_*.
+            is_penalty = (shot_data.get("type") or {}).get("name") == PENALTY_SHOT_TYPE
+            if not is_penalty:
+                np_shots += 1
             if xg_value is None:
                 shots_missing_xg += 1
                 player_id_ctx = (event.get("player") or {}).get("id")
                 logger.warning("shot missing statsbomb_xg (player_id=%s)", player_id_ctx)
             else:
                 xg += xg_value
+                if not is_penalty:
+                    np_xg += xg_value
 
         elif event_type == "Carry":
             carries += 1
@@ -531,7 +588,11 @@ def _aggregate_events(
         "shots_on_target": shots_on_target,
         "xg": xg,
         "shots_missing_xg": shots_missing_xg,
+        "np_shots": np_shots,
+        "np_xg": np_xg,
         "passes_attempted": passes_attempted,
+        "open_play_passes_attempted": open_play_passes_attempted,
+        "passes_injury_clearance": passes_injury_clearance,
         "passes_completed": passes_completed,
         "passes_unknown_outcome": passes_unknown_outcome,
         "progressive_passes": progressive_passes,
@@ -562,6 +623,7 @@ def _aggregate_events(
         "long_passes_attempted": long_passes_attempted,
         "long_passes_completed": long_passes_completed,
         "long_passes_unknown_outcome": long_passes_unknown_outcome,
+        "long_passes_injury_clearance": long_passes_injury_clearance,
         "passes_missing_length": passes_missing_length,
         "switches": switches,
         "final_third_entries_pass": final_third_entries_pass,
@@ -569,6 +631,79 @@ def _aggregate_events(
         "box_entries_pass": box_entries_pass,
         "box_entries_carry": box_entries_carry,
     }
+
+
+def team_open_play_pass_credits(
+    play_events: list[dict],
+    timelines: dict[int, PlayerTimeline],
+    team_of: dict[int, int],
+    clock: PeriodClock,
+) -> tuple[Counter[int], list[dict], list[dict]]:
+    """
+    ADR 004 D12: for every open-play pass (a Pass whose type is not in
+    RESTART_TYPES) by a lineup player, the players of the passing team it is
+    credited to. The team is the event's `team.id`; only when the event has none is
+    the passer's lineup team (`team_of`) used. When both exist and differ, the pass
+    is reported as pass_team_mismatch (fails the build) and credited to nobody
+    (2015/16: 0 of 1,512,747 passes differ). A pass by a player outside the lineups
+    is a dropped event and fails the build elsewhere, so it is skipped here.
+
+    Returns (credits per player = team_open_play_passes_while_on, the passes
+    credited to a count outside MIN_PLAYERS_PER_PASS..MAX_PLAYERS_PER_PASS, the
+    team mismatches).
+
+    A teammate is credited when the pass's elapsed instant lies in one of his
+    timeline pieces of the pass's own period, half-open [start, end), or is that
+    period's end and the piece ends there (a piece ending at its period's end is
+    closed). Comparisons are within TIME_EPS: elapsed() and the piece bounds come
+    from different float sums. Zero-length pieces credit nothing. The passer is
+    always credited, even when the pass lies outside his own credited time: that
+    is a timeline inconsistency, not absence, and it is reported as
+    events_outside_credited_time (ADR 002 §31.6; user decision 2026-10-03). So
+    his share can never exceed 1. A pass stamped after its period's whistle is
+    clamped to the whistle instant and counts for the players on at the whistle.
+    """
+    team_players: dict[int, list[int]] = {}
+    for pid, team_id in team_of.items():
+        team_players.setdefault(team_id, []).append(pid)
+    credits: Counter[int] = Counter()
+    out_of_range: list[dict] = []
+    mismatches: list[dict] = []
+    for e in play_events:
+        if (e["type"]["name"] != "Pass" or not e.get("player")
+                or ((e.get("pass") or {}).get("type") or {}).get("name") in RESTART_TYPES):
+            continue
+        period = e["period"]
+        start = clock.offset(period)
+        end = start + clock.length(period)
+        at = clock.elapsed(event_instant(e))
+        passer = e["player"]["id"]
+        lineup_team = team_of.get(passer)
+        if lineup_team is None:
+            continue
+        event_team = (e.get("team") or {}).get("id")
+        if event_team is not None and event_team != lineup_team:
+            mismatches.append({"event_id": e.get("id"), "player_id": passer,
+                               "event_team_id": event_team, "lineup_team_id": lineup_team})
+            continue
+        team_id = lineup_team if event_team is None else event_team
+        credited = {passer}
+        for pid in team_players.get(team_id, []):
+            timeline = timelines.get(pid)
+            if pid == passer or timeline is None:
+                continue
+            if any(piece.period == period and piece.end - piece.start > TIME_EPS
+                   and (piece.start - TIME_EPS <= at < piece.end - TIME_EPS
+                        or (abs(at - end) <= TIME_EPS and abs(piece.end - end) <= TIME_EPS))
+                   for piece in timeline.pieces):
+                credited.add(pid)
+        for pid in credited:
+            credits[pid] += 1
+        if not MIN_PLAYERS_PER_PASS <= len(credited) <= MAX_PLAYERS_PER_PASS:
+            out_of_range.append({"event_id": e.get("id"), "team_id": team_id,
+                                 "period": period, "minute": e.get("minute"),
+                                 "second": e.get("second"), "players": len(credited)})
+    return credits, out_of_range, mismatches
 
 
 def _is_kickoff_spell(spell: dict) -> bool:
@@ -617,6 +752,9 @@ def _process_match(
     # ADR 002 §31.1: raises (the match fails) without a valid Half End per period.
     clock = PeriodClock.from_events(events)
     match_duration = clock.duration
+    # ADR 004 D1: the nominal length of the periods played (90, or 120 with extra
+    # time), for minutes_nominal_equiv in build_player_season.
+    match_nominal_duration = NOMINAL_PERIOD_END[clock.periods[-1]]
     # Penalty-shootout events (period 5) are not playing time and count toward
     # no metric. Dismissal lookups use this list too: a shootout card clamps
     # nothing, because every stint has ended by then (extra time, periods 3-4,
@@ -624,8 +762,9 @@ def _process_match(
     play_events = [e for e in events if is_playing_time(e)]
 
     # Compute xg_assisted per player (requires full match event list for cross-player lookup)
+    xga_fallbacks: Counter[str] = Counter()
     xga_by_player = compute_xg_assisted_per_player(
-        play_events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS
+        play_events, max_carry_units=XG_ASSISTED_MAX_CARRY_UNITS, fallbacks=xga_fallbacks
     )
 
     starting_xi = _starting_xi_by_team(events)
@@ -838,6 +977,7 @@ def _process_match(
                     "source": SOURCE_STATSBOMB,
                     "minutes_played": minutes_played,
                     "match_duration": match_duration,
+                    "match_nominal_duration": match_nominal_duration,
                     "position_raw": position_raw,
                     "position_group": position_group,
                     "started": started,
@@ -948,10 +1088,26 @@ def _process_match(
 
         rows.extend(row for row, _ in team_entries)
 
+    # Report-only (ADR 004 D16): assisted shots whose direct window could not be
+    # checked, and broken assist links.
+    for issue in XGA_FALLBACKS:
+        if xga_fallbacks[issue]:
+            quality_report.append({"issue": issue, "match_id": match_id,
+                                   "count": xga_fallbacks[issue]})
     for (issue, value), count in sorted(event_issues.items(), key=str):
         quality_report.append({
             "issue": issue, "match_id": match_id, "value": value, "count": count,
         })
+    # ADR 004 D12: team open-play passes while on, from the same timelines.
+    team_of = {p["player_id"]: team["team_id"] for team in lineups for p in team["lineup"]}
+    credits, out_of_range, mismatches = team_open_play_pass_credits(
+        play_events, timelines, team_of, clock)
+    for row in rows:
+        row["team_open_play_passes_while_on"] = credits.get(row["player_id"], 0)
+    quality_report.extend({"issue": PASS_CREDIT_OUT_OF_RANGE, "match_id": match_id, **d}
+                          for d in out_of_range)
+    quality_report.extend({"issue": PASS_TEAM_MISMATCH, "match_id": match_id, **d}
+                          for d in mismatches)
     quality_report.extend(_dropped_events(match_id, player_events, lineups, rows))
     quality_report.extend(_events_outside_credited_time(match_id, play_events, timelines, clock))
 
@@ -1008,7 +1164,8 @@ def _stint_bound_issues(
     - a `from` or `to` before its period's start fails the build;
     - a `to` after its period's Half End fails the build;
     - a `from` after its period's Half End (a player returning after the
-      whistle) is report-only: the stint gets no minutes.
+      whistle) is report-only: the stint gets no minutes; more than
+      STINT_LATE_START_FAIL_MINUTES after it fails the build (ADR 004 D22).
     A `to` without `to_period` is left to player_timeline, which raises.
     """
     issues: list[dict] = []
@@ -1030,7 +1187,36 @@ def _stint_bound_issues(
             elif minute > clock.ends[period] + TIME_EPS:
                 add(STINT_AFTER_PERIOD_END if field == "from" else STINT_END_AFTER_PERIOD_END,
                     field, period, minute)
+                if (field == "from"
+                        and minute - clock.ends[period] > STINT_LATE_START_FAIL_MINUTES + TIME_EPS):
+                    add(STINT_LATE_START_EXCEEDS_LIMIT, field, period, minute)
     return issues
+
+
+def report_only_limit_failures(quality_report: list[dict], n_matches: int) -> list[dict]:
+    """
+    ADR 004 D22: one entry per report-only issue whose count in this
+    competition-season exceeds max(limit per 100 matches x n_matches / 100,
+    REPORT_ONLY_LIMIT_FLOOR). Counts are entries, except
+    events_outside_credited_time, counted per (match_id, player_id), and the
+    xG-assisted fallbacks (XGA_FALLBACKS), whose per-match entries carry a shot
+    count that is summed. The issues themselves stay report-only; only the
+    season-level count can fail.
+    """
+    failures = []
+    for issue, per_100 in REPORT_ONLY_LIMITS_PER_100_MATCHES.items():
+        entries = [d for d in quality_report if d.get("issue") == issue]
+        if issue in _LIMIT_COUNTED_PER_PLAYER_MATCH:
+            count = len({(d["match_id"], d.get("player_id")) for d in entries})
+        elif issue in XGA_FALLBACKS:
+            count = sum(d["count"] for d in entries)
+        else:
+            count = len(entries)
+        limit = max(per_100 * n_matches / 100, REPORT_ONLY_LIMIT_FLOOR)
+        if count > limit:
+            failures.append({"issue": REPORT_ONLY_LIMIT_EXCEEDED, "report_issue": issue,
+                             "count": count, "limit": limit, "matches": n_matches})
+    return failures
 
 
 def _events_after_permanent_off(
@@ -1299,8 +1485,9 @@ def build_competition_season(
         StarterCrossCheckError: if, for any team-match, the derived starters
             differ from the Starting XI event (or the event is missing or
             duplicated).
-        DataQualityError: if any FAILING_QUALITY_ISSUES entry is in the report
-            or any shot lacks statsbomb_xg.
+        DataQualityError: if any FAILING_QUALITY_ISSUES entry is in the report,
+            a report-only issue exceeds its ADR 004 D22 limit, or any shot lacks
+            statsbomb_xg.
         In every case the parquet is not written.
     """
     out_path = output_path or part_path(competition_id, season_id)
@@ -1348,7 +1535,7 @@ def build_competition_season(
 
     quality_failures = [
         d for d in quality_report if d.get("issue") in FAILING_QUALITY_ISSUES
-    ]
+    ] + report_only_limit_failures(quality_report, len(matches))
     missing_xg = df.filter(pl.col("shots_missing_xg") > 0)
     if quality_failures or missing_xg.height:
         counts = Counter(d["issue"] for d in quality_failures)
@@ -1406,6 +1593,8 @@ def summarise_quality_report(report: list[dict]) -> dict[str, int]:
         ),
         **{issue: sum(1 for d in report if d.get("issue") == issue)
            for issue in PERIOD_AWARE_REPORT_ONLY_ISSUES},
+        **{issue: sum(d["count"] for d in report if d.get("issue") == issue)
+           for issue in XGA_FALLBACKS},
     }
 
 

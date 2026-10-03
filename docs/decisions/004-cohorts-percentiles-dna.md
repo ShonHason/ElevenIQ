@@ -107,7 +107,7 @@
 - Store `position_group_margin_pct` = (top − second group minutes) / minutes, and `position_group_share` = top group minutes / minutes.
 - **Second group (M4b review spec):**
   - the group with the second-most minutes among GK and the 5 outfield groups; `minutes_unknown` is not a group (it is 0, and UNKNOWN minutes fail the build);
-  - **null when its minutes are 0** (14 gated rows have one group only), and the margin is then 1.0;
+  - **null when its minutes are 0** (238 of the 1,233 gated pool outfield rows have one group only, measured on the M4b output; the review's earlier "14" was a mismeasurement), and the margin is then the top group's share: 1.0, unless an outfield row also has GK minutes;
   - ties are broken by the same alphabetical rule as `position_group` (ADR 002 §11.5);
   - for an outfield row, GK is never used as a display-only second cohort.
 - `position_group_ambiguous` = margin < 5%: **13 gated rows**.
@@ -188,11 +188,13 @@
   - Denominator: `team_open_play_passes_while_on`, the open-play Pass events of his team (`team.id`) that he is credited with:
     - a pass counts when its instant lies in his credited time (the union of his ADR 002 §31 timeline pieces);
     - pieces are half-open [start, end), except that a piece ending at its period's end is closed there. The test uses the event's own period, so a pass at the half-time whistle counts for the first-half players;
-    - **his own passes always count**, so the numerator is a subset of the denominator and the share is ≤ 1.
+    - **his own passes always count**, even when the pass lies outside his own credited time. That is a timeline inconsistency, not absence: the pass is credited to the passer plus every teammate on the pitch, and the event is reported as `events_outside_credited_time` (ADR 002 §31.6; D22 limits apply; user, 2026-10-03). 1 open-play pass outside the passer's credited time (Serie A, Lazio 3879637); passer still credited, reported.
+    - A pass stamped after its period's whistle is clamped to the whistle instant, so it counts for the players on the pitch at the whistle and is not outside anyone's credited time.
     - instants are compared within 1e-9 min: the elapsed instant of a second-half kick-off and the start of a second-half segment come from different float sums (48.633333333333326 vs 48.63333333333333). Without the tolerance, 16–27 passes per league were credited to their passer only (found by the M4b1 spike).
   - `team_pass_share = Σ open_play_passes_attempted / Σ team_open_play_passes_while_on` over the season, never a mean of match ratios. It is null when the denominator is 0. Both totals are stored.
   - Why open play: taking corners, free kicks and throw-ins is a role assignment, not involvement in circulation. Set pieces are 20.6% of FB-WB own passes (median), and including them moves local percentiles by up to 54 pts (reviewer measurement).
   - **Pre-registered:** this is the only candidate tested. The all-types variant is not tested.
+- **Team key (user, 2026-10-03):** the event's `team.id`. The passer's lineup team is used only when the event has no `team`. When both exist and differ, the build fails (`pass_team_mismatch`), and the pass is credited to nobody. 2015/16: 0 of 1,512,747 differ (M4b review). The spike keys on `team.id`.
 - **Check (fails the build, spike and pipeline):** every team open-play pass is credited to **7–11** players, the Laws minimum to the maximum on the pitch. 2015/16 open play: 8–11 (11 on: 96.2–98.2% by league). The lower bound catches a pass credited to its passer only, the shape of the float bug found in M4b1.
 - **Measured in M4b.** It enters DNA for **DM-CM and CB** as the possession-neutral replacement for raw pass volume only if both hold in that group:
   - |ρ| with the leave-one-out team possession share < 0.3 (the D12 method);
@@ -354,6 +356,14 @@ Rule:
 | `dismissal_after_period_end` | 0 | 0 | 0 | 0 | 0 | 0 | 3 |
 | `dismissal_after_match_end` | 0 | 0 | 0 | 0 | 0 | 0 | 3 |
 | `events_outside_credited_time` | 1 / 1 | 3 / 3 | 11 / 1 | 0 | 0 | 0.79 | 9 |
+| `xga_no_receipt` (assisted shots; added 2026-10-03) | 6 | 0 | 0 | 0 | 0 | 1.58 | 18 |
+| `xga_missing_shooter` (assisted shots) | 0 | 0 | 0 | 0 | 0 | 0 | 3 |
+| `xga_dangling_shot_id` (assisted shots) | 0 | 0 | 0 | 0 | 0 | 0 | 3 |
+| `xga_missing_assister` (assisted shots) | 0 | 0 | 0 | 0 | 0 | 0 | 3 |
+
+The xG-assisted fallback limits (D16 counters) were added by the user on 2026-10-03, with the same rule: 3 × the worst 2015/16 rate, floor 3. Their counts are assisted shots, summed over the per-match entries.
+
+These limits are a smoke alarm, not a validated tolerance. They come from the 2015/16 data they police, so 2015/16 passes by construction. For a 34-match season, and for the zero-rate issues, the floor of 3 is what applies.
 
 The spike's own fail-loud rules (Half End count, reversed treatment window) are deferred to the new-source checklist (milestones.md).
 
@@ -367,3 +377,103 @@ These are the items where the data contradicted the recommendation, the stats-re
 - **D14:** throw-ins in `progressive_passes` (data widens the scope);
 - **D19:** the reliability bar and the unusable ratios (data contradicts the threshold);
 - **§1:** signature traits (no trait qualifies in 2015/16).
+
+---
+
+## 7. M4b implementation and before/after (plan 005 M4b2, 2026-10-03)
+
+**Implemented:**
+- D1: `minutes_nominal_equiv` and `match_nominal_duration` (90, or 120 with extra time); the gate uses `MIN_MINUTES_TOLERANCE`.
+- D5: `second_position_group`, `position_group_share`, `position_group_margin_pct`, `position_group_ambiguous`.
+- D12: `open_play_passes_attempted`, `team_open_play_passes_while_on` (failing `pass_credit_out_of_range` outside 7–11), `team_pass_share`.
+- D13: `passes_injury_clearance`, `long_passes_injury_clearance`; both leave the completion denominators.
+- D14: one `RESTART_TYPES` in `metrics/pass_types.py`. `is_progressive_pass` requires `pass_type_name`.
+- D15: `np_shots`, `np_xg`, `np_xg_per_shot`, plus their p90s.
+- D16:
+  - fallbacks are not direct;
+  - the receipt must lie after the key pass;
+  - report-only counters `xga_no_receipt`, `xga_missing_shooter`, `xga_dangling_shot_id`, `xga_missing_assister`, each with a D22 limit (user, 2026-10-03).
+- D22:
+  - `report_only_limit_exceeded` fails the build;
+  - `stint_late_start_exceeds_limit` (> 2.0 min) fails the build.
+  - 2015/16: 0 failures.
+
+**Pipeline vs independent references:** all 15 reconcile tests pass (chunk A, chunk B and core × 5 leagues) with no change to the fixtures. The match-level values are checked independently there: `spikes/verify_core_metrics.py` rebuilds the per-pass credit (`team_open_play_passes_while_on`) and `np_*` from raw JSON.
+
+`spikes/m4b_before_after.py` checks the **season aggregation step** only. It recomputes `minutes_nominal_equiv`, `team_pass_share`, `np_xg_per_shot` and the margin columns from the match parquet's own columns (`match_nominal_duration`, `match_duration`, the credit counts), without eleveniq, and agrees on every row.
+
+**Flags (STOP rule, `spikes/expected_m4b_flips.json`, written before the rebuild):**
+- `meets_min_minutes`: exactly the 31 expected flips, all down. That is 28 pool outfield, 2 pool GK (Agassa, Berisha) and 1 Bundesliga (Bender).
+- `position_group`, `is_primary_stint`, `is_outfield`, `is_gk`, `in_percentile_pool`, `multi_team_season` and `multi_competition_season`: 0 flips.
+- Minutes and rows: unchanged.
+- The rule was shown to fail: with Grealish removed from a scratch copy of the list, the script exits 1 and names him.
+
+**Δ per league** (season totals, after − before):
+
+| League | `progressive_passes` | % | `final_third_entries_pass` | `box_entries_pass` | `long_passes_attempted` | `long_passes_completed` | `long_passes_unknown_outcome` | `xg_assisted_direct` |
+|---|---|---|---|---|---|---|---|---|
+| La Liga | −6,517 | −16.8% | −1,095 | −303 | −1,845 | −1,087 | −36 | −0.3694 |
+| Premier League | −6,028 | −15.1% | −938 | −235 | −1,847 | −1,090 | −26 | 0 |
+| Serie A | −6,046 | −15.0% | −924 | −271 | −1,313 | −739 | −20 | 0 |
+| Ligue 1 | −6,871 | −17.0% | −1,229 | −333 | −1,585 | −952 | −33 | 0 |
+| Bundesliga | −711 | −21.3% | −148 | −34 | −171 | −98 | −4 | 0 |
+
+Pool outfield means, before → after:
+- `pass_completion_pct`: 0.7626 → 0.7637
+- `long_pass_completion_pct`: 0.5717 → 0.5714
+- `progressive_passes_p90`: 4.585 → 3.834
+- `long_passes_attempted_p90`: 6.195 → 5.997
+- `box_entries_pass_p90`: 0.681 → 0.649
+- `final_third_entries_pass_p90`: 2.612 → 2.480
+
+**Gated pool:** 1,233 rows (D1). 13 are ambiguous (D5), as M4a measured.
+
+**D12b (pre-registered):** `team_pass_share` against leave-one-out possession, and its split-half reliability.
+
+| Group | n | ρ (duration) | ρ (pass share) | ρ by league (duration) | r_full | Enters DNA |
+|---|---|---|---|---|---|---|
+| DM-CM | 294 | −0.017 | −0.032 | 0.10, −0.01, −0.08, −0.07 | 0.936 | **yes** |
+| CB | 255 | 0.361 | 0.377 | 0.46, 0.43, 0.22, 0.34 | 0.873 | **no** (|ρ| ≥ 0.3) |
+
+So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB has no pass-volume DNA metric, as D12 says when the candidate fails.
+
+**D17 and D19 re-run on M4b output** (findings for the M4c registry review):
+- `np_xg` ~ `xg` (0.93–1.00) and `np_shots` ~ `shots` (0.99–1.00): the np forms replace the raw ones in DNA (D15).
+- Every other D17 pair is as in M4a; `progressive_passes` ~ `final_third_entries_pass` for DM-CM is now 0.891.
+- 49 of 180 metric × group cells are below r_full 0.7 at the gate.
+- `progressive_passes_p90` (restarts excluded) is 0.84–0.90 in every group.
+- `np_xg_p90` r_full: AM-Winger 0.767, DM-CM 0.741, FB-WB 0.644, **ST 0.599**, CB 0.326.
+- D9: `progressive_passes_p90`, `np_xg_p90`, the pass entries and long passes are `global_ok` in all 5 groups; `np_shots_p90` in 3 of 5.
+- D12 after restarts are excluded:
+  - `progressive_passes_p90` possession ρ is CB 0.45–0.50, DM-CM 0.47, and **FB-WB 0.51–0.52 (newly triggered)**. All are ≤ 0.55, inside the D12 allow-list rationale.
+  - **`np_xg_p90` for ST is newly triggered: 0.436 (duration), 0.442 (pass share). AM-Winger is triggered on pass share (0.411).**
+- Signature traits: unchanged (one zero-heavy cell, no holder).
+- D20: 244 gated rows sit above a group P99.
+
+**User decisions on the M4b2 findings (2026-10-03):**
+1. **`test_h1_counts_match_adr_and_ratios_recompute`:** it reads `long_passes_unknown_outcome` and `shots_on_target` from the reference totals instead of hard-coded pre-D14 figures.
+2. **`np_xg_p90` for ST is not in DNA.** Its r_full is 0.599, below the pre-registered D19 bar of 0.6, and the bar stays strict.
+   - Raw `xg_p90` is **not** substituted: penalty-taking is a team role, not style (D15).
+   - `np_xg` stays a displayed profile and comparison metric for ST.
+   - This is an outcome of the pre-registered rule, not a new decision.
+3. **No allow-list for the newly triggered D12 cells.**
+   - `np_xg_p90` ST (possession ρ 0.436 duration / 0.442 pass share) is out of DNA; it is already out under item 2.
+   - `np_xg_p90` AM-Winger (ρ 0.411 on the pass-share proxy) is flagged `team_style_biased` and stays out of DNA, under the same no-allow-list rule.
+   - D12b's `team_pass_share` for CB (ρ 0.36) stays out under the |ρ| < 0.3 entry rule; for DM-CM it enters.
+4. **`progressive_passes_p90` FB-WB** (possession ρ 0.51–0.52, newly triggered): recorded only. It stays inside the ≤ 0.55 basis of the existing progressive-passes allow-list.
+
+---
+
+## 8. Recorded for later (user, 2026-10-03)
+
+**M4c (registry), not implemented in M4b:**
+- **`np_xg_per_shot` minimum shots.** It gets the same minimum-attempts rule as the other ratios (D19). In the gated pool, 208 rows have fewer than 5 non-penalty shots, and the top value comes from a single shot (0.765, Genevois, a CB).
+- **`second_position_group` minimum share.** Below a minimum share of minutes it is null. Today 10 GK rows get an outfield second group from a fraction of a minute (Begović DM-CM 1.03 min, Maignan ST 0.017 min). The ambiguity flag is unaffected (margin ≈ 1.0).
+
+**New chunk M4b3, before M4c: open-play creation.**
+- **Why:** penalties left `np_xg` because taking them is a team role (D15), and restarts left progressive passes, entries and long passes for the same reason (D14). But `xg_assisted`, `key_passes` and `assists` still include corners and free kicks. In the PL 2015/16, restarts are **13.4%** of all xG assisted, and for top creators far more: **Payet 41%, Özil 31%**, Lamela 24%, Eriksen 23%. That is as large as the penalty share of strikers' xG (11.2%), which D15 removed.
+- **Scope:**
+  - open-play `xg_assisted` / `key_passes` / `assists` (passes not in `RESTART_TYPES`);
+  - spike and reference totals first, then the pipeline (the M4b1/M4b2 pattern);
+  - set-piece delivery becomes a displayed **signature trait** (§1), not a DNA metric.
+

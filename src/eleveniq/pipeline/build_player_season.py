@@ -47,8 +47,10 @@ import polars as pl
 
 from eleveniq.config import (
     COMPETITION_SEASONS,
+    AMBIGUOUS_POSITION_MARGIN,
     MIN_AERIAL_CONTESTS,
     MIN_MINUTES_THRESHOLD,
+    MIN_MINUTES_TOLERANCE,
     CompetitionSeason,
     validate_competition_seasons,
 )
@@ -58,7 +60,12 @@ from eleveniq.pipeline.coverage import (
     check_season_ids_unique,
 )
 from eleveniq.statsbomb.loader import load_competitions
-from eleveniq.metrics.positions import OUTFIELD_GROUPS, POSITION_GROUP_COLUMNS
+from eleveniq.metrics.positions import (
+    GK_GROUP,
+    OUTFIELD_GROUPS,
+    POSITION_GROUP_COLUMNS,
+    UNKNOWN_POSITION_GROUP,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +85,7 @@ _GROUP_KEY = [
 # the Float64 metrics xg_assisted and xg_assisted_direct.
 _COUNT_COLS: list[str] = [
     "goals", "shots", "shots_on_target",
+    "np_shots", "np_xg",  # ADR 004 D15
     "passes_attempted", "passes_completed",
     "progressive_passes", "key_passes",
     "carries", "progressive_carries",
@@ -112,9 +120,53 @@ _DISPLAY_ONLY_COLS: list[str] = [
     "crosses_unknown_outcome",
     "long_passes_completed",
     "long_passes_unknown_outcome",
+    "long_passes_injury_clearance",
+    "passes_injury_clearance",  # ADR 004 D13
+    "open_play_passes_attempted",  # ADR 004 D12
+    "team_open_play_passes_while_on",  # ADR 004 D12
     "passes_missing_length",
     "ball_recoveries_failed",
 ]
+
+
+def _position_margin_columns(season: pl.DataFrame) -> pl.DataFrame:
+    """
+    ADR 004 D5: second_position_group, position_group_share,
+    position_group_margin_pct and position_group_ambiguous.
+
+    The second group is the group with the most minutes after position_group,
+    among GK and the outfield groups (UNKNOWN is not a group: its minutes fail the
+    build). Ties go to the alphabetically first group, as for position_group. For
+    an outfield row GK is never the second group. It is null when its minutes are
+    0, and the margin is then the top group's share: 1.0, unless an outfield row
+    also has GK minutes (GK is never its second group). share and margin are
+    shares of minutes_played.
+    """
+    candidates = [g for g in POSITION_GROUP_COLUMNS if g != UNKNOWN_POSITION_GROUP]
+    second = pl.lit(None, dtype=pl.Utf8)
+    best = pl.lit(0.0)
+    for group in candidates:  # alphabetical: only a strictly larger total overrides
+        col = pl.col(POSITION_GROUP_COLUMNS[group])
+        eligible = pl.col("position_group") != group
+        if group == GK_GROUP:
+            eligible = eligible & pl.col("position_group").is_in(sorted(OUTFIELD_GROUPS)).not_()
+        better = eligible & (col > best)
+        second = pl.when(better).then(pl.lit(group)).otherwise(second)
+        best = pl.when(better).then(col).otherwise(best)
+    top = pl.lit(0.0)
+    for group in candidates:
+        top = pl.when(pl.col("position_group") == group).then(
+            pl.col(POSITION_GROUP_COLUMNS[group])).otherwise(top)
+    minutes = pl.col("minutes_played")
+    season = season.with_columns(
+        second.alias("second_position_group"),
+        pl.when(minutes > 0).then(top / minutes).otherwise(None).alias("position_group_share"),
+        pl.when(minutes > 0).then((top - best) / minutes).otherwise(None)
+        .alias("position_group_margin_pct"),
+    )
+    return season.with_columns(
+        (pl.col("position_group_margin_pct") < AMBIGUOUS_POSITION_MARGIN)
+        .fill_null(False).alias("position_group_ambiguous"))
 
 
 def _season_position_group(df: pl.DataFrame) -> pl.Series:
@@ -255,7 +307,8 @@ def aggregate_player_season(
 
     Args:
         df: player_match_stats DataFrame (one row per player per match).
-        min_minutes: minimum minutes threshold for meets_min_minutes flag.
+        min_minutes: minimum nominal-equivalent minutes for meets_min_minutes
+            (ADR 004 D1: minutes_nominal_equiv >= min_minutes - MIN_MINUTES_TOLERANCE).
         competition_seasons: configured competition-seasons; their coverage
             class sets in_percentile_pool. A (competition_id, season_id, source)
             in df but not configured raises ValueError.
@@ -271,6 +324,9 @@ def aggregate_player_season(
         pl.col("started").sum().cast(pl.Int32).alias("starts"),
         pl.col("started_inferred").sum().cast(pl.Int32).alias("started_inferred_count"),
         pl.col("minutes_played").sum().alias("minutes_played"),
+        # ADR 004 D1: exposure on the nominal clock, for the minutes gate.
+        (pl.col("minutes_played") * pl.col("match_nominal_duration") / pl.col("match_duration"))
+        .sum().alias("minutes_nominal_equiv"),
         pl.col("xg").sum().alias("xg"),
     ]
     for col in _COUNT_COLS + _DISPLAY_ONLY_COLS:
@@ -297,6 +353,7 @@ def aggregate_player_season(
     season = season.with_columns(
         _season_position_group(season),
     )
+    season = _position_margin_columns(season)
 
     # ------------------------------------------------------------------
     # Step 3: Per-90 columns (null when minutes_played == 0)
@@ -320,9 +377,13 @@ def aggregate_player_season(
     # ------------------------------------------------------------------
     # Step 4: Derived ratio columns (null when denominator == 0)
     # ------------------------------------------------------------------
-    known_attempts = pl.col("passes_attempted") - pl.col("passes_unknown_outcome")
+    # Unknown outcomes and Injury Clearances are neither completed nor failed
+    # attempts: both leave the completion denominators (ADR 002 §14, ADR 004 D13).
+    known_attempts = (pl.col("passes_attempted") - pl.col("passes_unknown_outcome")
+                      - pl.col("passes_injury_clearance"))
     known_crosses = pl.col("crosses_attempted") - pl.col("crosses_unknown_outcome")
-    known_long_passes = pl.col("long_passes_attempted") - pl.col("long_passes_unknown_outcome")
+    known_long_passes = (pl.col("long_passes_attempted") - pl.col("long_passes_unknown_outcome")
+                         - pl.col("long_passes_injury_clearance"))
     season = season.with_columns([
         pl.when(known_attempts > 0)
         .then(pl.col("passes_completed").cast(pl.Float64) / known_attempts.cast(pl.Float64))
@@ -333,6 +394,19 @@ def aggregate_player_season(
         .then(pl.col("xg") / pl.col("shots").cast(pl.Float64))
         .otherwise(None)
         .alias("xg_per_shot"),
+
+        # ADR 004 D15.
+        pl.when(pl.col("np_shots") > 0)
+        .then(pl.col("np_xg") / pl.col("np_shots").cast(pl.Float64))
+        .otherwise(None)
+        .alias("np_xg_per_shot"),
+
+        # ADR 004 D12: share of the team's open-play passes while he was on.
+        pl.when(pl.col("team_open_play_passes_while_on") > 0)
+        .then(pl.col("open_play_passes_attempted").cast(pl.Float64)
+              / pl.col("team_open_play_passes_while_on").cast(pl.Float64))
+        .otherwise(None)
+        .alias("team_pass_share"),
 
         pl.when(pl.col("dribbles_attempted") > 0)
         .then(pl.col("dribbles_completed").cast(pl.Float64) / pl.col("dribbles_attempted").cast(pl.Float64))
@@ -366,7 +440,10 @@ def aggregate_player_season(
     # Step 5: Eligibility flags
     # ------------------------------------------------------------------
     season = season.with_columns([
-        (pl.col("minutes_played") >= min_minutes).alias("meets_min_minutes"),
+        # ADR 004 D1: the gate reads nominal-equivalent minutes; per-90s keep
+        # minutes_played (elapsed time).
+        (pl.col("minutes_nominal_equiv") >= min_minutes - MIN_MINUTES_TOLERANCE)
+        .alias("meets_min_minutes"),
         (pl.col("position_group") == "GK").alias("is_gk"),
         pl.col("position_group").is_in(sorted(OUTFIELD_GROUPS)).alias("is_outfield"),
     ])

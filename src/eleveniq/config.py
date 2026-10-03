@@ -15,6 +15,15 @@ from typing import Literal
 # meets_min_minutes=False.  See ADR 002 §5.
 MIN_MINUTES_THRESHOLD: int = 900
 
+# ADR 004 D1: meets_min_minutes compares minutes_nominal_equiv (Σ minutes_played ×
+# nominal match length / match_duration) with MIN_MINUTES_THRESHOLD minus this
+# tolerance: the float sum of ten full matches often lands at 899.9999999999999.
+MIN_MINUTES_TOLERANCE: float = 1e-6
+
+# ADR 004 D5: a season row is position_group_ambiguous when the top two position
+# groups' minutes differ by less than this share of minutes_played.
+AMBIGUOUS_POSITION_MARGIN: float = 0.05
+
 LONG_PASS_THRESHOLD_UNITS: int = 30
 
 # A playing period whose Half End is more than this many minutes before its
@@ -27,7 +36,42 @@ PERIOD_SHORT_FAIL_MINUTES: float = 5.0
 # most this many minutes (1 s); a larger gap fails the build. See ADR 002 §31.1.
 HALF_END_AGREE_MINUTES: float = 1 / 60
 
+# ADR 004 D22: a stint that starts after its period's Half End is clamped to it and
+# reported (stint_after_period_end); starting more than this many minutes after the
+# whistle fails the build (stint_late_start_exceeds_limit). 2015/16: two cases, 1 s.
+STINT_LATE_START_FAIL_MINUTES: float = 2.0
+
+# ADR 004 D22: per competition-season, a report-only issue fails the build when its
+# count exceeds max(limit per 100 matches x matches / 100, REPORT_ONLY_LIMIT_FLOOR).
+# Each limit is 3 x the worst 2015/16 league rate (ADR 004 D22 table; numerators
+# are entries, except events_outside_credited_time, counted per player-match, and
+# the xga_* counters, counted in assisted shots, summed over the season's matches).
+REPORT_ONLY_LIMIT_FLOOR: int = 3
+REPORT_ONLY_LIMITS_PER_100_MATCHES: dict[str, float] = {
+    "period_end_before_nominal": 3 * 17 / 380 * 100,      # Serie A 17 / 380
+    "stint_after_period_end": 3 * 1 / 377 * 100,          # Ligue 1 1 / 377
+    "treatment_window_inside_stint": 3 * 3 / 377 * 100,   # Ligue 1 3 / 377
+    "overlapping_stints": 3 * 5 / 380 * 100,              # PL 5 / 380
+    "unpaired_player_off_capped": 3 * 2 / 377 * 100,      # Ligue 1 2 / 377
+    "dismissal_after_period_end": 0.0,                    # 0 in 2015/16; floor allows 3
+    "dismissal_after_match_end": 0.0,                     # 0 in 2015/16; floor allows 3
+    "events_outside_credited_time": 3 * 3 / 380 * 100,    # PL 3 player-matches / 380
+    # ADR 004 D16 xG-assisted fallbacks (user, 2026-10-03), in assisted shots.
+    "xga_no_receipt": 3 * 6 / 380 * 100,                  # La Liga 6 shots / 380
+    "xga_missing_shooter": 0.0,                           # 0 in 2015/16; floor allows 3
+    "xga_dangling_shot_id": 0.0,                          # 0 in 2015/16; floor allows 3
+    "xga_missing_assister": 0.0,                          # 0 in 2015/16; floor allows 3
+}
+
 MIN_AERIAL_CONTESTS: int = 10
+
+# ADR 004 D12: every open-play pass is credited to between these many players of
+# the passing team (its passer plus the teammates on the pitch). 7 is the Laws of
+# the Game minimum on the pitch, 11 the maximum; 2015/16 observed 8-11. A pass
+# outside the range fails the build (pass_credit_out_of_range): a timeline or clock
+# error, e.g. a pass credited to its passer only.
+MIN_PLAYERS_PER_PASS: int = 7
+MAX_PLAYERS_PER_PASS: int = 11
 
 # Maximum cumulative carry distance (StatsBomb units) allowed between a shooter's
 # last Ball Receipt* and their shot for the assist to count as "direct".

@@ -1,13 +1,13 @@
 """Tests for eleveniq/metrics/entries.py."""
 import pytest
 from eleveniq.metrics.entries import (
-    SET_PIECE_TYPES,
     FINAL_THIRD_X,
     is_final_third_entry_pass,
     is_final_third_entry_carry,
     is_box_entry_pass,
     is_box_entry_carry,
 )
+from eleveniq.metrics.pass_types import RESTART_TYPES, SET_PIECE_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +35,18 @@ class TestSetPieceTypes:
 
     def test_interception_not_included(self):
         assert "Interception" not in SET_PIECE_TYPES
+
+
+class TestRestartTypes:
+    """ADR 004 D14: the restarts excluded from pass entries are the set pieces
+    plus throw-ins; Recovery and Interception passes are open play."""
+
+    def test_restarts_are_set_pieces_plus_throw_in(self):
+        assert RESTART_TYPES == SET_PIECE_TYPES | {"Throw-in"}
+
+    @pytest.mark.parametrize("ptype", ["Recovery", "Interception", None])
+    def test_open_play_types_are_not_restarts(self, ptype):
+        assert ptype not in RESTART_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +96,10 @@ class TestIsFinalThirdEntryPass:
         assert is_final_third_entry_pass((60.0, 40.0), (85.0, 40.0),
                                          outcome=None, pass_type_name="Kick Off") is False
 
-    def test_throw_in_included(self):
+    def test_throw_in_excluded(self):
+        """ADR 004 D14: a throw-in is a restart and never a final-third entry pass."""
         assert is_final_third_entry_pass((60.0, 40.0), (85.0, 40.0),
-                                         outcome=None, pass_type_name="Throw-in") is True
+                                         outcome=None, pass_type_name="Throw-in") is False
 
     def test_recovery_included(self):
         assert is_final_third_entry_pass((60.0, 40.0), (85.0, 40.0),
@@ -197,9 +210,10 @@ class TestIsBoxEntryPass:
         assert is_box_entry_pass((100.0, 40.0), (105.0, 40.0),
                                   outcome=None, pass_type_name="Kick Off") is False
 
-    def test_throw_in_included(self):
+    def test_throw_in_excluded(self):
+        """ADR 004 D14: a throw-in is a restart and never a box entry pass."""
         assert is_box_entry_pass((100.0, 40.0), (105.0, 40.0),
-                                  outcome=None, pass_type_name="Throw-in") is True
+                                  outcome=None, pass_type_name="Throw-in") is False
 
     def test_recovery_included(self):
         assert is_box_entry_pass((100.0, 40.0), (105.0, 40.0),

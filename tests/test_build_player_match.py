@@ -44,8 +44,22 @@ from eleveniq.pipeline.build_player_match import (
     part_path,
 )
 from eleveniq.config import CompetitionSeason
+import eleveniq.pipeline.build_player_match as _bpm
+from eleveniq.metrics.minutes import PeriodClock, player_timeline
 
 _FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "statsbomb"
+
+
+@pytest.fixture
+def synthetic_small_teams(monkeypatch):
+    """
+    Relax the ADR 004 D12 players-per-pass minimum for the minimal synthetic
+    fixtures (teams of 1-4 players, below the Laws minimum of 7 that the build
+    enforces). Applied explicitly, test by test, never autouse: every other test,
+    including TestPassCreditBounds, runs with the real MIN_PLAYERS_PER_PASS = 7.
+    Patched where it is read (build_player_match), not only in config.
+    """
+    monkeypatch.setattr(_bpm, "MIN_PLAYERS_PER_PASS", 1)
 
 # ---------------------------------------------------------------------------
 # _process_match
@@ -61,6 +75,7 @@ def process_match_result():
 
 
 class TestProcessMatchRows:
+    @pytest.mark.usefixtures("synthetic_small_teams")
     def test_row_count_excludes_unused_sub(self, process_match_result):
         by_id, _ = process_match_result
         # 3 Team A + 3 Team B players with minutes; Frank (2003) unused
@@ -276,6 +291,7 @@ class TestExplicitToAfterCardCause:
 # build_competition_season
 # ---------------------------------------------------------------------------
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_writes_parquet(tmp_path):
     out = tmp_path / "out.parquet"
     df, _ = build_competition_season(
@@ -286,6 +302,7 @@ def test_build_competition_season_writes_parquet(tmp_path):
     assert len(reloaded) == len(df)
 
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_row_count(tmp_path):
     out = tmp_path / "out.parquet"
     df, _ = build_competition_season(
@@ -294,6 +311,7 @@ def test_build_competition_season_row_count(tmp_path):
     assert len(df) == 6  # Frank (unused sub) excluded; Grace (fallback starter) included
 
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_schema_has_started_and_assists(tmp_path):
     out = tmp_path / "out.parquet"
     df, _ = build_competition_season(
@@ -306,6 +324,7 @@ def test_build_competition_season_schema_has_started_and_assists(tmp_path):
     assert "shots_missing_xg" in df.columns
 
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_returns_dismissal_report(tmp_path):
     out = tmp_path / "out.parquet"
     _, dismissals = build_competition_season(
@@ -314,6 +333,7 @@ def test_build_competition_season_returns_dismissal_report(tmp_path):
     assert any(d.get("player_id") == 1003 for d in dismissals)
 
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_schema_has_new_columns(tmp_path):
     """
     Schema test for columns added in this chunk:
@@ -340,6 +360,7 @@ def test_build_competition_season_schema_has_new_columns(tmp_path):
         )
 
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_crosses_non_negative(tmp_path):
     """
     crosses_attempted and crosses_completed must be >= 0 for every row
@@ -353,6 +374,7 @@ def test_build_competition_season_crosses_non_negative(tmp_path):
     assert (df["crosses_completed"] >= 0).all()
 
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_crosses_completed_le_attempted(tmp_path):
     """
     crosses_completed <= crosses_attempted for every row — a completed cross
@@ -601,6 +623,7 @@ class TestPrimaryRawPosition:
 # build_competition_season error handler
 # ---------------------------------------------------------------------------
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_failed_match_fails_league(tmp_path, monkeypatch):
     """
     A match that raises inside _process_match is logged, the remaining matches
@@ -1127,6 +1150,10 @@ class TestSummariseQualityReport:
             {"issue": "events_outside_credited_time", "match_id": 12, "player_id": 27},
             {"issue": "events_outside_credited_time", "match_id": 12, "player_id": 27},
             {"issue": "events_outside_credited_time", "match_id": 12, "player_id": 27},
+            # ADR 004 D16: per-match counts, summed by their "count" field.
+            {"issue": "xga_no_receipt", "match_id": 12, "count": 2},
+            {"issue": "xga_no_receipt", "match_id": 13, "count": 1},
+            {"issue": "xga_dangling_shot_id", "match_id": 13, "count": 1},
         ]
         assert summarise_quality_report(report) == {
             "dismissals": 2,
@@ -1147,6 +1174,10 @@ class TestSummariseQualityReport:
             "dismissal_after_period_end": 1,
             "dismissal_after_match_end": 1,
             "events_outside_credited_time": 3,
+            "xga_no_receipt": 3,
+            "xga_missing_shooter": 0,
+            "xga_dangling_shot_id": 1,
+            "xga_missing_assister": 0,
         }
 
     def test_empty_report_all_zero(self):
@@ -1348,6 +1379,7 @@ class TestBuildFailsOnQualityIssues:
         ev = _ev("Duel", duel={"type": {"name": "Aerial Won"}})
         assert "unknown_duel_type" in _build_fails(tmp_path, [ev])
 
+    @pytest.mark.usefixtures("synthetic_small_teams")
     def test_pass_missing_location_fails(self, tmp_path):
         ev = _ev("Pass", **{"pass": {"end_location": [70, 40], "length": 20}})
         assert "pass_missing_location" in _build_fails(tmp_path, [ev])
@@ -1418,8 +1450,12 @@ class TestPenaltyShootoutExcluded:
         events = [_ev("Bad Behaviour", period=3, minute=100,
                       bad_behaviour={"card": {"name": "Red Card"}}),
                   _ev("Pressure", _BENCH, period=4, minute=120)]
+        # The sub comes on at (4, 110:00). _spell's shorthand would put 110:00 in
+        # period 2, 20 min after that whistle, which ADR 004 D22 now fails
+        # (stint_late_start_exceeds_limit), so the period is set explicitly.
         lineups = _quality_lineups(
-            bench_positions=[_spell("110:00", None, "Substitution - On (Tactical)")])
+            bench_positions=[{**_spell("110:00", None, "Substitution - On (Tactical)"),
+                              "from_period": 4}])
         _, (df, _) = _build(tmp_path, events, lineups)
         row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
         assert row["minutes_played"] == pytest.approx(100.0)
@@ -1451,6 +1487,7 @@ class TestPenaltyShootoutExcluded:
         assert not [d for d in report if str(d.get("issue", "")).startswith("dropped_event")]
 
 
+@pytest.mark.usefixtures("synthetic_small_teams")
 def test_build_competition_season_twice_identical_row_by_row(tmp_path):
     first, _ = build_competition_season(
         99, 1, data_root=_FIXTURE_ROOT, output_path=tmp_path / "a.parquet")
@@ -1721,9 +1758,10 @@ class TestSubstitutionOffPipelineEdges:
         # 90:00, so (2, 92:30) precedes a substitution at (3, 91:00). His Player On
         # is after the (2, 90:00) whistle, so the stint is clamped to that end
         # (ADR 002 §31.1, stint_after_period_end) and runs from the period-3
-        # restart to his substitution: 88 + 1 min.
+        # restart to his substitution: 88 + 1 min. The return is 1:30 after the
+        # whistle (was 2:30): ADR 004 D22 fails a start more than 2 min late.
         spells = [{**_spell("00:00", "88:00", "Starting XI"), "to_period": 2},
-                  {**_spell("92:30", None, "Player On"), "from_period": 2}]
+                  {**_spell("91:30", None, "Player On"), "from_period": 2}]
         events = [_sub_off(_STARTER, period=3, minute=91),
                   _ev("Half End", None, period=4, minute=120)]
         _, (df, report) = _build(tmp_path, events, _quality_lineups(starter_positions=spells))
@@ -1797,6 +1835,7 @@ def test_failing_quality_issues_are_emitted_names():
 
 
 class TestPeriodFiveAssists:
+    @pytest.mark.usefixtures("synthetic_small_teams")
     def test_shootout_shot_assist_counts_toward_neither_key_passes_nor_xga(self, tmp_path):
         # A period-2 pass → shot pair is the control; the same pair in period 5
         # (shootout) must add nothing (H1 review follow-up 4).
@@ -2317,6 +2356,7 @@ class TestPeriodAwarePipeline:
     def _issues(report, name):
         return [d for d in report if d.get("issue") == name]
 
+    @pytest.mark.usefixtures("synthetic_small_teams")
     def test_first_half_stoppage_is_credited_and_post_whistle_events_extend_nothing(self, tmp_path):
         # Half End (1, 47:00) and (2, 93:00); a Ball Receipt after the first-half
         # whistle stays a counted event but adds no time: 47 + 48 = 95.
@@ -2392,9 +2432,12 @@ class TestPeriodAwarePipeline:
 
     @pytest.mark.parametrize("kind, fails", [("Pass", True), ("Foul Committed", True),
                                              ("Bad Behaviour", False)])
-    def test_event_after_unpaired_player_off(self, tmp_path, kind, fails):
+    def test_event_after_unpaired_player_off(self, tmp_path, kind, fails, request):
         # ADR 002 §31.2: only a card (Bad Behaviour) or his own Substitution may
         # follow; a Foul Committed needs him on the pitch, even with a card.
+        if (kind, fails) == ("Pass", True):
+            # Only this case has an open-play pass on the 2-player synthetic team.
+            request.getfixturevalue("synthetic_small_teams")
         later = _ev(kind, period=2, minute=80)
         if kind == "Bad Behaviour":
             later["bad_behaviour"] = {"card": {"name": "Yellow Card"}}
@@ -2426,6 +2469,7 @@ class TestPeriodAwarePipeline:
         with pytest.raises(MatchProcessingError):
             build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
 
+    @pytest.mark.usefixtures("synthetic_small_teams")
     def test_events_outside_credited_time_are_reported(self, tmp_path):
         # Milinković-Savić 3879637 pattern: Player Off (1, 30:00), Player On
         # (1, 32:00), but the lineup resumes only at (2, 45:00). His pass at
@@ -2512,6 +2556,7 @@ class TestPeriodAwarePipelineEdges:
                 if d.get("issue") == "unpaired_player_off_capped"] == [pytest.approx(2.0)]
         assert not [d for d in report if d.get("issue") == "events_outside_credited_time"]
 
+    @pytest.mark.usefixtures("synthetic_small_teams")
     def test_events_outside_credited_time_uses_the_period_clock(self, tmp_path):
         # Half End (1, 47:00). Inside credited time, so not reported:
         #  - the starter's pass in first-half stoppage (1, 46:00);
@@ -2530,3 +2575,544 @@ class TestPeriodAwarePipelineEdges:
         outside = [(d["player_id"], d["period"], d["minute"], d["second"]) for d in report
                    if d.get("issue") == "events_outside_credited_time"]
         assert outside == [(_BENCH, 1, 45, 30)]
+
+
+# ---------------------------------------------------------------------------
+# Team open-play pass credit (plan 005 M4b, ADR 004 D12)
+# ---------------------------------------------------------------------------
+
+def _open_play_pass(pid: int, *, period: int = 1, minute: int = 10, ptype: str | None = None) -> dict:
+    payload: dict = {"end_location": [60, 40]}
+    if ptype:
+        payload["type"] = {"name": ptype}
+    return _ev("Pass", pid, period=period, minute=minute, location=[50, 40], **{"pass": payload})
+
+
+def _full_match_players(n: int) -> list[list[dict]]:
+    return [[_spell("00:00", None, "Starting XI")] for _ in range(n)]
+
+
+class TestPassCreditBounds:
+    """ADR 004 D12: every open-play pass is credited to 7-11 players (the Laws
+    minimum to the maximum on the pitch); outside that range the build fails with
+    pass_credit_out_of_range. These tests run with the real bound (no
+    synthetic_small_teams fixture)."""
+
+    def test_config_bounds_are_the_laws_minimum_and_maximum(self):
+        from eleveniq import config
+        assert config.MIN_PLAYERS_PER_PASS == 7
+        assert config.MAX_PLAYERS_PER_PASS == 11
+
+    def test_pipeline_reads_the_config_bounds(self):
+        assert (_bpm.MIN_PLAYERS_PER_PASS, _bpm.MAX_PLAYERS_PER_PASS) == (7, 11)
+
+    def test_six_player_team_fails_the_build(self, tmp_path):
+        msg = _build_team_fails(tmp_path, _full_match_players(6), [_open_play_pass(_TEAM_BASE)])
+        assert "pass_credit_out_of_range" in msg
+        assert "'players': 6" in msg
+
+    @pytest.mark.parametrize("n", [7, 11])
+    def test_seven_and_eleven_player_teams_pass(self, tmp_path, n):
+        df, report = _build_team(tmp_path, _full_match_players(n), [_open_play_pass(_TEAM_BASE)])
+        assert not [d for d in report if d.get("issue") == "pass_credit_out_of_range"]
+        assert df["team_open_play_passes_while_on"].to_list() == [1] * n
+        assert df.filter(pl.col("player_id") == _TEAM_BASE)["open_play_passes_attempted"][0] == 1
+
+    def test_pass_team_mismatch_fails_the_build(self, tmp_path):
+        """ADR 004 D12: a pass whose team.id is not its passer's lineup team fails
+        the build (pass_team_mismatch). 11 players, so the 7-11 bound is not the cause."""
+        bad = {**_open_play_pass(_TEAM_BASE), "team": {"id": _TEAM + 1}}
+        msg = _build_team_fails(tmp_path, _full_match_players(11), [bad])
+        assert "pass_team_mismatch" in msg
+
+    def test_restart_by_a_small_team_is_not_checked(self, tmp_path):
+        """Only open-play passes are credited, so a throw-in never trips the bound."""
+        df, _ = _build_team(tmp_path, _full_match_players(6),
+                            [_open_play_pass(_TEAM_BASE, ptype="Throw-in")])
+        assert df["team_open_play_passes_while_on"].sum() == 0
+        assert df["open_play_passes_attempted"].sum() == 0
+
+
+class TestTeamOpenPlayPassCredits:
+    """ADR 004 D12 credit rule on PlayerTimeline objects (team_open_play_pass_credits):
+    half-open pieces, closed at the end of the pass's own period; the passer always
+    counts; restarts are not credited. Clock: period 1 ends at 47:00, period 2 at
+    93:00 (47 + 48 = 95 elapsed minutes)."""
+
+    _CLOCK = PeriodClock({1: 47.0, 2: 93.0})
+
+    def _timeline(self, *stints: tuple) -> object:
+        positions = [{"position": "Center Back", "from": f"{int(a):02d}:{round((a % 1) * 60):02d}",
+                      "from_period": fp,
+                      "to": None if b is None else f"{int(b):02d}:{round((b % 1) * 60):02d}",
+                      "to_period": tp, "start_reason": r}
+                     for a, fp, b, tp, r in stints]
+        return player_timeline(positions, self._CLOCK, exit_at=None, treatment_windows=())
+
+    def _pass(self, pid, period, minute, second=0, ptype=None):
+        e = {"id": f"p{pid}-{period}-{minute}-{second}", "type": {"name": "Pass"},
+             "player": {"id": pid}, "period": period, "minute": minute, "second": second,
+             "pass": {"type": {"name": ptype}} if ptype else {}}
+        return e
+
+    def _run(self, events, timelines):
+        team_of = {pid: 1 for pid in timelines}
+        credits, out_of_range, _ = _bpm.team_open_play_pass_credits(
+            events, timelines, team_of, self._CLOCK)
+        return credits, out_of_range
+
+    def test_pass_at_the_final_whistle_counts_for_everyone_on(self):
+        tl = {1: self._timeline((0, 1, None, None, "Starting XI")),
+              2: self._timeline((0, 1, None, None, "Starting XI"))}
+        credits, _ = self._run([self._pass(1, 2, 93)], tl)
+        assert credits == Counter({1: 1, 2: 1})
+
+    def test_pass_at_half_time_whistle_counts_for_first_half_players_only(self):
+        """Player 2 replaces player 1 at (2, 45:00); player 4 plays throughout. The
+        pass by player 3 at the period-1 Half End (1, 47:00) counts for 1, 3 and 4."""
+        tl = {1: self._timeline((0, 1, 45, 2, "Starting XI")),
+              2: self._timeline((45, 2, None, None, "Substitution")),
+              3: self._timeline((0, 1, None, None, "Starting XI")),
+              4: self._timeline((0, 1, None, None, "Starting XI"))}
+        credits, _ = self._run([self._pass(3, 1, 47)], tl)
+        assert credits == Counter({1: 1, 3: 1, 4: 1})
+
+    def test_pass_at_a_substitution_instant_counts_for_the_incoming_player(self):
+        """1 off and 2 on at (2, 60:00): 3's pass then counts for 2 and 3; 1's own
+        pass at that instant still counts for him (the passer always counts)."""
+        tl = {1: self._timeline((0, 1, 60, 2, "Starting XI")),
+              2: self._timeline((60, 2, None, None, "Substitution")),
+              3: self._timeline((0, 1, None, None, "Starting XI"))}
+        credits, _ = self._run([self._pass(3, 2, 60), self._pass(1, 2, 60)], tl)
+        assert credits == Counter({1: 1, 2: 2, 3: 2})
+
+    def test_second_half_kick_off_counts_despite_float_rounding(self):
+        """Period 1 ends at 48:38, so (2, 45:00) and the second-half piece start come
+        from different float sums; the pass still counts for every teammate on."""
+        clock = PeriodClock({1: 48 + 38 / 60, 2: 93.0})
+        positions = [{"position": "Center Back", "from": "00:00", "from_period": 1,
+                      "to": None, "to_period": None, "start_reason": "Starting XI"}]
+        tl = {pid: player_timeline(positions, clock, exit_at=None, treatment_windows=())
+              for pid in (1, 2, 3)}
+        credits, _, _ = _bpm.team_open_play_pass_credits(
+            [self._pass(1, 2, 45)], tl, {1: 1, 2: 1, 3: 1}, clock)
+        assert credits == Counter({1: 1, 2: 1, 3: 1})
+
+    @pytest.mark.parametrize("ptype", ["Throw-in", "Corner", "Free Kick", "Goal Kick", "Kick Off"])
+    def test_restarts_are_not_credited(self, ptype):
+        tl = {1: self._timeline((0, 1, None, None, "Starting XI"))}
+        credits, bad = self._run([self._pass(1, 1, 10, ptype=ptype)], tl)
+        assert not credits and not bad
+
+    def test_event_team_id_is_the_team_key(self):
+        """The pass carries team.id 1, its passer's lineup team: credited normally."""
+        tl = {1: self._timeline((0, 1, None, None, "Starting XI")),
+              2: self._timeline((0, 1, None, None, "Starting XI"))}
+        e = {**self._pass(1, 1, 10), "team": {"id": 1}}
+        credits, _, mismatches = _bpm.team_open_play_pass_credits(
+            [e], tl, {1: 1, 2: 1}, self._CLOCK)
+        assert credits == Counter({1: 1, 2: 1}) and mismatches == []
+
+    def test_missing_event_team_falls_back_to_the_lineup_team(self):
+        tl = {1: self._timeline((0, 1, None, None, "Starting XI")),
+              2: self._timeline((0, 1, None, None, "Starting XI"))}
+        credits, _, mismatches = _bpm.team_open_play_pass_credits(
+            [self._pass(1, 1, 10)], tl, {1: 1, 2: 1}, self._CLOCK)
+        assert credits == Counter({1: 1, 2: 1}) and mismatches == []
+
+    def test_event_team_differing_from_lineup_team_is_a_mismatch(self):
+        """team.id 2 but the passer is in team 1's lineup: reported, credited to nobody."""
+        tl = {1: self._timeline((0, 1, None, None, "Starting XI")),
+              2: self._timeline((0, 1, None, None, "Starting XI"))}
+        e = {**self._pass(1, 1, 10), "team": {"id": 2}}
+        credits, _, mismatches = _bpm.team_open_play_pass_credits(
+            [e], tl, {1: 1, 2: 1}, self._CLOCK)
+        assert not credits
+        assert mismatches == [{"event_id": e["id"], "player_id": 1,
+                               "event_team_id": 2, "lineup_team_id": 1}]
+        assert "pass_team_mismatch" in _bpm.FAILING_QUALITY_ISSUES
+
+    def test_out_of_range_pass_is_reported_with_its_count(self):
+        """Under the real bound a 2-player team's pass is out of range."""
+        tl = {1: self._timeline((0, 1, None, None, "Starting XI")),
+              2: self._timeline((0, 1, None, None, "Starting XI"))}
+        _, bad = self._run([self._pass(1, 1, 10)], tl)
+        assert len(bad) == 1 and bad[0]["players"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Report-only limits and the late-start limit (plan 005 M4b, ADR 004 D22)
+# ---------------------------------------------------------------------------
+
+class TestLateStartLimit:
+    """ADR 004 D22: a stint starting after its period's Half End is report-only
+    (stint_after_period_end); more than STINT_LATE_START_FAIL_MINUTES (2.0) late
+    also fails the build (stint_late_start_exceeds_limit)."""
+
+    _CLOCK = PeriodClock({1: 45.0, 2: 90.0})
+
+    def _issues(self, frm: str):
+        stint = {"position": "Center Back", "from": frm, "from_period": 1, "to": None,
+                 "to_period": None, "start_reason": "Substitution"}
+        return [d["issue"] for d in _bpm._stint_bound_issues(1, 2, [stint], self._CLOCK)]
+
+    def test_config_limit_is_two_minutes(self):
+        from eleveniq import config
+        assert config.STINT_LATE_START_FAIL_MINUTES == 2.0
+
+    def test_one_second_late_is_report_only(self):
+        assert self._issues("45:01") == ["stint_after_period_end"]
+
+    def test_exactly_two_minutes_late_is_report_only(self):
+        assert self._issues("47:00") == ["stint_after_period_end"]
+
+    def test_build_fails_on_a_return_two_minutes_thirty_late(self, tmp_path):
+        """End to end: the bench player's stint starts at (1, 47:30), 2:30 after the
+        (1, 45:00) whistle: the build fails."""
+        lineups = _quality_lineups(bench_positions=[_spell("47:30", None, "Player On")
+                                                    | {"from_period": 1}])
+        assert "stint_late_start_exceeds_limit" in _build_fails(tmp_path, [], lineups)
+
+    def test_build_passes_on_a_return_exactly_two_minutes_late(self, tmp_path):
+        lineups = _quality_lineups(bench_positions=[_spell("47:00", None, "Player On")
+                                                    | {"from_period": 1}])
+        _, (_, report) = _build(tmp_path, [], lineups)
+        assert [d["issue"] for d in report if d.get("issue", "").startswith("stint_")] == [
+            "stint_after_period_end"]
+
+    def test_two_minutes_thirty_late_fails(self):
+        """A return 2:30 after the whistle exceeds the 2-minute limit."""
+        assert self._issues("47:30") == ["stint_after_period_end", "stint_late_start_exceeds_limit"]
+
+    def test_more_than_two_minutes_late_fails(self):
+        assert self._issues("47:01") == ["stint_after_period_end", "stint_late_start_exceeds_limit"]
+        assert "stint_late_start_exceeds_limit" in _bpm.FAILING_QUALITY_ISSUES
+
+
+class TestReportOnlyLimits:
+    """ADR 004 D22: per competition-season, a report-only issue fails the build when
+    its count exceeds max(3 x worst 2015/16 rate per 100 matches x matches / 100, 3)."""
+
+    def test_limits_cover_exactly_the_report_only_issues(self):
+        from eleveniq import config
+        assert set(config.REPORT_ONLY_LIMITS_PER_100_MATCHES) == (
+            set(_bpm.PERIOD_AWARE_REPORT_ONLY_ISSUES) | set(_bpm.XGA_FALLBACKS))
+        assert config.REPORT_ONLY_LIMIT_FLOOR == 3
+
+    def test_period_end_limit_for_a_380_match_season_is_51(self):
+        """Serie A 2015/16: 17 of 380 → 3 x 17 = 51 allowed per 380 matches."""
+        report = [{"issue": "period_end_before_nominal", "match_id": i} for i in range(51)]
+        assert _bpm.report_only_limit_failures(report, 380) == []
+        report.append({"issue": "period_end_before_nominal", "match_id": 99})
+        (failure,) = _bpm.report_only_limit_failures(report, 380)
+        assert failure["report_issue"] == "period_end_before_nominal"
+        assert failure["count"] == 52 and failure["limit"] == pytest.approx(51.0)
+
+    def test_floor_of_three_applies_to_a_zero_rate_issue(self):
+        report = [{"issue": "dismissal_after_match_end", "match_id": i} for i in range(3)]
+        assert _bpm.report_only_limit_failures(report, 380) == []
+        report.append({"issue": "dismissal_after_match_end", "match_id": 3})
+        assert len(_bpm.report_only_limit_failures(report, 380)) == 1
+
+    def test_events_outside_credited_time_count_player_matches_not_events(self):
+        """11 events by one player in one match count once (Milinković-Savić)."""
+        one = [{"issue": "events_outside_credited_time", "match_id": 1, "player_id": 7}] * 11
+        assert _bpm.report_only_limit_failures(one, 380) == []
+        many = [{"issue": "events_outside_credited_time", "match_id": m, "player_id": 7}
+                for m in range(10)]
+        (failure,) = _bpm.report_only_limit_failures(many, 380)
+        assert failure["count"] == 10
+
+    def test_exceeding_a_limit_fails_the_build(self, tmp_path, monkeypatch):
+        """End to end: with the limit forced to 0 and the floor to 0, one
+        period_end_before_nominal entry (a 44:00 first half) fails the build."""
+        monkeypatch.setattr(_bpm, "REPORT_ONLY_LIMIT_FLOOR", 0)
+        monkeypatch.setitem(_bpm.REPORT_ONLY_LIMITS_PER_100_MATCHES, "period_end_before_nominal", 0.0)
+        events = [_ev("Half End", None, period=1, minute=44)]
+        msg = _build_fails(tmp_path, events)
+        assert "report_only_limit_exceeded" in msg
+
+
+# ---------------------------------------------------------------------------
+# QA (plan 005 M4b): per-event M4b counters, credit edges, nominal duration
+# ---------------------------------------------------------------------------
+
+def _m4b_pass(outcome: str | None = None, *, ptype: str | None = None, length: float = 20.0,
+              start=(50, 40), end=(70, 40), explicit_null_type: bool = False) -> dict:
+    data: dict = {"end_location": list(end), "length": length}
+    if outcome is not None:
+        data["outcome"] = {"name": outcome}
+    if ptype is not None:
+        data["type"] = {"name": ptype}
+    elif explicit_null_type:
+        data["type"] = None
+    return _ev("Pass", location=list(start), **{"pass": data})
+
+
+class TestAggregateEventsM4bCounters:
+    """_aggregate_events for ADR 004 D12 (open play), D13 (Injury Clearance) and
+    D15 (non-penalty shots/xG). The spike counterparts are tested elsewhere; these
+    pin the pipeline's own counting."""
+
+    def test_penalty_is_out_of_np_shots_and_np_xg(self):
+        """D15: a penalty stays in shots/xg/goals but leaves np_shots and np_xg."""
+        pen = _ev("Shot", shot={"outcome": {"name": "Goal"}, "statsbomb_xg": 0.76,
+                                "type": {"name": "Penalty"}}, location=[108, 40])
+        op = _ev("Shot", shot={"outcome": {"name": "Off T"}, "statsbomb_xg": 0.1,
+                               "type": {"name": "Open Play"}}, location=[110, 40])
+        r = _aggregate_events([pen, op], Counter())
+        assert (r["shots"], r["np_shots"], r["goals"]) == (2, 1, 1)
+        assert r["xg"] == pytest.approx(0.86)
+        assert r["np_xg"] == pytest.approx(0.1)
+
+    def test_long_injury_clearance_is_counted_never_completed_nor_progressive(self):
+        """D13: an Injury Clearance is its own outcome: not completed, not unknown,
+        never progressive even when it gains ground; an open-play long one is a
+        long-pass Injury Clearance and an open-play pass (D12 counts every outcome)."""
+        ic = _m4b_pass("Injury Clearance", length=45.0, start=(60, 40), end=(105, 40))
+        r = _aggregate_events([ic], Counter())
+        assert (r["passes_attempted"], r["passes_completed"], r["passes_unknown_outcome"],
+                r["passes_injury_clearance"]) == (1, 0, 0, 1)
+        assert (r["long_passes_attempted"], r["long_passes_completed"],
+                r["long_passes_unknown_outcome"], r["long_passes_injury_clearance"]) == (1, 0, 0, 1)
+        assert r["progressive_passes"] == 0
+        assert r["final_third_entries_pass"] == 0
+        assert r["open_play_passes_attempted"] == 1
+
+    @pytest.mark.parametrize("ptype", ["Throw-in", "Goal Kick", "Free Kick"])
+    def test_long_restart_injury_clearance_is_not_a_long_pass_part(self, ptype):
+        """D13/D14: a long restart ending as an Injury Clearance is a pass Injury
+        Clearance but no long pass, so long_passes_injury_clearance stays a subset of
+        long_passes_attempted (otherwise the long-pass denominator goes negative)."""
+        r = _aggregate_events([_m4b_pass("Injury Clearance", ptype=ptype, length=40.0)], Counter())
+        assert r["passes_injury_clearance"] == 1
+        assert (r["long_passes_attempted"], r["long_passes_injury_clearance"]) == (0, 0)
+        assert r["open_play_passes_attempted"] == 0
+
+    def test_open_play_counts_every_outcome_and_a_null_type(self):
+        """D12: open play = every outcome, restarts excluded. An explicit JSON null
+        pass.type is open play, not a crash or a restart."""
+        events = [_m4b_pass(None), _m4b_pass("Incomplete"), _m4b_pass("Unknown"),
+                  _m4b_pass("Injury Clearance"), _m4b_pass("Out"),
+                  _m4b_pass(None, explicit_null_type=True),
+                  _m4b_pass(None, ptype="Recovery"), _m4b_pass(None, ptype="Interception"),
+                  _m4b_pass(None, ptype="Corner"), _m4b_pass("Out", ptype="Throw-in"),
+                  _m4b_pass(None, ptype="Kick Off")]
+        r = _aggregate_events(events, Counter())
+        assert r["passes_attempted"] == 11
+        assert r["open_play_passes_attempted"] == 8
+
+
+class TestTeamOpenPlayPassCreditEdges:
+    """ADR 004 D12 credit rule: only the passing team's players on the pitch at the
+    pass instant are credited. Edge cases from the project's bug list: opponents,
+    a red card, an injury treatment window, a passer outside the lineups.
+    Clock: 45:00 / 90:00."""
+
+    _CLOCK = PeriodClock({1: 45.0, 2: 90.0})
+    _FULL = [{"position": "Center Back", "from": "00:00", "from_period": 1, "to": None,
+              "to_period": None, "start_reason": "Starting XI"}]
+
+    def _tl(self, *, exit_at=None, windows=()):
+        return player_timeline(self._FULL, self._CLOCK, exit_at=exit_at, treatment_windows=windows)
+
+    def _pass(self, pid, period, minute, team=None):
+        e = {"id": f"p{pid}-{period}-{minute}", "type": {"name": "Pass"},
+             "player": {"id": pid}, "period": period, "minute": minute, "second": 0,
+             "pass": {}}
+        if team is not None:
+            e["team"] = {"id": team}
+        return e
+
+    def _run(self, events, timelines, team_of):
+        return _bpm.team_open_play_pass_credits(events, timelines, team_of, self._CLOCK)
+
+    def test_opponents_on_the_pitch_are_never_credited(self):
+        tl = {pid: self._tl() for pid in (1, 2, 3, 4)}
+        team_of = {1: 10, 2: 10, 3: 20, 4: 20}
+        credits, _, mismatches = self._run(
+            [self._pass(1, 1, 10, team=10), self._pass(3, 1, 20, team=20),
+             self._pass(4, 2, 70, team=20)], tl, team_of)
+        assert credits == Counter({1: 1, 2: 1, 3: 2, 4: 2})
+        assert mismatches == []
+
+    def test_sent_off_teammate_is_not_credited_after_the_red_card(self):
+        """Player 2 is sent off at (1, 30:00): credited for the 20' pass only. A
+        later pass is credited to one player fewer (10 men)."""
+        tl = {1: self._tl(), 2: self._tl(exit_at=(1, 30.0)), 3: self._tl()}
+        credits, _, _ = self._run([self._pass(1, 1, 20), self._pass(1, 2, 60)], tl,
+                                  {1: 1, 2: 1, 3: 1})
+        assert credits == Counter({1: 2, 2: 1, 3: 2})
+
+    def test_teammate_off_for_treatment_is_not_credited_during_it(self):
+        """Player 2 leaves for treatment (1, 20:00) and returns (1, 25:00): a pass at
+        22' is not credited to him; one at 25:00 (his return instant, half-open
+        piece start) and one at 30' are."""
+        tl = {1: self._tl(), 2: self._tl(windows=[((1, 20.0), (1, 25.0))])}
+        credits, _, _ = self._run(
+            [self._pass(1, 1, 22), self._pass(1, 1, 25), self._pass(1, 1, 30)], tl, {1: 1, 2: 1})
+        assert credits == Counter({1: 3, 2: 2})
+
+    def test_teammate_leaving_at_the_pass_instant_is_not_credited(self):
+        """Half-open pieces: a teammate whose piece ends at (1, 30:00), mid-period,
+        is not on the pitch for a pass at exactly 30:00."""
+        tl = {1: self._tl(), 2: self._tl(exit_at=(1, 30.0))}
+        credits, _, _ = self._run([self._pass(1, 1, 30)], tl, {1: 1, 2: 1})
+        assert credits == Counter({1: 1})
+
+    def test_pass_by_a_player_outside_the_lineups_is_skipped(self):
+        """Such a pass is a dropped event (fails elsewhere); here it credits nobody
+        and is not reported as out of range."""
+        tl = {1: self._tl(), 2: self._tl()}
+        credits, bad, mismatches = self._run([self._pass(99, 1, 10, team=1)], tl, {1: 1, 2: 1})
+        assert not credits and bad == [] and mismatches == []
+
+
+class TestOpenPlayCreditPipeline:
+    """End to end (ADR 004 D12): team_open_play_passes_while_on on output rows for a
+    substitute and a sent-off player, under the real 7-11 bound."""
+
+    def test_substitute_and_sent_off_player_credited_only_while_on(self, tmp_path):
+        """11 starters. P0 is replaced at 60:00 by P11; P1 sees red at (2, 50:00).
+        Passes by P2 at 30' and 70', by P11 at 75'. Expected credits: P0 1 (30'),
+        P1 1 (30'), P11 2 (70', 75'), the other nine 3."""
+        positions = _full_match_players(11)
+        positions[0] = [_spell("00:00", "60:00", "Starting XI")]
+        positions.append([_spell("60:00", None, "Substitution - On (Tactical)")])
+        sub = _ev("Substitution", _TEAM_BASE, period=2, minute=60,
+                  substitution={"replacement": {"id": _TEAM_BASE + 11}})
+        red = _ev("Bad Behaviour", _TEAM_BASE + 1, period=2, minute=50,
+                  bad_behaviour={"card": {"name": "Red Card"}})
+        events = [sub, red,
+                  _open_play_pass(_TEAM_BASE + 2, period=1, minute=30),
+                  _open_play_pass(_TEAM_BASE + 2, period=2, minute=70),
+                  _open_play_pass(_TEAM_BASE + 11, period=2, minute=75)]
+        df, report = _build_team(tmp_path, positions, events)
+        credits = dict(zip(df["player_id"].to_list(),
+                           df["team_open_play_passes_while_on"].to_list()))
+        expected = {_TEAM_BASE + i: 3 for i in range(2, 11)}
+        expected.update({_TEAM_BASE: 1, _TEAM_BASE + 1: 1, _TEAM_BASE + 11: 2})
+        assert credits == expected
+        # The passer is always credited: a share can never exceed 1.
+        assert (df["open_play_passes_attempted"] <= df["team_open_play_passes_while_on"]).all()
+        assert not [d for d in report if d.get("issue") == "pass_credit_out_of_range"]
+
+
+class TestMatchNominalDuration:
+    """ADR 004 D1: match_nominal_duration is 90, or 120 when the match has extra
+    time, whatever the elapsed match_duration (stoppage time)."""
+
+    def test_regular_match_with_stoppage_is_nominal_90(self, tmp_path):
+        _, (df, _) = _build(tmp_path, [_ev("Half End", None, period=2, minute=94)])
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["match_duration"] == pytest.approx(94.0)
+        assert row["match_nominal_duration"] == 90.0
+
+    def test_extra_time_match_is_nominal_120(self, tmp_path):
+        _, (df, _) = _build(tmp_path, [_ev("Half End", None, period=4, minute=121)])
+        row = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert row["match_duration"] == pytest.approx(121.0)
+        assert row["match_nominal_duration"] == 120.0
+
+
+class TestPassOutsideCreditedTime:
+    """ADR 004 D12 (user decision 2026-10-03): a pass inside match time is credited
+    to its passer plus every teammate on the pitch, even when the passer has no
+    credited time at that instant (a timeline inconsistency, not absence); the event
+    is reported as events_outside_credited_time (ADR 002 §31.6). A pass stamped
+    after the whistle is clamped to the whistle instant. Real 7-11 bound."""
+
+    def test_milinkovic_savic_pattern_passer_still_credited(self):
+        """Lazio 3879637 pattern: the passer's lineup time stops at (1, 44:27) and
+        resumes only at (2, 45:00), but he passes at (1, 45:25), before the (1, 48:47)
+        whistle. The 10 teammates on the pitch plus the passer: 11 credits."""
+        clock = PeriodClock({1: 48 + 47 / 60, 2: 93.0})
+
+        def tl(*stints):
+            return player_timeline(
+                [{"position": "Center Back", "from": a, "from_period": fp, "to": b,
+                  "to_period": tp, "start_reason": "Starting XI"} for a, fp, b, tp in stints],
+                clock, exit_at=None, treatment_windows=())
+        timelines = {i: tl(("00:00", 1, None, None)) for i in range(1, 11)}
+        timelines[0] = tl(("00:00", 1, "44:27", 1), ("45:00", 2, None, None))
+        assert not timelines[0].covers(clock.elapsed((1, 45 + 25 / 60)))
+        e = {"id": "p", "type": {"name": "Pass"}, "player": {"id": 0}, "team": {"id": 1},
+             "period": 1, "minute": 45, "second": 25, "pass": {}}
+        credits, out_of_range, mismatches = _bpm.team_open_play_pass_credits(
+            [e], timelines, {i: 1 for i in range(11)}, clock)
+        assert credits == Counter({i: 1 for i in range(11)})
+        assert sum(credits.values()) == 11
+        assert not out_of_range and not mismatches
+
+    def test_pass_outside_the_passers_time_is_credited_and_reported(self, tmp_path):
+        """End to end, same pattern: the period-1 whistle is at (1, 48:00); player 0's
+        stint stops at (1, 44:00) and resumes at (2, 45:00); he passes at (1, 46:00).
+        All 11 are credited, nothing fails, and the pass is reported."""
+        players = _full_match_players(11)
+        players[0] = [{**_spell("00:00", "44:00", "Starting XI"), "to_period": 1},
+                      {**_spell("45:00", None, "Tactical Shift"), "from_period": 2}]
+        events = [_ev("Half End", None, period=1, minute=48),
+                  _open_play_pass(_TEAM_BASE, period=1, minute=46)]
+        df, report = _build_team(tmp_path, players, events)
+        assert not [d for d in report if d.get("issue") == "pass_credit_out_of_range"]
+        outside = [d for d in report if d.get("issue") == "events_outside_credited_time"]
+        assert [d["player_id"] for d in outside] == [_TEAM_BASE]
+        assert df["team_open_play_passes_while_on"].to_list() == [1] * 11
+
+    def test_post_whistle_pass_is_credited_to_the_players_on_at_the_whistle(self, tmp_path):
+        """A pass stamped (1, 46:00), after the (1, 45:00) whistle, is clamped to the
+        whistle instant: it counts for the 11 on the pitch then, and is not outside
+        anyone's credited time."""
+        events = [_open_play_pass(_TEAM_BASE, period=1, minute=46)]
+        df, report = _build_team(tmp_path, _full_match_players(11), events)
+        assert not [d for d in report if d.get("issue") in (
+            "pass_credit_out_of_range", "events_outside_credited_time")]
+        assert df["team_open_play_passes_while_on"].to_list() == [1] * 11
+
+
+class TestXgAssistedFallbacksReported:
+    """ADR 004 D16: _process_match writes each xG-assisted fallback as a per-match
+    report-only entry with its count (the counters replaced the old log lines, so
+    a broken wiring would make them silent)."""
+
+    def test_no_receipt_shot_is_reported_by_process_match(self, tmp_path):
+        key_pass = {**_ev("Pass", _STARTER, minute=20), "index": 20, "possession": 5,
+                    "location": [80, 40],
+                    "pass": {"end_location": [110, 40], "assisted_shot_id": "shot-1",
+                             "shot_assist": True}}
+        shot = {**_ev("Shot", _BENCH, minute=21), "id": "shot-1", "index": 21, "possession": 5,
+                "possession_team": {"id": _TEAM}, "location": [110, 40],
+                "shot": {"statsbomb_xg": 0.3, "outcome": {"name": "Saved"},
+                         "type": {"name": "Open Play"}, "key_pass_id": key_pass["id"]}}
+        lineups = _quality_lineups(bench_positions=[_spell("00:00", None, "Starting XI")])
+        _write_match(tmp_path, 8100, [_xi_event(_TEAM, [_STARTER, _BENCH]), key_pass, shot,
+                                      _HALF_END], lineups)
+        rows, report = _process_match(8100, 99, 1, data_root=tmp_path)
+        assert [d for d in report if d.get("issue") == "xga_no_receipt"] == [
+            {"issue": "xga_no_receipt", "match_id": 8100, "count": 1}]
+        passer = next(r for r in rows if r["player_id"] == _STARTER)
+        assert passer["xg_assisted"] == pytest.approx(0.3)
+        assert passer["xg_assisted_direct"] == 0.0
+
+
+class TestXgAssistedFallbackLimits:
+    """ADR 004 D22 extended to the D16 fallback counters (user, 2026-10-03): 3 x the
+    worst 2015/16 rate (La Liga 6 no-receipt shots / 380), floor 3; counted in
+    shots, summed over the season's per-match entries."""
+
+    def test_no_receipt_limit_for_a_380_match_season_is_18(self):
+        report = [{"issue": "xga_no_receipt", "match_id": m, "count": 6} for m in range(3)]
+        assert _bpm.report_only_limit_failures(report, 380) == []
+        report.append({"issue": "xga_no_receipt", "match_id": 9, "count": 1})
+        (failure,) = _bpm.report_only_limit_failures(report, 380)
+        assert failure["report_issue"] == "xga_no_receipt"
+        assert failure["count"] == 19 and failure["limit"] == pytest.approx(18.0)
+
+    @pytest.mark.parametrize("issue", ["xga_missing_shooter", "xga_dangling_shot_id",
+                                       "xga_missing_assister"])
+    def test_zero_rate_fallbacks_allow_the_floor_of_three_shots(self, issue):
+        assert _bpm.report_only_limit_failures(
+            [{"issue": issue, "match_id": 1, "count": 3}], 380) == []
+        assert len(_bpm.report_only_limit_failures(
+            [{"issue": issue, "match_id": 1, "count": 2}, {"issue": issue, "match_id": 2, "count": 2}],
+            380)) == 1
