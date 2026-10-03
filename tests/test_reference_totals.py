@@ -80,6 +80,7 @@ class TestReferenceTotalsFixtures:
             "fouls_committed", "fouls_won", "carries",
             "np_xg", "np_shots", "passes_injury_clearance", "open_play_passes_attempted",
             "team_open_play_passes_while_on",
+            "op_key_passes", "restart_key_passes", "op_assists", "restart_assists",
             "minutes_am_winger", "minutes_cb", "minutes_dm_cm", "minutes_fb_wb",
             "minutes_gk", "minutes_st",
         }
@@ -147,3 +148,17 @@ class TestReferenceTotalsFixtures:
         n = core["open_play_passes_attempted"]
         assert 7 * n <= core["team_open_play_passes_while_on"] <= 11 * n
         assert core["team_open_play_passes_while_on"] / n > 10.5
+
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_open_play_and_restart_parts_add_up_to_their_totals(self, cs):
+        """ADR 004 §9: xg_assisted, key_passes and assists split by the key pass's own
+        type; the parts add up exactly for counts, and within the 4-decimal rounding
+        of the stored figures for xG."""
+        ref = _load(cs)
+        core, b = ref["core"], ref["chunk_b"]
+        for col in ("key_passes", "assists"):
+            assert core[f"op_{col}"] + core[f"restart_{col}"] == core[col]
+        assert b["op_xg_assisted"] + b["restart_xg_assisted"] == pytest.approx(
+            b["xg_assisted"], abs=2e-4)
+        assert b["restart_xg_assisted"] >= 0 and b["op_xg_assisted"] >= 0

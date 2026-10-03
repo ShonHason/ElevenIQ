@@ -33,7 +33,9 @@
     "final_third_entries_pass": 21161,
     "final_third_entries_carry": 11819,
     "box_entries_pass": 4805,
-    "box_entries_carry": 3180
+    "box_entries_carry": 3180,
+    "op_xg_assisted": 497.4686,
+    "restart_xg_assisted": 84.4978
   },
   "core": {
     "minutes_played": 782658.65,
@@ -61,6 +63,10 @@
     "passes_injury_clearance": 660,
     "open_play_passes_attempted": 333356,
     "team_open_play_passes_while_on": 3654344,
+    "op_key_passes": 5167,
+    "restart_key_passes": 1072,
+    "op_assists": 522,
+    "restart_assists": 74,
     "minutes_am_winger": 153966.85,
     "minutes_cb": 147354.1,
     "minutes_dm_cm": 176499.1667,

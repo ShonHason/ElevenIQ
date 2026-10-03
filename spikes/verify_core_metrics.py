@@ -118,6 +118,10 @@ MIN_PLAYERS_PER_PASS = 7
 MAX_PLAYERS_PER_PASS = 11
 # ADR 004 D14: restarts, excluded from progressive passes and the open-play columns.
 RESTART_TYPES = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off", "Throw-in"})
+# ADR 004 §9 comparison only (not the definition): possessions that start with a
+# restart, by play_pattern.
+PATTERN_RESTARTS = frozenset(
+    {"From Corner", "From Free Kick", "From Throw In", "From Goal Kick", "From Kick Off"})
 BOX_X_MIN, BOX_Y_MIN, BOX_Y_MAX = 102.0, 18.0, 62.0
 
 # ADR 002 §30: exact StatsBomb casing ("Saved to Post", lower-case "to").
@@ -210,6 +214,10 @@ KINDS = {
     "passes_injury_clearance": "independent (pass.outcome, ADR 004 D13)",
     "open_play_passes_attempted": "independent (pass.type, ADR 004 D12)",
     "team_open_play_passes_while_on": "second implementation (ADR 004 D12) + 7-11 credit check",
+    "op_key_passes": "independent (pass.type, ADR 004 §9)",
+    "restart_key_passes": "independent (pass.type, ADR 004 §9)",
+    "op_assists": "independent (pass.type, ADR 004 §9)",
+    "restart_assists": "independent (pass.type, ADR 004 §9)",
     **{col: "second implementation (§31.4) + event-position oracle"
        for col in GROUP_COLUMN.values()},
 }
@@ -273,10 +281,18 @@ def count_events(events: list[dict], t: Counter) -> None:
                 t["passes_completed"] += 1
                 if not restart and _progressive_pass(e["location"], p["end_location"]):
                     t["progressive_passes"] += 1
+            split = "restart" if restart else "op"
             if p.get("shot_assist") or p.get("goal_assist"):
                 t["key_passes"] += 1
+                t[f"{split}_key_passes"] += 1
+                # ADR 004 §9 comparison: the pass's play_pattern disagrees with its type.
+                by_pattern = ((e.get("play_pattern") or {}).get("name")) in PATTERN_RESTARTS
+                if by_pattern != restart:
+                    t["key_passes_type_restart_pattern_open" if restart
+                      else "key_passes_type_open_pattern_restart"] += 1
             if p.get("goal_assist"):
                 t["assists"] += 1
+                t[f"{split}_assists"] += 1
         elif kind == "Shot":
             s = e.get("shot") or {}
             t["shots"] += 1
@@ -754,6 +770,20 @@ def main() -> None:
         all_events.extend(e for e in events if e["period"] != 5)
 
     reconcile_goals(matches, all_events)
+    for total in ("key_passes", "assists"):
+        if totals[f"op_{total}"] + totals[f"restart_{total}"] != totals[total]:
+            raise SystemExit(f"FAIL: op + restart {total} != {total}")
+    print(f"\nKey passes (ADR 004 §9): open play {totals['op_key_passes']:,}, restart "
+          f"{totals['restart_key_passes']:,}; assists open play {totals['op_assists']:,}, "
+          f"restart {totals['restart_assists']:,}")
+    print(f"  play_pattern disagrees: type restart / pattern open "
+          f"{totals['key_passes_type_restart_pattern_open']:,}; type open / pattern restart "
+          f"{totals['key_passes_type_open_pattern_restart']:,}")
+    # Data-consistency guard (ADR 004 §9): a restart key pass is never inside an
+    # open-play-labelled possession; a positive count fails the spike.
+    if totals["key_passes_type_restart_pattern_open"]:
+        raise SystemExit(f"FAIL: {totals['key_passes_type_restart_pattern_open']} restart key "
+                         "pass(es) in an open-play-labelled possession (ADR 004 §9 guard)")
 
     print("\nReport-only counts (ADR 002 §31):")
     for key in ("period_end_before_nominal", "stint_after_period_end",
@@ -846,8 +876,10 @@ def main() -> None:
                      write=not args.no_write)
 
 
-# Plan 005 M4b: the only recorded core value allowed to change (ADR 004 D14).
-CHANGED_BY_M4B = frozenset({"progressive_passes"})
+# Recorded core values the current chunk may change; every other recorded value
+# must come out identical, and new keys are added. History: M4b allowed
+# progressive_passes (ADR 004 D14); M4b3 (ADR 004 §9) only adds keys.
+CHANGED_BY_CURRENT_CHUNK: frozenset[str] = frozenset()
 
 
 def update_reference(
@@ -858,27 +890,26 @@ def update_reference(
     Write the core section, base.dismissals and base.match_duration (Σ of the
     §31.1 match_duration over the league's matches, for the exact GK identity
     in tests/test_reference_totals.py). When the reference file already
-    has a core section, every recorded value except those in CHANGED_BY_M4B, and
-    the dismissal count, must come out exactly as recorded (M4b changes only the
-    progressive-pass definition; new columns are added). A league with no
+    has a core section, every recorded value except those in CHANGED_BY_CURRENT_CHUNK, and
+    the dismissal count, must come out exactly as recorded; new columns are added. A league with no
     reference file, or none of these sections yet, is written as new.
     """
     path = REFERENCE_DIR / f"{competition_id}_{season_id}.json"
     ref = json.loads(path.read_text()) if path.exists() else {}
     old_core, old_base = ref.get("core", {}), ref.get("base", {})
     changed = {col: (old, core.get(col)) for col, old in old_core.items()
-               if col not in CHANGED_BY_M4B and core.get(col) != old}
+               if col not in CHANGED_BY_CURRENT_CHUNK and core.get(col) != old}
     old_dismissals = old_base.get("dismissals")
     old_duration = old_base.get("match_duration")
     if (changed or (old_dismissals is not None and old_dismissals != dismissals)
             or (old_duration is not None and old_duration != match_duration)):
-        raise SystemExit(f"FAIL: values outside {sorted(CHANGED_BY_M4B)} changed: {changed}; "
+        raise SystemExit(f"FAIL: values outside {sorted(CHANGED_BY_CURRENT_CHUNK)} changed: {changed}; "
                          f"dismissals {old_dismissals} → {dismissals}; match_duration "
                          f"{old_duration} → {match_duration}")
     print()
     for col in core:
         old = old_core.get(col)
-        if old is None or col in CHANGED_BY_M4B:
+        if old is None or col in CHANGED_BY_CURRENT_CHUNK:
             delta = "new" if old is None else f"Δ {core[col] - old:+,}"
             print(f"  {col:<30} {old} → {core[col]:,} ({delta})")
     if write:

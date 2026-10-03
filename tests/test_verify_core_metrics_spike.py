@@ -597,19 +597,31 @@ class TestSpikeUpdateReference:
         assert ref["core"] == self._core()
         assert ref["base"] == {"dismissals": 3, "match_duration": 95.5}
 
-    def test_existing_base_kept_progressive_passes_may_change_new_columns_added(self, ref_dir):
-        """Plan 005 M4b: only progressive_passes (ADR 004 D14) may differ from the
-        recorded core section; new columns are written as new."""
+    def test_existing_base_kept_and_new_columns_added(self, ref_dir):
+        """Plan 005 M4b3 (ADR 004 §9): no recorded core value may change
+        (CHANGED_BY_CURRENT_CHUNK is empty); new columns are written as new."""
+        assert spike.CHANGED_BY_CURRENT_CHUNK == frozenset()
         (ref_dir / "99_1.json").write_text(json.dumps({
             "competition_id": 99, "season_id": 1,
             "base": {"matches": 5, "dismissals": 3, "match_duration": 95.5},
             "core": {**self._core(), "progressive_passes": 40}}))
-        core = {**self._core(), "progressive_passes": 32, "np_shots": 9}
+        core = {**self._core(), "progressive_passes": 40, "op_key_passes": 9}
         spike.update_reference(99, 1, core, 3, 95.5, write=True)
         ref = json.loads((ref_dir / "99_1.json").read_text())
         assert ref["base"] == {"matches": 5, "dismissals": 3, "match_duration": 95.5}
-        assert ref["core"]["progressive_passes"] == 32
-        assert ref["core"]["np_shots"] == 9
+        assert ref["core"]["progressive_passes"] == 40
+        assert ref["core"]["op_key_passes"] == 9
+
+    def test_a_progressive_passes_change_now_fails(self, ref_dir):
+        """The M4b allowance is gone: progressive_passes may not change in M4b3."""
+        before = {"competition_id": 99, "season_id": 1,
+                  "base": {"dismissals": 3, "match_duration": 95.5},
+                  "core": {**self._core(), "progressive_passes": 40}}
+        (ref_dir / "99_1.json").write_text(json.dumps(before))
+        with pytest.raises(SystemExit, match="changed"):
+            spike.update_reference(99, 1, {**self._core(), "progressive_passes": 32}, 3, 95.5,
+                                   write=True)
+        assert json.loads((ref_dir / "99_1.json").read_text()) == before
 
     @pytest.mark.parametrize("change", ["shots", "minutes", "dismissals", "match_duration"])
     def test_any_other_change_fails_and_writes_nothing(self, ref_dir, change):

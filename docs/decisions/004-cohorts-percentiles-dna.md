@@ -477,3 +477,53 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
   - spike and reference totals first, then the pipeline (the M4b1/M4b2 pattern);
   - set-piece delivery becomes a displayed **signature trait** (§1), not a DNA metric.
 
+---
+
+## 9. Open-play vs restart creation (plan 005 M4b3, 2026-10-03)
+
+**Definition (user, 2026-10-03).**
+- A chance is **restart** when its key pass's own `pass.type.name` is in `RESTART_TYPES` (§D14); otherwise it is **open play**. Only the key pass decides, never `play_pattern`.
+- Split columns: `op_` / `restart_` × `xg_assisted`, `key_passes`, `assists`, each with a p90. Every existing column is unchanged.
+- Each split uses its total's linkage:
+  - `xg_assisted`: `assisted_shot_id` → a Shot with xG and an assister;
+  - `key_passes`: `shot_assist` or `goal_assist`;
+  - `assists`: `goal_assist`.
+- **Invariant:** open play + restart = total on every row. Counts are exact; xG is checked within 1e-9, because the float sums are computed separately.
+- **Set-piece delivery** (the `restart_` columns) is a displayed signature trait (§1), not DNA; the M4c registry decides.
+
+**Reference totals** (independent spikes, 2015/16):
+
+| League | `op_xg_assisted` | `restart_xg_assisted` | Restart share | `op_key_passes` / `restart_key_passes` | `op_assists` / `restart_assists` |
+|---|---|---|---|---|---|
+| La Liga | 595.7003 | 77.3819 | 11.5% | 5,484 / 1,001 | 640 / 82 |
+| Premier League | 575.6716 | 88.7246 | 13.4% | 6,087 / 1,088 | 575 / 94 |
+| Serie A | 527.7883 | 73.1273 | 12.2% | 6,147 / 989 | 537 / 72 |
+| Ligue 1 | 497.4686 | 84.4978 | 14.5% | 5,167 / 1,072 | 522 / 74 |
+| Bundesliga | 52.2684 | 7.8088 | 13.0% | 468 / 102 | 50 / 8 |
+
+**Why not `play_pattern` (measured, user decision 2026-10-03).** The alternative labels a chance as restart when the shot's possession is labelled From Corner / Free Kick / Throw In / Goal Kick / Kick Off. The two definitions disagree in one direction only:
+- **Key pass a restart, possession labelled open play: 0** in every league (all key passes and all assisted shots, 5 leagues).
+- **Key pass open play, possession labelled a restart:**
+
+  | League | Shots | xG | Share of restart xG assisted (key-pass definition) |
+  |---|---|---|---|
+  | La Liga | 2,618 | 279.9 | 362% |
+  | PL | 2,940 | 269.9 | 304% |
+  | Serie A | 2,989 | 249.4 | 341% |
+  | Ligue 1 | 2,382 | 228.8 | 271% |
+  | Bundesliga | 233 | 23.8 | 304% |
+
+  The same disagreement by `play_pattern`:
+
+  | League | Throw In | Free Kick | Corner | Goal Kick | Kick Off |
+  |---|---|---|---|---|---|
+  | La Liga | 108.1 xG (1,124) | 89.7 (761) | 50.5 (431) | 25.3 (236) | 6.2 (66) |
+  | PL | 120.2 (1,355) | 63.2 (713) | 50.4 (497) | 28.9 (296) | 7.3 (79) |
+  | Serie A | 97.5 (1,232) | 79.6 (946) | 41.0 (435) | 24.4 (297) | 6.9 (79) |
+  | Ligue 1 | 101.1 (1,104) | 67.8 (644) | 29.3 (308) | 24.6 (254) | 6.0 (72) |
+  | Bundesliga | 8.7 (98) | 8.9 (72) | 2.9 (39) | 2.6 (18) | 0.6 (6) |
+
+- **Reason:** `play_pattern` labels the whole possession by how it started, including long open-play sequences after a throw-in or a goal kick. About half of all xG assisted would be "restart" under it. It measures how a possession began, not who delivered the set piece. The plan's 10% agreement gate assumed both definitions measure the same thing; the data shows they do not, so the gate was dropped (user).
+- **Consistency guard** (both spikes): a restart key pass in an open-play-labelled possession fails the spike. 2015/16: 0 in all 5 leagues. A positive count on a future source means its restart labelling differs and must be investigated.
+- **Second-ball creation** (an open-play key pass shortly after a corner or free kick, in the same possession) is a separate future item (plan 005 backlog).
+

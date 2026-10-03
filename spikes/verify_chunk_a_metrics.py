@@ -365,9 +365,10 @@ LONG_PASS_THRESHOLD = 30.0
 # passes use this same predicate, so they are subsets of the attempted count.
 SET_PIECE_TYPES = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off"})
 RESTART_TYPES = SET_PIECE_TYPES | {"Throw-in"}
-# Plan 005 M4b: the only recorded chunk_a values allowed to change (ADR 004 D14);
-# every base value must come out unchanged. New keys may be added.
-CHUNK_A_CHANGED_BY_M4B = frozenset({"long_passes_attempted", "long_passes_completed"})
+# Recorded chunk_a values the current chunk may change; every base value and every
+# other chunk_a value must come out unchanged, and new keys may be added. History:
+# M4b allowed long_passes_attempted / _completed (ADR 004 D14); M4b3 changes none.
+CHUNK_A_CHANGED_BY_CURRENT_CHUNK: frozenset[str] = frozenset()
 # Sub-payloads that carry aerial_won on the winner's event (ADR 002 §20).
 AERIAL_WON_KEYS = {"Pass": "pass", "Clearance": "clearance", "Shot": "shot",
                    "Miscontrol": "miscontrol"}
@@ -464,7 +465,7 @@ def main() -> None:
     base = {**old_base, **base}
     guard_unchanged(args.competition_id, args.season_id, "base", base, frozenset())
     guard_unchanged(args.competition_id, args.season_id, "chunk_a", chunk_a,
-                    CHUNK_A_CHANGED_BY_M4B)
+                    CHUNK_A_CHANGED_BY_CURRENT_CHUNK)
     if not args.no_write:
         write_reference(args.competition_id, args.season_id, "base", base)
         write_reference(args.competition_id, args.season_id, "chunk_a", chunk_a)

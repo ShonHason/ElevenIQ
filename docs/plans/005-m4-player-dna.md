@@ -575,3 +575,32 @@ These are folded into the definitions below. ADR 004 holds the final text.
 - `spikes/m4b_before_after.py`: no flips outside the expected list.
 - Integration suite: `.venv/bin/python -m pytest tests/ -q -m integration`.
 - `spikes/m4_decision_measurements.py`: D12b, D17 and D19 recorded in ADR 004.
+
+---
+
+## M4b3 — open-play creation (planned, before M4c)
+
+**Scope** (ADR 004 §8):
+- open-play `xg_assisted`, `key_passes` and `assists` (passes not in `RESTART_TYPES`);
+- spike and reference totals first, then the pipeline (the M4b1/M4b2 pattern);
+- set-piece delivery becomes a displayed signature trait, not a DNA metric.
+- **Reason:** restarts are 13.4% of PL 2015/16 xG assisted (Payet 41%, Özil 31%).
+
+**Cleanup list** (code-reviewer notes on M4b2, 2026-10-03; done in this chunk, since it touches the same pass-type code):
+1. **One shared `is_restart(pass_data)` helper** in `metrics/pass_types.py`. Both the numerator (`open_play_passes_attempted`, `_aggregate_events`) and the denominator (`team_open_play_passes_while_on`, `team_open_play_pass_credits`) use it, so `team_pass_share` cannot drift above 1. The M4b3 open-play creation columns use it too.
+2. **Move the credit-window check into `PlayerTimeline`** (e.g. `credits_pass_at(period, at, period_end)`), next to `covers`. Then the half-open (credit) vs closed (`events_outside_credited_time`) semantics live in one place.
+3. **ADR 004 D13:** add a sentence on Injury Clearances in the crosses denominator (`cross_completion_pct` keeps them; probably 0 in practice). Measure the count and state whether that is intended.
+4. **ADR 002 §1 and §19:** refresh the stale body text under their "amended by ADR 004" banners: the §1 `is_progressive_pass` signature (now with `pass_type_name`), and §19's `SET_PIECE_TYPES` (now `RESTART_TYPES`).
+5. **`build_player_season.py`:** the `_COUNT_COLS` comment should list `np_xg` among the Float64 columns.
+
+**M4b3 progress (2026-10-03):**
+- **Definition kept:** the key pass's own type (ADR 004 §9).
+- **10% gate dropped (user):** play_pattern labels whole possessions. The disagreement is 271–362% of restart xG assisted, one direction only, and is recorded in ADR 004 §9.
+- **Reverse-direction consistency guard** added to both spikes (2015/16: 0).
+- **References written:** new keys only.
+
+---
+
+## Backlog
+- **Second-ball creation** (user, 2026-10-03): an open-play key pass within N seconds after a corner or free kick, in the same possession. It measures creation from set-piece second phases, which the key-pass split (ADR 004 §9) counts as open play. It needs its own definition (N, which restarts, same possession) and a measurement. No work now.
+

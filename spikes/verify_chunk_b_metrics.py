@@ -55,9 +55,15 @@ SET_PIECE_TYPES: frozenset[str] = frozenset({"Corner", "Free Kick", "Goal Kick",
 # Restarts excluded from the pass entry metrics (ADR 004 D14, plan 005 M4b): set
 # pieces plus throw-ins.
 RESTART_TYPES: frozenset[str] = SET_PIECE_TYPES | {"Throw-in"}
-# Plan 005 M4b: the only recorded chunk_b values allowed to change (ADR 004 D14, D16).
-CHUNK_B_CHANGED_BY_M4B: frozenset[str] = frozenset(
-    {"final_third_entries_pass", "box_entries_pass", "xg_assisted_direct"})
+# Recorded chunk_b values the current chunk may change; every other recorded value
+# must come out identical, and new keys are added. History: M4b allowed
+# final_third_entries_pass, box_entries_pass, xg_assisted_direct (ADR 004 D14, D16);
+# M4b3 (ADR 004 §9) only adds keys.
+CHUNK_B_CHANGED_BY_CURRENT_CHUNK: frozenset[str] = frozenset()
+# ADR 004 §9 comparison only (not the definition): possessions that start with a
+# restart, by play_pattern.
+PATTERN_RESTARTS: frozenset[str] = frozenset(
+    {"From Corner", "From Free Kick", "From Throw In", "From Goal Kick", "From Kick Off"})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -125,6 +131,11 @@ def section_xg_assisted(
 
     total_shot_xg = 0.0
     total_assisted_xg = 0.0
+    # ADR 004 §9: split by the key pass's own type (definition); play_pattern of the
+    # shot as the comparison.
+    op_xga = restart_xga = 0.0
+    pattern_restart_xga = 0.0
+    disagree = {"type_restart_pattern_open": [0, 0.0], "type_open_pattern_restart": [0, 0.0]}
     missing_xg_shots = 0       # shots where statsbomb_xg is None (all shots)
     missing_xg_assisted = 0    # assisted shots where statsbomb_xg is None
     assisted_shot_ids_global: set[str] = set()
@@ -228,6 +239,18 @@ def section_xg_assisted(
             xg = xg_val
             total_assisted_xg += xg
             assisted_shot_ids_global.add(aid)
+            by_type = ((p.get("type") or {}).get("name")) in RESTART_TYPES
+            by_pattern = ((shot_ev.get("play_pattern") or {}).get("name")) in PATTERN_RESTARTS
+            if by_type:
+                restart_xga += xg
+            else:
+                op_xga += xg
+            if by_pattern:
+                pattern_restart_xga += xg
+            if by_type != by_pattern:
+                k = "type_restart_pattern_open" if by_type else "type_open_pattern_restart"
+                disagree[k][0] += 1
+                disagree[k][1] += xg
 
             # credit assister
             assister_id = e.get("player", {}).get("id")
@@ -339,6 +362,25 @@ def section_xg_assisted(
           f"({100*xga_shots_no_receipt_found/resolves_to_shot:.1f}%)  -> not direct (ADR 004 D16)"
           if resolves_to_shot else "")
 
+    print("\n1g. Open-play vs restart xG assisted (ADR 004 §9: the key pass's own type)")
+    print(f"    op_xg_assisted                         : {op_xga:.4f}")
+    print(f"    restart_xg_assisted                    : {restart_xga:.4f}  "
+          f"({100*restart_xga/total_assisted_xg:.1f}% of xG assisted)" if total_assisted_xg else "")
+    if abs(op_xga + restart_xga - total_assisted_xg) > 1e-9:
+        raise SystemExit(f"FAIL: op {op_xga} + restart {restart_xga} != xg_assisted {total_assisted_xg}")
+    print(f"    by the shot's play_pattern, restart    : {pattern_restart_xga:.4f}")
+    for k, (n, x) in disagree.items():
+        share = 100 * x / restart_xga if restart_xga else 0.0
+        print(f"    disagree {k:<28}: {n:,} shots, {x:.4f} xG ({share:.1f}% of restart xG assisted)")
+    # Data-consistency guard (ADR 004 §9): a restart key pass always starts a possession
+    # labelled as a restart, so the reverse direction must be 0. A positive count means
+    # the source labels restarts differently: investigate before trusting the split.
+    n_reverse = disagree["type_restart_pattern_open"][0]
+    print(f"    guard: restart key pass in an open-play-labelled possession: {n_reverse}")
+    if n_reverse:
+        raise SystemExit(f"FAIL: {n_reverse} restart key pass(es) in an open-play-labelled "
+                         "possession (ADR 004 §9 consistency guard)")
+
     print(f"\n1f. Any-carry/dribble between Receipt and Shot (47%/34.6% figures)")
     print(f"    Assisted shots where shooter had ANY Carry/Dribble: {carry_between_count:,}  "
           f"of {resolves_to_shot:,}  "
@@ -384,6 +426,9 @@ def section_xg_assisted(
     return {
         "xg_assisted": total_assisted_xg,
         "xg_assisted_direct": xga_direct_total,
+        "op_xg_assisted": op_xga,
+        "restart_xg_assisted": restart_xga,
+        "pattern_disagreement": {k: tuple(v) for k, v in disagree.items()},
         "player_xg_assisted": dict(player_xg_assisted),
         "player_names": dict(player_names),
     }
@@ -656,12 +701,14 @@ def main() -> None:
         "final_third_entries_carry": ft_data["final_third_entries_carry"],
         "box_entries_pass": box_data["box_entries_pass"],
         "box_entries_carry": box_data["box_entries_carry"],
+        "op_xg_assisted": round(xga_data["op_xg_assisted"], 4),
+        "restart_xg_assisted": round(xga_data["restart_xg_assisted"], 4),
     }
     print("REFERENCE TOTALS (chunk_b)")
     for k, v in chunk_b.items():
         print(f"  {k:<28} {v:>12,}")
     guard_unchanged(args.competition_id, args.season_id, "chunk_b", chunk_b,
-                    CHUNK_B_CHANGED_BY_M4B)
+                    CHUNK_B_CHANGED_BY_CURRENT_CHUNK)
     if not args.no_write:
         write_reference(args.competition_id, args.season_id, "chunk_b", chunk_b)
 

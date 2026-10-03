@@ -178,8 +178,65 @@ class TestReferenceGuard:
         reference_totals.guard_unchanged(98, 1, "chunk_a", {"a": 1}, frozenset())
         reference_totals.guard_unchanged(99, 1, "chunk_b", {"x": 1}, frozenset())
 
-    def test_spikes_name_exactly_the_m4b_columns(self):
-        """ADR 004 D14 (long passes, pass entries) and D16 (xg_assisted_direct)."""
-        assert chunk_a.CHUNK_A_CHANGED_BY_M4B == {"long_passes_attempted", "long_passes_completed"}
-        assert chunk_b.CHUNK_B_CHANGED_BY_M4B == {
-            "final_third_entries_pass", "box_entries_pass", "xg_assisted_direct"}
+    def test_current_chunk_changes_no_recorded_chunk_a_or_b_value(self):
+        """Plan 005 M4b3 (ADR 004 §9) only adds keys: no recorded chunk_a or chunk_b
+        value may change. (M4b allowed the D14 long-pass and entry columns and D16's
+        xg_assisted_direct.)"""
+        assert chunk_a.CHUNK_A_CHANGED_BY_CURRENT_CHUNK == frozenset()
+        assert chunk_b.CHUNK_B_CHANGED_BY_CURRENT_CHUNK == frozenset()
+
+
+class TestOpenPlayRestartSplitSpikes:
+    """ADR 004 §9: xg_assisted, key_passes and assists split by the key pass's own
+    pass.type (RESTART_TYPES), never by play_pattern; open play + restart = total.
+    A restart key pass inside an open-play-labelled possession fails the spike."""
+
+    @pytest.fixture(autouse=True)
+    def _no_processed_data(self, monkeypatch):
+        monkeypatch.setattr(chunk_b, "_load_seasons", lambda *_: pl.DataFrame(schema={
+            "player_id": pl.Int64, "player_name": pl.Utf8, "is_gk": pl.Boolean,
+            "player_season_minutes_total": pl.Float64}))
+
+    @staticmethod
+    def _chance(idx: int, ptype: str | None, pattern: str, xg: float) -> list[dict]:
+        pass_payload = {"assisted_shot_id": f"e{idx + 2}", "shot_assist": True}
+        if ptype:
+            pass_payload["type"] = {"name": ptype}
+        return [_ev(idx, "Pass", 1, **{"pass": pass_payload}),
+                _ev(idx + 1, "Ball Receipt*", 2),
+                _ev(idx + 2, "Shot", 2, play_pattern={"name": pattern},
+                    shot={"statsbomb_xg": xg, "type": {"name": "Open Play"}})]
+
+    def test_xga_split_by_key_pass_type_not_play_pattern(self):
+        events = [*self._chance(10, "Corner", "From Corner", 0.3),
+                  *self._chance(20, None, "From Corner", 0.2),   # open play by definition
+                  *self._chance(30, None, "Regular Play", 0.1)]
+        r = chunk_b.section_xg_assisted({1: events}, 0, 0)
+        assert r["restart_xg_assisted"] == pytest.approx(0.3)
+        assert r["op_xg_assisted"] == pytest.approx(0.3)
+        assert r["op_xg_assisted"] + r["restart_xg_assisted"] == pytest.approx(r["xg_assisted"])
+        assert r["pattern_disagreement"]["type_open_pattern_restart"] == (1, pytest.approx(0.2))
+
+    def test_restart_key_pass_in_open_play_possession_fails(self):
+        with pytest.raises(SystemExit, match="consistency guard"):
+            chunk_b.section_xg_assisted({1: self._chance(10, "Free Kick", "Regular Play", 0.3)}, 0, 0)
+
+    def test_core_counts_split_and_reverse_direction(self):
+        import verify_core_metrics as core
+        from collections import Counter
+
+        def kp(ptype, pattern, goal=False):
+            p = {"shot_assist": True, "end_location": [100, 40]}
+            if goal:
+                p["goal_assist"] = True
+            if ptype:
+                p["type"] = {"name": ptype}
+            return {"period": 1, "player": {"id": 1}, "type": {"name": "Pass"},
+                    "location": [60, 40], "play_pattern": {"name": pattern}, "pass": p}
+        t: Counter = Counter()
+        core.count_events([kp("Corner", "From Corner", goal=True), kp(None, "From Throw In"),
+                           kp(None, "Regular Play"), kp("Throw-in", "Regular Play")], t)
+        assert (t["key_passes"], t["op_key_passes"], t["restart_key_passes"]) == (4, 2, 2)
+        assert (t["assists"], t["op_assists"], t["restart_assists"]) == (1, 0, 1)
+        assert t["key_passes_type_restart_pattern_open"] == 1
+        assert t["key_passes_type_open_pattern_restart"] == 1
