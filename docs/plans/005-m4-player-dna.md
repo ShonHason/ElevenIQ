@@ -615,6 +615,24 @@ These are folded into the definitions below. ADR 004 holds the final text.
 
 ---
 
+## M4c — metric registry (2026-10-03)
+The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-group minimum share, pipeline), M4c2 (committed measurements and ADR 004 §10, reviewed by the stats-reviewer before code) and M4c3 (registry code and tests).
+
+**M4c1 outcome (2026-10-03).**
+- `SECOND_POSITION_MIN_SHARE = 0.10` (user U3).
+- `spikes/m4c1_expected_second_group.py` wrote the expected list from `data/interim/m4c1_snapshot` before the change: 987 rows go to null (644 gated pool: 640 outfield, 4 GK).
+- Before/after (`spikes/m4b_before_after.py --all-columns-identical`, with the second-group check added):
+  - exactly the 987 listed changes;
+  - every other column of the 78 match and 142 season columns identical;
+  - 0 flag flips; the margin recomputation applies the new label rule.
+  - A list with Begović removed exits 1.
+  - Command: `.venv/bin/python spikes/m4b_before_after.py --snapshot data/interim/m4c1_snapshot --expected spikes/expected_m4c1_second_group.json --all-columns-identical`.
+- Ambiguous rows keep their label by construction (second share > 1/6 − 0.05 ≈ 0.117); `TestSecondPositionShareBound` fails if the threshold exceeds the bound.
+- The label is meaningful only for gated rows; M4e shows it only for `meets_min_minutes` rows. No 90-minute floor (user).
+- Integration test: a full per-row recomputation of the label (both directions); a mutation (0.12 in the pipeline) makes it fail.
+
+---
+
 ## Backlog
 - **Second-ball creation** (user, 2026-10-03): an open-play key pass within N seconds after a corner or free kick, in the same possession. It measures creation from set-piece second phases, which the key-pass split (ADR 004 §9) counts as open play. It needs its own definition (N, which restarts, same possession) and a measurement. No work now.
 - **Return the xG split instead of out-parameter dicts** (user, 2026-10-03): `compute_xg_assisted_per_player` fills `open_play_xga` / `restart_xga` (and `fallbacks`) passed in by the caller. Returning the parts (a small dataclass per player) would be a simpler API.

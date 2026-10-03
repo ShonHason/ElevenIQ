@@ -24,6 +24,15 @@ MIN_MINUTES_TOLERANCE: float = 1e-6
 # groups' minutes differ by less than this share of minutes_played.
 AMBIGUOUS_POSITION_MARGIN: float = 0.05
 
+# ADR 004 §8 (user decision 2026-10-03, plan 005 M4c1): second_position_group is null
+# when its group's minutes are below this share of minutes_played, so a fraction of a
+# minute (e.g. a goalkeeper's last-minute outfield cameo) does not name a second role.
+# The margin still uses the real second-most minutes. It must not exceed
+# 1/6 - AMBIGUOUS_POSITION_MARGIN (≈ 0.117, six position groups): an ambiguous row's
+# second group always holds more than that, so it keeps its label (enforced by
+# TestSecondPositionShareBound).
+SECOND_POSITION_MIN_SHARE: float = 0.10
+
 LONG_PASS_THRESHOLD_UNITS: int = 30
 
 # A playing period whose Half End is more than this many minutes before its

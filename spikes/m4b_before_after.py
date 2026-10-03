@@ -22,6 +22,12 @@ M4b3 (ADR 004 §9) and the M4b3 cleanup run it with --snapshot and
 rebuild (exact for non-floats, 1e-9 for floats), and the open-play + restart split must
 add up to its total on every row.
 
+M4c1 (ADR 004 §8, plan 005) adds second_position_group's minimum share. Its expected
+list (spikes/expected_m4c1_second_group.json) has a "second_position_group" entry:
+with --all-columns-identical that column is then compared row by row against the
+list instead (every changed row must be listed with its before/after, and every
+listed row must change), and every other column must stay identical.
+
 Usage: .venv/bin/python spikes/m4b_before_after.py --snapshot DIR [--expected PATH]
        [--all-columns-identical]
 --snapshot is required: there is one snapshot per chunk (m4a_snapshot for M4b2,
@@ -53,6 +59,7 @@ GROUPS = {"AM-Winger": "minutes_am_winger", "CB": "minutes_cb", "DM-CM": "minute
           "FB-WB": "minutes_fb_wb", "GK": "minutes_gk", "ST": "minutes_st"}  # alphabetical
 OUTFIELD = {"CB", "FB-WB", "DM-CM", "AM-Winger", "ST"}
 AMBIGUOUS_MARGIN = 0.05  # ADR 004 D5
+SECOND_POSITION_MIN_SHARE = 0.10  # ADR 004 §8, user U3 2026-10-03 (M4c1)
 TOL = 1e-9
 
 problems: list[str] = []
@@ -65,7 +72,8 @@ def stop(msg: str) -> None:
 
 def second_group(row: dict) -> tuple[str | None, float]:
     """ADR 004 D5 second group, re-implemented: most minutes after the top group,
-    alphabetical on ties, never GK for an outfield row, None at 0 minutes."""
+    alphabetical on ties, never GK for an outfield row, None at 0 minutes.
+    Returns the group with its minutes; the caller applies the M4c1 label share."""
     best_g, best_m = None, 0.0
     for g, col in GROUPS.items():
         if g == row["position_group"] or (g == "GK" and row["position_group"] in OUTFIELD):
@@ -75,7 +83,8 @@ def second_group(row: dict) -> tuple[str | None, float]:
     return best_g, best_m
 
 
-def column_differences(old: pl.DataFrame, new: pl.DataFrame, key: list[str]) -> list[str]:
+def column_differences(old: pl.DataFrame, new: pl.DataFrame, key: list[str],
+                       skip: frozenset[str] = frozenset()) -> list[str]:
     """
     Every column of `old` must be in `new` with identical values on the same rows
     (sorted by `key`): exact for non-floats, within TOL for floats, the same nulls
@@ -84,6 +93,8 @@ def column_differences(old: pl.DataFrame, new: pl.DataFrame, key: list[str]) -> 
     o, n = old.sort(key), new.sort(key)
     out = []
     for col in old.columns:
+        if col in skip:
+            continue
         if col not in new.columns:
             out.append(f"column {col} is missing after the rebuild")
             continue
@@ -165,11 +176,14 @@ def main() -> int:
         print("STOP: row sets differ; columns not compared. Bring this to the user.")
         return 1
 
+    expected_second = expected.get("second_position_group")
     if args.all_columns_identical:
         changed = []
         for label, old, new, key in (("match", old_m, new_m, ["match_id", "player_id"]),
                                      ("season", old_s, new_s, KEY)):
-            changed += [f"{label} {msg}" for msg in column_differences(old, new, key)]
+            skip = frozenset({"second_position_group"}) if label == "season" and expected_second is not None \
+                else frozenset()
+            changed += [f"{label} {msg}" for msg in column_differences(old, new, key, skip)]
             added = [c for c in new.columns if c not in old.columns]
             print(f"{label}: {len(old.columns)} columns identical-checked; new columns: {added}")
         if changed:
@@ -178,6 +192,19 @@ def main() -> int:
             print("STOP: pre-existing columns changed. Bring this to the user.")
             return 1
     joined = old_s.join(new_s, on=KEY, how="inner", suffix="_new")
+    if expected_second is not None:
+        exp_second = {tuple(e[c] for c in KEY): (e["before"], e["after"]) for e in expected_second}
+        moved = joined.filter(pl.col("second_position_group").eq_missing(pl.col("second_position_group_new")).not_())
+        seen_second = set()
+        for r in moved.iter_rows(named=True):
+            k = tuple(r[c] for c in KEY)
+            seen_second.add(k)
+            if exp_second.get(k) != (r["second_position_group"], r["second_position_group_new"]):
+                stop(f"unexpected second_position_group change: {r['player_name']} ({r['team_name']}) "
+                     f"{r['second_position_group']} → {r['second_position_group_new']}")
+        for k in set(exp_second) - seen_second:
+            stop(f"expected second_position_group change did not happen: {k}")
+        print(f"second_position_group changes: {moved.height} (expected {len(exp_second)})")
     for col in MINUTE_COLS:
         diff = (joined[col] - joined[f"{col}_new"]).abs().max()
         if diff > TOL:
@@ -228,9 +255,10 @@ def main() -> int:
                 bad_margin += 1
             continue
         g2, m2 = second_group(r)
+        exp_label = g2 if m2 / r["minutes_played"] >= SECOND_POSITION_MIN_SHARE else None
         top = r[GROUPS[r["position_group"]]] if r["position_group"] in GROUPS else 0.0
         margin = (top - m2) / r["minutes_played"]
-        if (g2 != r["second_position_group"] or abs(margin - r["position_group_margin_pct"]) > TOL
+        if (exp_label != r["second_position_group"] or abs(margin - r["position_group_margin_pct"]) > TOL
                 or (margin < AMBIGUOUS_MARGIN) != r["position_group_ambiguous"]
                 or abs(top / r["minutes_played"] - r["position_group_share"]) > TOL):
             bad_margin += 1

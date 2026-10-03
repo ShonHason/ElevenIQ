@@ -2743,6 +2743,47 @@ class TestPositionMarginColumns:
         assert row["second_position_group"] == "ST"
 
 
+class TestSecondPositionMinShare:
+    """ADR 004 §8 (plan 005 M4c1): the second_position_group label is null below
+    SECOND_POSITION_MIN_SHARE (10%) of minutes_played; the margin, share and
+    ambiguous flag still use the real second-most minutes."""
+
+    def test_second_group_just_below_ten_percent_is_null_but_margin_uses_it(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=90.1, minutes_st=9.9)], min_minutes=0)
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx(0.802)
+        assert row["position_group_share"] == pytest.approx(0.901)
+
+    def test_second_group_at_exactly_ten_percent_is_kept(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=90.0, minutes_st=10.0)], min_minutes=0)
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_margin_pct"] == pytest.approx(0.8)
+
+    def test_goalkeeper_cameo_of_a_fraction_of_a_minute_has_no_second_group(self):
+        """The Begović shape: a GK season with ~1 outfield minute in ~1,500."""
+        row = _season_one([_match_row(minutes_played=1500.0, position_group="GK",
+                                      minutes_gk=1498.97, minutes_dm_cm=1.03)], min_minutes=0)
+        assert row["position_group"] == "GK"
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx((1498.97 - 1.03) / 1500)
+
+    def test_threshold_does_not_touch_the_ambiguous_flag(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="AM-Winger",
+                                      minutes_am_winger=51.0, minutes_st=49.0)], min_minutes=0)
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_ambiguous"] is True
+
+    def test_threshold_comes_from_config(self, monkeypatch):
+        import eleveniq.pipeline.build_player_season as bps
+        monkeypatch.setattr(bps, "SECOND_POSITION_MIN_SHARE", 0.25)
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=80.0, minutes_fb_wb=20.0)], min_minutes=0)
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx(0.6)
+
+
 class TestM4bRatios:
     """ADR 004 D12, D13, D15 season ratios, from season totals."""
 
@@ -2838,6 +2879,124 @@ class TestPositionMarginEdges:
         assert row["position_group_ambiguous"] is False
         assert row["second_position_group"] is None
         assert row["team_pass_share"] is None
+
+
+class TestSecondPositionMinShareEdges:
+    """ADR 004 §8 (M4c1) edges not covered by TestSecondPositionMinShare: the 10%
+    test reads season totals per stint, and skips GK minutes on an outfield row."""
+
+    def test_one_full_match_elsewhere_is_below_ten_percent_of_the_season(self):
+        """11 full matches at CB + 1 full match at ST: ST is 100% of its match but
+        90/1080 = 8.3% of the season, so no label; the margin still subtracts it."""
+        row = _season_one([_match_row(minutes_played=90.0, position_group="CB")] * 11
+                          + [_match_row(minutes_played=90.0, position_group="ST")],
+                          min_minutes=0)
+        assert row["position_group"] == "CB"
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx((990 - 90) / 1080)
+
+    def test_small_cameos_that_sum_above_ten_percent_are_labelled(self):
+        """Ten matches with 9 ST minutes each: season ST = 90 of 900, exactly the
+        10% boundary on season totals, so the label is kept."""
+        row = _season_one([_match_row(minutes_played=90.0, position_group="CB",
+                                      minutes_cb=81.0, minutes_st=9.0)] * 10,
+                          min_minutes=0)
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_share"] == pytest.approx(0.9)
+
+    def test_outfield_row_with_large_gk_minutes_does_not_use_them_for_the_label(self):
+        """CB 80, GK 15, ST 5: GK is ineligible, the real second is ST at 5% -> null.
+        A threshold read from GK minutes (15%) would wrongly keep a label."""
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=80.0, minutes_gk=15.0, minutes_st=5.0)],
+                          min_minutes=0)
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx(0.75)
+        assert row["position_group_ambiguous"] is False
+
+    def test_threshold_is_per_team_stint_for_a_player_on_two_teams(self):
+        """Same player and season, two clubs: ST is 5% at team 10 (null) and 50% at
+        team 20 (kept). Pooling the stints would give one shared answer."""
+        result = aggregate_player_season(_df([
+            _match_row(team_id=10, team_name="Team A", minutes_played=100.0,
+                       position_group="CB", minutes_cb=95.0, minutes_st=5.0),
+            _match_row(team_id=20, team_name="Team B", minutes_played=100.0,
+                       position_group="ST", minutes_cb=45.0, minutes_st=55.0),
+        ]), min_minutes=0)
+        by_team = {r["team_id"]: r for r in result.iter_rows(named=True)}
+        assert by_team[10]["second_position_group"] is None
+        assert by_team[20]["second_position_group"] == "CB"
+        assert by_team[20]["position_group_ambiguous"] is False  # margin 0.10
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _SEASON_PARQUET.exists(),
+                    reason="requires data/processed/player_season_stats.parquet")
+class TestSecondPositionMinShareOutput:
+    """ADR 004 §8 (M4c1) invariants on the built season parquet."""
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def season(cls) -> pl.DataFrame:
+        return pl.read_parquet(_SEASON_PARQUET)
+
+    def test_every_ambiguous_row_keeps_its_second_group(self, season):
+        """ADR 004 §8: no ambiguous row loses the label. Guaranteed by the structural
+        bound (see TestSecondPositionShareBound); in 2015/16 the lowest second-group
+        share of an ambiguous row is 0.448 in the gated pool and 0.380 over all rows."""
+        bad = season.filter(pl.col("position_group_ambiguous")
+                            & pl.col("second_position_group").is_null())
+        assert bad.height == 0, bad.select("player_name", "team_id", "season_id").head(10)
+
+    def test_every_label_matches_an_independent_recomputation(self, season):
+        """Full per-row comparison, both directions: the label is recomputed from
+        the per-group minute columns (ADR 004 D5: most minutes after the top group,
+        alphabetical on ties, never GK for an outfield row, none at 0 minutes) and
+        kept only when its share of minutes_played is >= SECOND_POSITION_MIN_SHARE
+        (ADR 004 §8). A label that should be blank and a blank that should be a
+        label both fail."""
+        from eleveniq.config import SECOND_POSITION_MIN_SHARE
+        from eleveniq.metrics.positions import (
+            GK_GROUP, OUTFIELD_GROUPS, POSITION_GROUP_COLUMNS, UNKNOWN_POSITION_GROUP)
+        groups = sorted(g for g in POSITION_GROUP_COLUMNS if g != UNKNOWN_POSITION_GROUP)
+        wrong = []
+        for row in season.iter_rows(named=True):
+            best_group, best_min = None, 0.0
+            for group in groups:
+                if group == row["position_group"]:
+                    continue
+                if group == GK_GROUP and row["position_group"] in OUTFIELD_GROUPS:
+                    continue
+                if row[POSITION_GROUP_COLUMNS[group]] > best_min:
+                    best_group, best_min = group, row[POSITION_GROUP_COLUMNS[group]]
+            minutes = row["minutes_played"]
+            expected = (best_group if minutes > 0 and best_min / minutes >= SECOND_POSITION_MIN_SHARE
+                        else None)
+            if expected != row["second_position_group"]:
+                wrong.append((row["player_name"], row["team_id"], expected,
+                              row["second_position_group"]))
+        assert season.height > 0
+        assert not wrong, f"{len(wrong)} rows differ, e.g. {wrong[:5]}"
+
+
+class TestSecondPositionShareBound:
+    """ADR 004 §8: an ambiguous row (margin < AMBIGUOUS_POSITION_MARGIN) always keeps
+    its second-group label. With n position groups whose minutes sum to
+    minutes_played (UNKNOWN minutes fail the build), the top group holds at least
+    1/n, so an ambiguous row's second group holds more than 1/n - margin. The
+    label threshold must not exceed that bound, or ambiguous rows could lose the
+    label their display-only second-cohort percentile depends on."""
+
+    def test_min_share_does_not_exceed_the_ambiguity_bound(self):
+        from eleveniq.config import AMBIGUOUS_POSITION_MARGIN, SECOND_POSITION_MIN_SHARE
+        from eleveniq.metrics.positions import POSITION_GROUP_COLUMNS, UNKNOWN_POSITION_GROUP
+        n_groups = len([g for g in POSITION_GROUP_COLUMNS if g != UNKNOWN_POSITION_GROUP])
+        bound = 1 / n_groups - AMBIGUOUS_POSITION_MARGIN
+        assert n_groups == 6
+        assert bound == pytest.approx(0.1167, abs=1e-4)
+        assert SECOND_POSITION_MIN_SHARE <= bound, (
+            f"SECOND_POSITION_MIN_SHARE {SECOND_POSITION_MIN_SHARE} exceeds the bound "
+            f"{bound:.4f}: an ambiguous row could lose its second-group label")
 
 
 class TestOpenPlayRestartSeasonColumns:

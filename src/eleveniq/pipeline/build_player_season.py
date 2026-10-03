@@ -51,6 +51,7 @@ from eleveniq.config import (
     MIN_AERIAL_CONTESTS,
     MIN_MINUTES_THRESHOLD,
     MIN_MINUTES_TOLERANCE,
+    SECOND_POSITION_MIN_SHARE,
     CompetitionSeason,
     validate_competition_seasons,
 )
@@ -146,6 +147,11 @@ def _position_margin_columns(season: pl.DataFrame) -> pl.DataFrame:
     0, and the margin is then the top group's share: 1.0, unless an outfield row
     also has GK minutes (GK is never its second group). share and margin are
     shares of minutes_played.
+
+    ADR 004 §8 (M4c1): the second_position_group label is also null when its
+    minutes are below SECOND_POSITION_MIN_SHARE of minutes_played. The margin
+    still uses those minutes, so share, margin and the ambiguous flag do not
+    depend on the label threshold.
     """
     candidates = [g for g in POSITION_GROUP_COLUMNS if g != UNKNOWN_POSITION_GROUP]
     second = pl.lit(None, dtype=pl.Utf8)
@@ -163,8 +169,11 @@ def _position_margin_columns(season: pl.DataFrame) -> pl.DataFrame:
         top = pl.when(pl.col("position_group") == group).then(
             pl.col(POSITION_GROUP_COLUMNS[group])).otherwise(top)
     minutes = pl.col("minutes_played")
+    # Same float form as the share columns (best / minutes), so the threshold test
+    # matches an independent recomputation of the share exactly.
+    labelled = (minutes > 0) & (best / minutes >= SECOND_POSITION_MIN_SHARE)
     season = season.with_columns(
-        second.alias("second_position_group"),
+        pl.when(labelled).then(second).otherwise(None).alias("second_position_group"),
         pl.when(minutes > 0).then(top / minutes).otherwise(None).alias("position_group_share"),
         pl.when(minutes > 0).then((top - best) / minutes).otherwise(None)
         .alias("position_group_margin_pct"),
