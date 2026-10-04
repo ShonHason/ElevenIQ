@@ -28,6 +28,13 @@ with --all-columns-identical that column is then compared row by row against the
 list instead (every changed row must be listed with its before/after, and every
 listed row must change), and every other column must stay identical.
 
+M4c2b (ADR 004 D15, plan 005) adds np_shots_on_target (+p90). Once the column exists,
+the spike re-counts penalties on target per (match, player) from the raw events
+(periods 1-4, ADR 002 §30 outcomes, shot.type "Penalty") and requires
+np_shots_on_target + penalties on target = shots_on_target on every match row, a
+penalty on target by a player with no match row to stop, and on every season row
+the match sum, the p90 (from minutes_played) and np_shots_on_target <= np_shots.
+
 Usage: .venv/bin/python spikes/m4b_before_after.py --snapshot DIR [--expected PATH]
        [--all-columns-identical]
 --snapshot is required: there is one snapshot per chunk (m4a_snapshot for M4b2,
@@ -44,6 +51,7 @@ from pathlib import Path
 import polars as pl
 
 ROOT = Path(__file__).resolve().parents[1]
+RAW_EVENTS = ROOT / "data" / "raw" / "statsbomb" / "events"
 NEW_MATCH = ROOT / "data" / "interim" / "player_match_stats.parquet"
 NEW_SEASON = ROOT / "data" / "processed" / "player_season_stats.parquet"
 DEFAULT_EXPECTED = Path(__file__).resolve().parent / "expected_m4b_flips.json"
@@ -61,6 +69,7 @@ OUTFIELD = {"CB", "FB-WB", "DM-CM", "AM-Winger", "ST"}
 AMBIGUOUS_MARGIN = 0.05  # ADR 004 D5
 SECOND_POSITION_MIN_SHARE = 0.10  # ADR 004 §8, user U3 2026-10-03 (M4c1)
 TOL = 1e-9
+ON_TARGET = frozenset({"Goal", "Saved", "Saved to Post"})  # ADR 002 §30
 
 problems: list[str] = []
 
@@ -140,6 +149,69 @@ def split_invariant_problems(df: pl.DataFrame) -> list[str]:
     if not problems:
         print(f"op + restart = total holds on {df.height} rows (max xG |Δ| {dx:.2e})")
     return problems
+
+
+def penalties_on_target(match_ids: list[int]) -> dict[tuple[int, int], int]:
+    """(match_id, player_id) → penalties on target, from the raw events (periods 1-4)."""
+    out: dict[tuple[int, int], int] = {}
+    for mid in match_ids:
+        for e in json.loads((RAW_EVENTS / f"{mid}.json").read_text()):
+            if e["period"] == 5 or e["type"]["name"] != "Shot":
+                continue
+            shot = e.get("shot") or {}
+            if ((shot.get("type") or {}).get("name") == "Penalty"
+                    and (shot.get("outcome") or {}).get("name") in ON_TARGET):
+                k = (mid, e["player"]["id"])
+                out[k] = out.get(k, 0) + 1
+    return out
+
+
+def np_shots_on_target_problems(match_df: pl.DataFrame, season_df: pl.DataFrame,
+                                pens: dict[tuple[int, int], int]) -> list[str]:
+    """
+    M4c2b (ADR 004 D15): np_shots_on_target + penalties on target (`pens`, from the raw
+    events) = shots_on_target on every match row; every penalty belongs to a row; on
+    every season row np_shots_on_target is the match sum, np_shots_on_target <= np_shots,
+    and the p90 is the total / minutes_played x 90 (null at 0 minutes). A null in a
+    compared column is a problem. A frame without the column (pre-M4c2b) has none.
+    """
+    if "np_shots_on_target" not in match_df.columns:
+        return []
+    out = []
+    cols = {"match": ["np_shots_on_target", "shots_on_target"],
+            "season": ["np_shots_on_target", "np_shots", "shots_on_target"]}
+    for label, df in (("match", match_df), ("season", season_df)):
+        nulls = {c: df[c].null_count() for c in cols[label] if df[c].null_count()}
+        if nulls:
+            return [f"{label}: null values in compared columns {nulls}"]
+    pen_df = pl.DataFrame([{"match_id": m, "player_id": p, "_pen": n} for (m, p), n in pens.items()],
+                          schema={"match_id": match_df["match_id"].dtype,
+                                  "player_id": match_df["player_id"].dtype, "_pen": pl.Int64})
+    orphans = pen_df.join(match_df.select("match_id", "player_id"), on=["match_id", "player_id"],
+                          how="anti")
+    if orphans.height:
+        out.append(f"{orphans.height} penalties-on-target keys with no match row")
+    m = match_df.join(pen_df, on=["match_id", "player_id"], how="left").with_columns(
+        pl.col("_pen").fill_null(0))
+    bad = m.filter(pl.col("np_shots_on_target") + pl.col("_pen") != pl.col("shots_on_target")).height
+    if bad:
+        out.append(f"{bad} match rows where np_shots_on_target + penalties on target != shots_on_target")
+    summed = match_df.group_by(KEY).agg(pl.col("np_shots_on_target").sum().alias("_sum"))
+    s = season_df.join(summed, on=KEY, how="left")
+    if s.filter(pl.col("_sum").is_null() | (pl.col("_sum") != pl.col("np_shots_on_target"))).height:
+        out.append("season np_shots_on_target differs from the match sum")
+    if s.filter(pl.col("np_shots_on_target") > pl.col("np_shots")).height:
+        out.append("season np_shots_on_target > np_shots")
+    p90 = s.with_columns(pl.when(pl.col("minutes_played") > 0)
+                         .then(pl.col("np_shots_on_target") / pl.col("minutes_played") * 90)
+                         .alias("_p90"))
+    same_nulls = (p90["_p90"].is_null() == p90["np_shots_on_target_p90"].is_null()).all()
+    if not same_nulls or ((p90["_p90"] - p90["np_shots_on_target_p90"]).abs().max() or 0) > TOL:
+        out.append("np_shots_on_target_p90 differs from the recomputation")
+    if not out:
+        print(f"np_shots_on_target + penalties on target = shots_on_target on {m.height} match rows "
+              f"({sum(pens.values())} penalties on target); season sums and p90 agree")
+    return out
 
 
 def main() -> int:
@@ -270,6 +342,12 @@ def main() -> int:
     for label, df in (("match", new_m), ("season", new_s)):
         for msg in split_invariant_problems(df):
             stop(f"{label}: {msg}")
+
+    # M4c2b invariant (ADR 004 D15), on the raw events.
+    if "np_shots_on_target" in new_m.columns:
+        pens = penalties_on_target(new_m["match_id"].unique().sort().to_list())
+        for msg in np_shots_on_target_problems(new_m, new_s, pens):
+            stop(msg)
 
     # Flags (STOP rule).
     exp_rows = {(e["player_id"], e["team_id"], e["competition_id"], e["season_id"], e["source"]):

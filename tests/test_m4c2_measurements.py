@@ -82,12 +82,13 @@ class TestMeasurementsScope:
         assert 9 not in p["pool_competition_ids"]
 
     def test_metric_set_is_every_season_per90_except_goals_and_assists(self, m):
-        """42 per-90s = every *_p90 column of the season parquet except goals/assists (never DNA)."""
+        """43 per-90s = every *_p90 column of the season parquet except goals/assists (never DNA);
+        np_shots_on_target_p90 joined in M4c2b."""
         cols = m["provenance"]["season_columns"]
-        assert len(cols) == 142
+        assert len(cols) == 144
         expected = {c for c in cols if c.endswith("_p90")} - {"goals_p90", "assists_p90"}
         assert set(m["metrics"]) == expected
-        assert len(expected) == 42
+        assert len(expected) == 43
 
     def test_ratio_set_and_columns_exist(self, m):
         """The 7 ratios, and every column a ratio or per-90 is built from is a season column."""
@@ -219,7 +220,7 @@ class TestMeasurementsInternalConsistency:
                 rule = all(40.0 <= v <= 60.0 for v in means.values())
                 assert c["global_ok"] is rule, (name, grp, means)
                 n_ok += rule
-        assert n_ok == 161   # §10.1: 161 of 210 after the per-group dedupe
+        assert n_ok == 166   # §10.1: 166 of 215 (M4c2b: np_shots_on_target is global_ok in all 5)
 
     def test_rho_within_mean_is_mean_of_the_pool_leagues(self, m):
         """§10.3: rho for a proxy is the mean of the four within-league Spearman rho, defined only
@@ -237,7 +238,7 @@ class TestMeasurementsInternalConsistency:
             else:
                 assert b["rho_within_mean"] is None, (where, proxy, by)
             n += 1
-        assert n >= 2 * (42 * 5 + 2)
+        assert n >= 2 * (43 * 5 + 2)
 
     def test_cells_missing_a_league_rho_cannot_reach_dna(self, m):
         """A league whose rho is undefined (constant values or < 2 rows) is dropped from by_league,
@@ -290,13 +291,36 @@ _RATIO_PAIRS_OVER_085 = {
 class TestMeasurementsReconcileWithAdr004:
     """The figures ADR 004 §10 quotes (and M4c3's derive() must reproduce) match the file."""
 
+    # ADR 004 §10.6 (M4c2b): np_shots_on_target_p90 per group, r_full, zero share and the larger
+    # within-league mean possession rho of the two proxies, as quoted in the ADR.
+    _NP_SOT = {"CB": (0.277656, 0.1373, 0.052089), "FB-WB": (0.580878, 0.1606, 0.211560),
+               "DM-CM": (0.592665, 0.0442, 0.157286), "AM-Winger": (0.700334, 0.0036, 0.389822),
+               "ST": (0.679293, 0.0, 0.395111)}
+
+    @pytest.mark.parametrize("grp", sorted(_NP_SOT))
+    def test_np_shots_on_target_figures_match_adr(self, m, grp):
+        """§10.6: the inputs that make np_shots_on_target DNA in AM-Winger and ST only: no cell is
+        zero-heavy, r_full < 0.6 in CB / FB-WB / DM-CM, and no cell triggers the possession rule
+        (|mean rho| < 0.4 on both proxies). Every pair at |rho| >= 0.85 is with shots_on_target_p90
+        (fixed display), and np_shots_p90 stays below 0.85."""
+        c = m["metrics"]["np_shots_on_target_p90"]["groups"][grp]
+        r, zero, rho = self._NP_SOT[grp]
+        assert c["r_full"] == pytest.approx(r, abs=1e-6)
+        assert c["zero_share"] == pytest.approx(zero, abs=1e-4)
+        rhos = [c["possession"][k]["rho_within_mean"] for k in ("poss_dur_loo", "poss_pass_loo")]
+        assert max(abs(x) for x in rhos) == pytest.approx(rho, abs=1e-6)
+        assert c["global_ok"] is True
+        strong = [p for p in m["collinear_pairs"] if p["group"] == grp and abs(p["rho"]) >= 0.85
+                  and "np_shots_on_target_p90" in (p["a"], p["b"])]
+        assert [{p["a"], p["b"]} - {"np_shots_on_target_p90"} for p in strong] == [{"shots_on_target_p90"}]
+
     def test_every_d17_pair_is_resolved(self, m):
-        """§10.3: 62 per-90 pairs at |rho| >= 0.85, each resolved by fixed display or a D17 choice,
+        """§10.3: 67 per-90 pairs at |rho| >= 0.85 (M4c2b adds 5, np_shots_on_target ~ shots_on_target), each resolved by fixed display or a D17 choice,
         plus the ratio pairs §10.3 lists, each with a member that is display in that group. An
         unresolved pair would leave two near-duplicate dimensions in a DNA vector."""
         strong = [p for p in m["collinear_pairs"] if abs(p["rho"]) >= 0.85]
         per90 = [p for p in strong if p["a"].endswith("_p90") and p["b"].endswith("_p90")]
-        assert len(per90) == 62
+        assert len(per90) == 67
         ratio_pairs = {(p["group"], frozenset((p["a"], p["b"]))) for p in strong if p not in per90}
         assert ratio_pairs == _RATIO_PAIRS_OVER_085
         unresolved = []
@@ -463,7 +487,7 @@ class TestCountP90AgainstParquet:
                 assert c["count_p90"] == pytest.approx(p90, abs=1e-12), (name, grp)
                 assert c["holders_at_count"][str(c["count_p90"])] == sum(x >= p90 for x in vals), (name, grp)
                 checked += 1
-        assert checked == 42 * 5
+        assert checked == 43 * 5
 
 
 def _assert_close(a, b, path="$"):

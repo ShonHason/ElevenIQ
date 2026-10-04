@@ -392,3 +392,59 @@ class TestSplitInvariantProblems:
     def test_pre_m4b3_frame_is_skipped(self):
         import m4b_before_after as ba
         assert ba.split_invariant_problems(pl.DataFrame({"key_passes": [1]})) == []
+
+
+class TestNpShotsOnTargetProblems:
+    """spikes/m4b_before_after.np_shots_on_target_problems (plan 005 M4c2b, ADR 004
+    D15): np + penalties on target = shots_on_target per match row; season sum,
+    np <= np_shots, p90 from minutes_played."""
+
+    KEY = {"team_id": [10, 10], "competition_id": [11, 11], "season_id": [27, 27],
+           "source": ["statsbomb", "statsbomb"]}
+
+    def _frames(self, match_over: dict | None = None, season_over: dict | None = None):
+        match = pl.DataFrame({"match_id": [1, 2], "player_id": [7, 7], **self.KEY,
+                              "shots_on_target": [2, 1], "np_shots_on_target": [1, 1],
+                              **(match_over or {})})
+        season = pl.DataFrame({"player_id": [7], **{k: v[:1] for k, v in self.KEY.items()},
+                               "minutes_played": [180.0], "shots_on_target": [3], "np_shots": [4],
+                               "np_shots_on_target": [2], "np_shots_on_target_p90": [1.0],
+                               **(season_over or {})})
+        return match, season
+
+    def test_consistent_frames_have_no_problems(self):
+        import m4b_before_after as ba
+        assert ba.np_shots_on_target_problems(*self._frames(), {(1, 7): 1}) == []
+
+    def test_missing_penalty_breaks_the_identity(self):
+        """Mutation-style: the pipeline counted a penalty on target as np."""
+        import m4b_before_after as ba
+        (msg,) = ba.np_shots_on_target_problems(*self._frames(), {})
+        assert "1 match rows where np_shots_on_target + penalties on target" in msg
+
+    def test_penalty_of_a_player_without_a_row_is_reported(self):
+        import m4b_before_after as ba
+        msgs = ba.np_shots_on_target_problems(*self._frames(), {(1, 7): 1, (3, 9): 1})
+        assert any("no match row" in m for m in msgs)
+
+    @pytest.mark.parametrize("over, fragment", [
+        ({"np_shots_on_target": [3], "np_shots_on_target_p90": [1.5]}, "match sum"),
+        ({"np_shots": [1]}, "> np_shots"),
+        ({"np_shots_on_target_p90": [1.1]}, "p90 differs"),
+        ({"np_shots_on_target_p90": pl.Series([None], dtype=pl.Float64)}, "p90 differs"),
+    ])
+    def test_season_inconsistencies_are_reported(self, over, fragment):
+        import m4b_before_after as ba
+        msgs = ba.np_shots_on_target_problems(*self._frames(season_over=over), {(1, 7): 1})
+        assert any(fragment in m for m in msgs), msgs
+
+    def test_null_is_reported_not_dropped(self):
+        import m4b_before_after as ba
+        match_over = {"np_shots_on_target": pl.Series([None, 1], dtype=pl.Int64)}
+        (msg,) = ba.np_shots_on_target_problems(*self._frames(match_over=match_over), {(1, 7): 1})
+        assert "null values" in msg
+
+    def test_pre_m4c2b_frame_is_skipped(self):
+        import m4b_before_after as ba
+        match, season = self._frames()
+        assert ba.np_shots_on_target_problems(match.drop("np_shots_on_target"), season, {}) == []

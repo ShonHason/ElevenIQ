@@ -152,7 +152,8 @@ UNKNOWN_PASS_OUTCOME = "Unknown"
 # A deliberate kick out of play for an injured player: never completed, and left out
 # of the completion denominators (ADR 004 D13).
 INJURY_CLEARANCE_OUTCOME = "Injury Clearance"
-# ADR 004 D15: shot.type.name of a penalty, left out of np_shots and np_xg.
+# ADR 004 D15: shot.type.name of a penalty, left out of np_shots, np_shots_on_target
+# and np_xg.
 PENALTY_SHOT_TYPE = "Penalty"
 
 # Dropped events (a player.id with no output row) that do not fail the build:
@@ -270,6 +271,7 @@ _SCHEMA: dict[str, type] = {
     "xg": pl.Float64,
     "shots_missing_xg": pl.Int32,
     "np_shots": pl.Int32,
+    "np_shots_on_target": pl.Int32,
     "np_xg": pl.Float64,
     "passes_attempted": pl.Int32,
     "open_play_passes_attempted": pl.Int32,
@@ -373,6 +375,7 @@ def _aggregate_events(
     xg = 0.0
     shots_missing_xg = 0
     np_shots = 0
+    np_shots_on_target = 0
     np_xg = 0.0
     passes_attempted = 0
     open_play_passes_attempted = 0
@@ -510,13 +513,15 @@ def _aggregate_events(
             shot_outcome = (shot_data.get("outcome") or {}).get("name")
             if shot_outcome not in KNOWN_SHOT_OUTCOMES:
                 issues[(UNKNOWN_SHOT_OUTCOME, shot_outcome)] += 1
+            # ADR 004 D15: a penalty (shot.type "Penalty") is left out of np_*.
+            is_penalty = (shot_data.get("type") or {}).get("name") == PENALTY_SHOT_TYPE
             if is_shot_on_target(shot_outcome):
                 shots_on_target += 1
+                if not is_penalty:
+                    np_shots_on_target += 1
             if shot_outcome == "Goal":
                 goals += 1
             xg_value = shot_data.get("statsbomb_xg")
-            # ADR 004 D15: a penalty (shot.type "Penalty") is left out of np_*.
-            is_penalty = (shot_data.get("type") or {}).get("name") == PENALTY_SHOT_TYPE
             if not is_penalty:
                 np_shots += 1
             if xg_value is None:
@@ -609,6 +614,7 @@ def _aggregate_events(
         "xg": xg,
         "shots_missing_xg": shots_missing_xg,
         "np_shots": np_shots,
+        "np_shots_on_target": np_shots_on_target,
         "np_xg": np_xg,
         "passes_attempted": passes_attempted,
         "open_play_passes_attempted": open_play_passes_attempted,

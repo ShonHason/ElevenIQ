@@ -251,6 +251,7 @@
   - A penalty is `shot.type.name == "Penalty"` (410 in periods 1–4, none missing xG).
   - `np_xg_per_shot` is null when `np_shots` is 0.
   - Identities, checked in an integration test: `np_xg + penalty xG = xg` and `np_shots + penalty shots = shots`.
+  - **M4c2b (2026-10-04):** `np_shots_on_target` (+p90) = the ADR 002 §30 on-target outcomes of non-penalty shots. `np_shots_on_target` + penalties on target = `shots_on_target` on every match row, re-counted from the raw events by `spikes/m4b_before_after.py` (2015/16: 43,044 rows, 385 penalties on target; 376 in the pool leagues). `shots_on_target` keeps penalties and is fixed display (§10.2).
 - Penalty share of xG: ST 11.2%, AM-Winger 9.1%, DM-CM 7.5%, FB-WB 5.0%, CB 0.9%.
 - Top-10 by xG/90: Messi and Agüero leave and Fedor Flores and Benteke enter under np_xg.
 
@@ -393,7 +394,7 @@ These are the items where the data contradicted the recommendation, the stats-re
 - D12: `open_play_passes_attempted`, `team_open_play_passes_while_on` (failing `pass_credit_out_of_range` outside 7–11), `team_pass_share`.
 - D13: `passes_injury_clearance`, `long_passes_injury_clearance`; both leave the completion denominators.
 - D14: one `RESTART_TYPES` in `metrics/pass_types.py`. `is_progressive_pass` requires `pass_type_name`.
-- D15: `np_shots`, `np_xg`, `np_xg_per_shot`, plus their p90s.
+- D15: `np_shots`, `np_xg`, `np_xg_per_shot`, plus their p90s; `np_shots_on_target` (+p90) in M4c2b.
 - D16:
   - fallbacks are not direct;
   - the receipt must lie after the key pass;
@@ -576,7 +577,7 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 
 **Status.** The M4c registry (`src/eleveniq/analytics/registry.py`, M4c3) derives every metric × group status from pre-registered rules applied to committed measurements. Hand overrides are explicit entries with a reason and an ADR reference. This section records the decisions, the measurements and the derived lists that M4c3's `derive()` must reproduce.
 - The stats-reviewer reviewed the `np_xg_per_shot` method and then the list (2026-10-04, both approved with conditions); the user decided the open points the same day.
-- M4c2b (`np_shots_on_target`, before M4c3) adds one column. It then goes through these rules like any metric, with no guaranteed status, and the lists below are re-derived.
+- M4c2b (`np_shots_on_target`, before M4c3) added one column. It went through these rules like any metric, with no guaranteed status. The lists below are re-derived: it is DNA in AM-Winger and ST (10.6).
 
 ### 10.1 Committed measurements
 - `spikes/m4_decision_measurements.py --write-json PATH` writes `src/eleveniq/analytics/measurements/statsbomb_27.json`. The spike still imports nothing from eleveniq. The file holds measurements. The registry's thresholds, the sign test and the trait minimum are applied in eleveniq.
@@ -587,9 +588,9 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
   - `count_p90`: the quantile 0.9.
 
   Changing any of these constants means regenerating the JSON.
-- **Provenance:** source `statsbomb`, season 27, pool competitions 11, 2, 12, 7 (Bundesliga 9 is outside the pool). It also holds the sha256 of the season and match parquets and the season column list (142 columns).
+- **Provenance:** source `statsbomb`, season 27, pool competitions 11, 2, 12, 7 (Bundesliga 9 is outside the pool). It also holds the sha256 of the season and match parquets and the season column list (144 columns since M4c2b; 142 before).
 - **Contents:**
-  - per metric × group (42 per-90s): n, zero share, r_full, the P90 of the season count with holders at count ≥ 5/10/15/P90, `global_ok` with each league's mean global percentile, and possession ρ for both proxies (within-league mean, per-league values and per-league n);
+  - per metric × group (43 per-90s since M4c2b): n, zero share, r_full, the P90 of the season count with holders at count ≥ 5/10/15/P90, `global_ok` with each league's mean global percentile, and possession ρ for both proxies (within-league mean, per-league values and per-league n);
   - per ratio × group (7 ratios): M, `min_attempts`, coverage, split-half r_full, reference-population sizes (global and per league) and possession ρ on the global reference population (rows meeting `min_attempts`, deduped);
   - D12b for DM-CM and CB;
   - every D17 pair with |ρ| ≥ 0.7 (a reporting floor; the rule is 0.85) over the per-90s, the ratios and `team_pass_share`. A ratio enters a pair only on gated rows that meet its `min_attempts` in that group.
@@ -601,7 +602,7 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
   - Until M4c2 every ADR 004 figure deduped over the whole pool before the split. That dropped Doucouré's only AM-Winger row (Rennes) from the AM-Winger population although it is scored there; his Granada row is DM-CM.
   - **Figures that move:**
     - D3's dedupe effect: 0.65 / 0.66 pts (was 0.85 / 0.86);
-    - D9: 161 of 210 `global_ok` (was 162). `tackles_attempted_p90` × AM-Winger becomes `league_inconsistent` (Serie A mean 39.99);
+    - D9: 161 of 210 `global_ok` (was 162; 166 of 215 after M4c2b, which adds 5 `global_ok` cells). `tackles_attempted_p90` × AM-Winger becomes `league_inconsistent` (Serie A mean 39.99);
     - D11 global AM-Winger: 275 (was 274);
     - local Serie A ST: 44 (D11's table, from before the local dedupe, has 45: Quagliarella, Torino/Sampdoria).
   - No status changes.
@@ -622,7 +623,7 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
   - §1's table header "Reliable (≥ 0.7)" predates D19; the bar is 0.6.
 
 **2026-10-04 (after the stats-reviewer's registry review):**
-- **`shots_on_target_p90` is fixed display (D15).** The pipeline counts penalties in it, which D15 removed from every other shot metric: 376 penalties on target in the pool leagues, and 72 gated players get ≥ 10% of their shots on target from penalties (Candreva 8 of 25). It was DNA in DM-CM, AM-Winger and ST. `np_shots_on_target` is added in chunk M4c2b.
+- **`shots_on_target_p90` is fixed display (D15).** The pipeline counts penalties in it, which D15 removed from every other shot metric: 376 penalties on target in the pool leagues, and 72 gated players get ≥ 10% of their shots on target from penalties (Candreva 8 of 25). It was DNA in DM-CM, AM-Winger and ST. `np_shots_on_target` was added in chunk M4c2b and is DNA in AM-Winger and ST only (10.6).
 - **The possession trigger (step 5) applies to ratios.**
   - D12 defined it for volume per-90s. Its reason, that DNA should describe the player and not his team, does not depend on the unit.
   - **This amendment was made after the data was seen** (§10.9 of the first M4c2 draft measured the ratios), and it **only removes DNA metrics**: it can turn a DNA cell into display, never the reverse.
@@ -672,7 +673,7 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 
 | Columns | Reason |
 |---|---|
-| `xg_p90`, `shots_p90`, `xg_per_shot`, `shots_on_target_p90` | D15: penalties are removed from shot metrics. The np forms replace the first three; `np_shots_on_target` comes in M4c2b |
+| `xg_p90`, `shots_p90`, `xg_per_shot`, `shots_on_target_p90` | D15: penalties are removed from shot metrics. The np forms replace them: `np_shots`, `np_xg`, `np_xg_per_shot` and (M4c2b) `np_shots_on_target` |
 | `xg_assisted_direct_p90` | D17 (~ `xg_assisted` 0.90–0.97) |
 | `dispossessed_p90`, `miscontrols_p90`, `switches_p90` | D18 |
 | `passes_attempted_p90`, `passes_completed_p90`, `carries_p90` | D12: raw volume |
@@ -694,7 +695,7 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
   The `dribble_success_pct` values come from 4–7 rows and are noise, not collinearity. `dribble_success_pct` is fixed display; `np_xg_per_shot` is display by U5 in every group.
 - No `team_pass_share` pair reaches 0.85. The registry raises if a pair at |ρ| ≥ 0.85 has both members DNA in a group without a D17 choice.
 - `op_key_passes` ~ `op_xg_assisted` is below 0.85 in every group, so both may stay.
-- 62 pairs at |ρ| ≥ 0.85 across groups; every one is resolved by the fixed-display table or the choices above.
+- 67 pairs at |ρ| ≥ 0.85 across groups; every one is resolved by the fixed-display table or the choices above. M4c2b added 5: `np_shots_on_target` ~ `shots_on_target` (0.984–0.998) in every group, whose other member is fixed display. `np_shots_on_target` ~ `np_shots` stays below 0.85 (max 0.840, DM-CM), so no D17 choice is needed.
 
 **Allow-list (D12, bound 0.55; one entry per metric × group):**
 - `progressive_passes` and `progressive_carries`: every group (D12). The entries matter only where the cell triggers: CB and DM-CM both; FB-WB `progressive_passes` (ρ 0.51) and `progressive_carries` (0.407).
@@ -706,7 +707,7 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 - FB-WB `final_third_entries_pass_p90` now triggers D12 (ρ 0.410 duration / 0.402 pass share) → `team_style_biased`, out (no allow-list; §7 item 3 precedent).
 - AM-Winger `xg_p90` triggers on pass share (0.406). It is already display (D15).
 - AM-Winger `np_xg_p90` triggers on pass share (0.411) → out (§7 item 3).
-- D9: 161 of 210 metric × group cells are `global_ok` (10.1).
+- D9: 161 of 210 metric × group cells are `global_ok` (10.1); 166 of 215 after M4c2b.
 
 ### 10.5 Ratios: minimum attempts and reference populations
 **`np_xg_per_shot` M (method reviewed by the stats-reviewer 2026-10-04: approved with conditions).**
@@ -766,13 +767,28 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 | `long_pass_completion_pct` | 33–64 | 94.2–100% (ST 40.5%) | 0.694–0.780 (ST 0.474) | CB 0.513 / 0.509, DM-CM 0.506 / 0.515, FB-WB 0.417 / 0.417, AM-Winger ≤ 0.313, ST ≤ 0.264 |
 | `aerial_win_pct` | 31–93 | 63.5–98.7% | 0.499–0.848 | ≤ 0.094 |
 
-### 10.6 Derived lists (2015/16, before M4c2b)
-DNA count per group: CB 16, FB-WB 19, DM-CM 24, AM-Winger 21, ST 19. Markers: * = 0.6 ≤ r < 0.7 ("lower reliability"); (AL) = admitted by the allow-list, `team_style_biased`.
+### 10.6 Derived lists (2015/16, after M4c2b)
+DNA count per group: CB 16, FB-WB 19, DM-CM 24, AM-Winger 22, ST 20 (before M4c2b: AM-Winger 21, ST 19). Markers: * = 0.6 ≤ r < 0.7 ("lower reliability"); (AL) = admitted by the allow-list, `team_style_biased`.
 - **CB (16):** aerials_lost*, aerials_won, ball_recoveries, box_entries_pass, clearances*, dribbled_past*, dribbles_attempted*, final_third_entries_carry, final_third_entries_pass, fouls_won*, long_passes_attempted, pressures, progressive_carries (AL), progressive_passes (AL), tackles_attempted, long_pass_completion_pct (AL).
 - **FB-WB (19):** aerials_lost*, aerials_won, ball_recoveries, box_entries_carry, box_entries_pass, clearances, dribbled_past*, dribbles_attempted, fouls_won, interceptions*, long_passes_attempted, np_shots, np_xg*, op_key_passes, pressures, progressive_carries (AL), progressive_passes (AL), tackles_attempted, long_pass_completion_pct* (AL).
 - **DM-CM (24):** aerials_lost, aerials_won, ball_recoveries, blocks*, box_entries_carry, box_entries_pass, clearances, dribbled_past, dribbles_attempted, final_third_entries_carry, fouls_committed, fouls_won, interceptions*, long_passes_attempted, np_shots, np_xg, op_key_passes*, op_xg_assisted, pressures, progressive_carries (AL), progressive_passes (AL), tackles_attempted, long_pass_completion_pct (AL), team_pass_share.
-- **AM-Winger (21):** aerials_lost, aerials_won, ball_recoveries, blocks*, box_entries_carry, box_entries_pass, clearances, dribbled_past, dribbles_attempted, final_third_entries_pass, fouls_committed, fouls_won, interceptions*, long_passes_attempted, np_shots, op_key_passes, pressures, progressive_carries, progressive_passes, tackles_attempted, long_pass_completion_pct.
-- **ST (19):** aerials_lost, aerials_won, ball_recoveries, blocks, box_entries_carry, box_entries_pass, clearances, dribbles_attempted, final_third_entries_pass, fouls_committed, fouls_won, long_passes_attempted, np_shots, pressures, progressive_carries, progressive_passes, tackles_attempted*, pass_completion_pct, aerial_win_pct.
+- **AM-Winger (22):** aerials_lost, aerials_won, ball_recoveries, blocks*, box_entries_carry, box_entries_pass, clearances, dribbled_past, dribbles_attempted, final_third_entries_pass, fouls_committed, fouls_won, interceptions*, long_passes_attempted, np_shots, np_shots_on_target, op_key_passes, pressures, progressive_carries, progressive_passes, tackles_attempted, long_pass_completion_pct.
+- **ST (20):** aerials_lost, aerials_won, ball_recoveries, blocks, box_entries_carry, box_entries_pass, clearances, dribbles_attempted, final_third_entries_pass, fouls_committed, fouls_won, long_passes_attempted, np_shots, np_shots_on_target*, pressures, progressive_carries, progressive_passes, tackles_attempted*, pass_completion_pct, aerial_win_pct.
+- **M4c2b: `np_shots_on_target_p90` by the rules (no decision).** The re-run changes no other value in the measurements file: the 211 earlier D17 pairs and every other cell are identical within 1e-9, so no other status can move.
+
+  | Group | Zero share | r_full | Max \|mean ρ\| (duration / pass share) | Outcome |
+  |---|---|---|---|---|
+  | CB | 13.7% | 0.278 | 0.052 / 0.027 | display (step 4) |
+  | FB-WB | 16.1% | 0.581 | 0.212 / 0.207 | display (step 4) |
+  | DM-CM | 4.4% | 0.593 | 0.157 / 0.147 | display (step 4) |
+  | AM-Winger | 0.4% | 0.700 | 0.366 / 0.390 | **DNA** |
+  | ST | 0.0% | 0.679 | 0.377 / 0.395 | **DNA*** (lower reliability) |
+
+  - Step 2: the only pairs at |ρ| ≥ 0.85 are with `shots_on_target_p90` (fixed display), so no D17 drop.
+  - Every cell is `global_ok`. No cell is zero-heavy, so it is never a signature trait.
+  - DM-CM loses `shots_on_target` (§10.2) and does not regain an on-target metric. With penalties out, r_full falls from 0.619 to 0.593.
+  - Both DNA cells are below the possession trigger by less than 0.02 on pass share (10.10).
+  - AM-Winger's r_full 0.700334 clears the 0.7 lower-reliability note by 0.0003, so it carries no marker.
 - **Changes from the first M4c2 draft:**
   - `shots_on_target` leaves DM-CM, AM-Winger and ST;
   - `pass_completion_pct` leaves CB, FB-WB, DM-CM and AM-Winger;
@@ -801,7 +817,7 @@ Directions:
 | Progression | progressive_passes (higher), final_third_entries_pass (higher), box_entries_pass (higher) |
 | Carrying | progressive_carries (higher), final_third_entries_carry (higher), box_entries_carry (higher), dribbles_attempted (style), dribbles_completed (higher), dribble_success_pct (higher), carries (style), fouls_won (style) |
 | Creation | op_key_passes (higher), op_xg_assisted (higher), key_passes (higher), xg_assisted (higher), xg_assisted_direct (higher), crosses_attempted (style), cross_completion_pct (higher), op_assists (higher), assists (higher), restart_key_passes (higher), restart_xg_assisted (higher), restart_assists (higher) |
-| Goal threat | np_shots (higher), np_xg (higher), shots_on_target (higher), np_xg_per_shot (higher), shots (higher), xg (higher), xg_per_shot (higher), goals (higher) |
+| Goal threat | np_shots (higher), np_xg (higher), np_shots_on_target (higher), shots_on_target (higher), np_xg_per_shot (higher), shots (higher), xg (higher), xg_per_shot (higher), goals (higher) |
 | Defending | tackles_attempted (style), tackles_won (higher), tackle_success_pct (higher), interceptions (higher), ball_recoveries (higher), pressures (style), clearances (style), blocks (style), dribbled_past (lower), fouls_committed (style) |
 | Aerial | aerials_won (higher), aerial_win_pct (higher), aerials_lost (style) |
 | Ball security | dispossessed (lower), miscontrols (lower) |
@@ -815,7 +831,7 @@ Directions:
 - Every metric applies to the five outfield groups and never to GK (D21).
 
 ### 10.8 M4f pre-registration (user, 2026-10-04)
-- **Equal weight per family.** Each dimension (family) present in a group's DNA gets the same total weight, split equally among its DNA metrics. Without this, Defending (8 of 24 in DM-CM) and work-rate/aerial volume (ST: Defending 6 + Aerial 3 of 19, Goal threat 2) would dominate the distance. M4f runs a sensitivity check: the top-10 neighbour overlap, equal weights vs family weights.
+- **Equal weight per family.** Each dimension (family) present in a group's DNA gets the same total weight, split equally among its DNA metrics. Without this, Defending (8 of 24 in DM-CM) and work-rate/aerial volume (ST: Defending 6 + Aerial 3 of 20, Goal threat 2) would dominate the distance. M4f runs a sensitivity check: the top-10 neighbour overlap, equal weights vs family weights.
 - **Dimension scores use directional metrics only** (`higher_better` / `lower_better`), never `style` metrics.
 - **One percentile basis per vector.** `global_ok` is per cell, so per-cell bases would mix local and global percentiles in one vector. M4f fixes one basis per vector.
 - **Missing DNA ratio policy: proposed, not decided** (user decides before M4f). A row below `min_attempts` has a null ratio percentile.
@@ -831,36 +847,58 @@ Directions:
 - **ST has no chance-quality metric in DNA.** Below 0.6: np_xg 0.599, op_key_passes 0.540, op_xg_assisted 0.534; `np_xg_per_shot` is display. Linked to the same backlog item.
 - **FB-WB has no crossing metric in DNA.** `crosses_attempted` (r 0.787, 0% zeros) is fixed display because it includes restart deliveries. Backlog: `op_crosses_attempted`.
 - **Passing quality is mostly out of DNA** after step 5 reached the ratios; only `long_pass_completion_pct` (allow-list) and ST `pass_completion_pct` remain. Backlog: a possession-relative completion metric (player completion minus team completion while on), on the D12b pattern.
-- **Redundancy below 0.85** inside the lists: `np_shots` ~ `np_xg` 0.79–0.80; `progressive_passes` ~ `final_third_entries_pass` 0.81–0.83 (CB, AM-Winger); `op_key_passes` ~ `op_xg_assisted` 0.825 (DM-CM); ST `aerial_win_pct` = won / (won + lost), so its three aerial dimensions carry two degrees of freedom. These are handled by the family weights (10.8), not by D17.
+- **Redundancy below 0.85** inside the lists: `np_shots` ~ `np_xg` 0.79–0.80; `np_shots` ~ `np_shots_on_target` 0.791 (AM-Winger), 0.804 (ST); `progressive_passes` ~ `final_third_entries_pass` 0.81–0.83 (CB, AM-Winger); `op_key_passes` ~ `op_xg_assisted` 0.825 (DM-CM); ST `aerial_win_pct` = won / (won + lost), so its three aerial dimensions carry two degrees of freedom. These are handled by the family weights (10.8), not by D17.
 
 ### 10.10 Boundary report: fragile decisions to re-check on a new source
 Each value is compared at full precision (printed here to 6 decimals) against the threshold of the rule that judged it, and listed when within ±0.02 of that threshold. M4c3's `derive()` returns this list.
+- **The 0.7 lower-reliability bar is tracked too** (user, 2026-10-04, after the M4c2b review). It changes no status, only the "lower reliability" note on a DNA cell, but a cell can lose or gain that note on a new source. `derive()` reports DNA cells within ±0.02 of 0.7 in the same list.
+- **ρ rows show the four within-league values** (user, 2026-10-04): the rule compares their mean, and the mean can hide a split.
 
-| Rule | Group | Metric | Value | Threshold | Outcome |
-|---|---|---|---|---|---|
-| r_full | CB | `interceptions_p90` | 0.599849 | 0.6 | display |
-| r_full | CB | `fouls_committed_p90` | 0.589712 | 0.6 | display |
-| r_full | CB | `aerials_lost_p90` | 0.612088 | 0.6 | dna |
-| r_full | FB-WB | `fouls_committed_p90` | 0.597776 | 0.6 | display |
-| r_full | FB-WB | `aerials_lost_p90` | 0.606793 | 0.6 | dna |
-| r_full | FB-WB | `dribbled_past_p90` | 0.618266 | 0.6 | dna |
-| r_full | DM-CM | `blocks_p90` | 0.608874 | 0.6 | dna |
-| r_full | ST | `dribbled_past_p90` | 0.597873 | 0.6 | display |
-| r_full | ST | `np_xg_p90` | 0.599369 | 0.6 | display |
-| r_full | ST | `tackles_attempted_p90` | 0.612458 | 0.6 | dna |
-| ρ trigger (duration) | FB-WB | `final_third_entries_pass_p90` | 0.409583 | 0.4 | display (tsb) |
-| ρ trigger (pass share) | FB-WB | `final_third_entries_pass_p90` | 0.401950 | 0.4 | display (tsb) |
-| ρ trigger (duration) | FB-WB | `progressive_carries_p90` | 0.407480 | 0.4 | dna (AL) |
-| ρ trigger (duration) | FB-WB | `long_pass_completion_pct` | 0.417085 | 0.4 | dna (AL) |
-| ρ trigger (pass share) | FB-WB | `long_pass_completion_pct` | 0.416738 | 0.4 | dna (AL) |
-| ρ trigger (pass share) | AM-Winger | `np_xg_p90` | 0.410867 | 0.4 | display (tsb) |
-| ρ trigger (pass share) | AM-Winger | `op_xg_assisted_p90` | 0.419109 | 0.4 | display (tsb, U1) |
-| ρ trigger (duration) | AM-Winger | `pass_completion_pct` | 0.383490 | 0.4 | — (pass share triggers) |
-| ρ trigger (pass share) | AM-Winger | `pass_completion_pct` | 0.410877 | 0.4 | display (tsb) |
-| Allow-list bound | CB | `progressive_carries_p90` | 0.548655 | 0.55 | dna (AL) |
+| Rule | Group | Metric | Value | Threshold | Per league (La Liga / PL / Serie A / Ligue 1) | Outcome |
+|---|---|---|---|---|---|---|
+| r_full | CB | `interceptions_p90` | 0.599849 | 0.6 | — | display |
+| r_full | CB | `fouls_committed_p90` | 0.589712 | 0.6 | — | display |
+| r_full | CB | `aerials_lost_p90` | 0.612088 | 0.6 | — | dna |
+| r_full | FB-WB | `fouls_committed_p90` | 0.597776 | 0.6 | — | display |
+| r_full | FB-WB | `aerials_lost_p90` | 0.606793 | 0.6 | — | dna |
+| r_full | FB-WB | `dribbled_past_p90` | 0.618266 | 0.6 | — | dna |
+| r_full | FB-WB | `np_shots_on_target_p90` | 0.580878 | 0.6 | — | display (M4c2b) |
+| r_full | DM-CM | `blocks_p90` | 0.608874 | 0.6 | — | dna |
+| r_full | DM-CM | `np_shots_on_target_p90` | 0.592665 | 0.6 | — | display (M4c2b) |
+| r_full | ST | `dribbled_past_p90` | 0.597873 | 0.6 | — | display |
+| r_full | ST | `np_xg_p90` | 0.599369 | 0.6 | — | display |
+| r_full | ST | `tackles_attempted_p90` | 0.612458 | 0.6 | — | dna |
+| ρ trigger (duration) | FB-WB | `final_third_entries_pass_p90` | 0.409583 | 0.4 | 0.346 / 0.600 / 0.313 / 0.380 | display (tsb) |
+| ρ trigger (pass share) | FB-WB | `final_third_entries_pass_p90` | 0.401950 | 0.4 | 0.386 / 0.581 / 0.302 / 0.339 | display (tsb) |
+| ρ trigger (duration) | FB-WB | `progressive_carries_p90` | 0.407480 | 0.4 | 0.324 / 0.385 / 0.508 / 0.413 | dna (AL) |
+| ρ trigger (duration) | FB-WB | `long_pass_completion_pct` | 0.417085 | 0.4 | 0.587 / 0.430 / 0.296 / 0.355 | dna (AL) |
+| ρ trigger (pass share) | FB-WB | `long_pass_completion_pct` | 0.416738 | 0.4 | 0.568 / 0.433 / 0.295 / 0.370 | dna (AL) |
+| ρ trigger (pass share) | AM-Winger | `np_xg_p90` | 0.410867 | 0.4 | 0.323 / 0.435 / 0.401 / 0.484 | display (tsb) |
+| ρ trigger (pass share) | AM-Winger | `op_xg_assisted_p90` | 0.419109 | 0.4 | 0.460 / 0.322 / 0.525 / 0.369 | display (tsb, U1) |
+| ρ trigger (duration) | AM-Winger | `pass_completion_pct` | 0.383490 | 0.4 | 0.321 / 0.295 / 0.654 / 0.264 | — (pass share triggers) |
+| ρ trigger (pass share) | AM-Winger | `pass_completion_pct` | 0.410877 | 0.4 | 0.323 / 0.412 / 0.646 / 0.263 | display (tsb) |
+| ρ trigger (pass share) | AM-Winger | `np_shots_on_target_p90` | 0.389822 | 0.4 | 0.412 / 0.306 / 0.364 / 0.477 | dna (M4c2b) |
+| ρ trigger (pass share) | ST | `np_shots_on_target_p90` | 0.395111 | 0.4 | 0.449 / 0.467 / 0.126 / 0.538 | dna (M4c2b) |
+| Allow-list bound | CB | `progressive_carries_p90` | 0.548655 | 0.55 | 0.459 / 0.620 / 0.561 / 0.556 | dna (AL) |
+| Lower-reliability note (r_full) | CB | `box_entries_pass_p90` | 0.707877 | 0.7 | — | dna, no note |
+| Lower-reliability note (r_full) | CB | `dribbles_attempted_p90` | 0.698475 | 0.7 | — | dna, note |
+| Lower-reliability note (r_full) | FB-WB | `box_entries_pass_p90` | 0.702734 | 0.7 | — | dna, no note |
+| Lower-reliability note (r_full) | FB-WB | `op_key_passes_p90` | 0.714213 | 0.7 | — | dna, no note |
+| Lower-reliability note (split-half r) | FB-WB | `long_pass_completion_pct` | 0.693778 | 0.7 | — | dna, note |
+| Lower-reliability note (r_full) | DM-CM | `fouls_committed_p90` | 0.706483 | 0.7 | — | dna, no note |
+| Lower-reliability note (r_full) | DM-CM | `interceptions_p90` | 0.686207 | 0.7 | — | dna, note |
+| Lower-reliability note (r_full) | DM-CM | `op_key_passes_p90` | 0.692856 | 0.7 | — | dna, note |
+| Lower-reliability note (r_full) | DM-CM | `op_xg_assisted_p90` | 0.714909 | 0.7 | — | dna, no note |
+| Lower-reliability note (r_full) | AM-Winger | `np_shots_on_target_p90` | 0.700334 | 0.7 | — | dna, no note |
+| Lower-reliability note (r_full) | ST | `blocks_p90` | 0.715456 | 0.7 | — | dna, no note |
 
 - CB `interceptions_p90` is display by 0.00015.
-- No zero-share, ratio-r, coverage or D12b value is within ±0.02.
+- **Known limitation: ST goal-threat volume is possession-sensitive, and the mean hides it** (stats-reviewer, M4c2b review; user 2026-10-04: recorded, no rule change now).
+  - ST `np_shots_on_target_p90`, pass share: 0.449 / 0.467 / 0.126 / 0.538. Three of four leagues are above 0.4, and Serie A pulls the mean to 0.395.
+  - ST `np_shots_p90`, pass share: 0.585 / 0.523 / −0.002 / 0.382 (mean 0.372; duration 0.537 / 0.486 / 0.001 / 0.338). Two leagues are above 0.4 and Ligue 1 is just below. Serie A again pulls the mean down. It is outside ±0.02, so it has no row above.
+  - Both are ST's only Goal threat DNA metrics, so in ST that family partly measures how much the team has the ball.
+  - Plan 005 M4g evaluates a "majority of leagues above the trigger" rule, applied to all metrics at once (never to these cells alone).
+- No zero-share, ratio-r, coverage or D12b value is within ±0.02 of a status threshold (the 0.6, 0.90 and 0.3 cut-offs).
 - The `shots_on_target_p90` cells of the first draft (DM-CM r 0.619, AM-Winger ρ 0.386, ST ρ 0.382) left the report when the column became fixed display.
 - D9 (`global_ok`) is outside this report: it sets the percentile basis (global or local), not the status. It is fragile too: about 30 cells have a league mean within 0.5 pts of the [40, 60] band. Examples:
   - `miscontrols_p90` FB-WB 40.0014 (ok);

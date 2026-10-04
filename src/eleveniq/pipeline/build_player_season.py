@@ -87,7 +87,7 @@ _GROUP_KEY = [
 # restart_xg_assisted.
 _COUNT_COLS: list[str] = [
     "goals", "shots", "shots_on_target",
-    "np_shots", "np_xg",  # ADR 004 D15
+    "np_shots", "np_xg", "np_shots_on_target",  # ADR 004 D15
     "passes_attempted", "passes_completed",
     "progressive_passes", "key_passes",
     "carries", "progressive_carries",

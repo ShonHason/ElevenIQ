@@ -1,0 +1,16 @@
+{
+  "description": "Expected M4c2b flag flips (plan 005): none. Written from data/interim/m4c2b_snapshot (sha256 equal to the M4c2 measurements JSON) before the pipeline change; np_shots_on_target only adds columns.",
+  "gate": 900.0,
+  "gate_tolerance": 1e-06,
+  "unchanged_flags": [
+    "position_group",
+    "is_primary_stint",
+    "is_outfield",
+    "is_gk",
+    "in_percentile_pool",
+    "multi_team_season",
+    "multi_competition_season",
+    "meets_min_minutes"
+  ],
+  "meets_min_minutes": []
+}

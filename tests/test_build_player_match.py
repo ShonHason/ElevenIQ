@@ -2865,6 +2865,21 @@ class TestAggregateEventsM4bCounters:
         assert r["xg"] == pytest.approx(0.86)
         assert r["np_xg"] == pytest.approx(0.1)
 
+    def test_np_shots_on_target_leaves_out_penalties_on_target_only(self):
+        """M4c2b (D15, ADR 002 §30): a penalty on target (scored or saved) stays in
+        shots_on_target but leaves np_shots_on_target; a missed penalty is in
+        neither; Saved Off Target and Blocked are never on target."""
+        cases = [("Penalty", "Goal"), ("Penalty", "Saved"), ("Penalty", "Off T"),
+                 ("Open Play", "Saved to Post"), ("Free Kick", "Goal"),
+                 ("Open Play", "Saved Off Target"), ("Open Play", "Blocked")]
+        shots = [_ev("Shot", shot={"outcome": {"name": o}, "statsbomb_xg": 0.1,
+                                   "type": {"name": t}}, location=[108, 40])
+                 for t, o in cases]
+        r = _aggregate_events(shots, Counter())
+        assert (r["shots"], r["shots_on_target"], r["np_shots"]) == (7, 4, 4)
+        assert r["np_shots_on_target"] == 2
+        assert r["np_shots_on_target"] <= r["np_shots"]
+
     def test_long_injury_clearance_is_counted_never_completed_nor_progressive(self):
         """D13: an Injury Clearance is its own outcome: not completed, not unknown,
         never progressive even when it gains ground; an open-play long one is a

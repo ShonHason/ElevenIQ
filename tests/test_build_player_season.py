@@ -112,6 +112,7 @@ def _match_row(
     match_nominal_duration: float = 90.0,
     np_shots: int | None = None,
     np_xg: float | None = None,
+    np_shots_on_target: int | None = None,
     passes_injury_clearance: int = 0,
     long_passes_injury_clearance: int = 0,
     open_play_passes_attempted: int | None = None,
@@ -189,6 +190,7 @@ def _match_row(
         match_duration=match_duration, match_nominal_duration=match_nominal_duration,
         np_shots=shots if np_shots is None else np_shots,
         np_xg=xg if np_xg is None else np_xg,
+        np_shots_on_target=shots_on_target if np_shots_on_target is None else np_shots_on_target,
         passes_injury_clearance=passes_injury_clearance,
         long_passes_injury_clearance=long_passes_injury_clearance,
         open_play_passes_attempted=(passes_attempted if open_play_passes_attempted is None
@@ -2793,6 +2795,17 @@ class TestM4bRatios:
         assert row["np_xg_p90"] == pytest.approx(0.44)
         row = _season_one([_match_row(shots=1, xg=0.76, np_shots=0, np_xg=0.0)], min_minutes=0)
         assert row["np_xg_per_shot"] is None
+
+    def test_np_shots_on_target_summed_with_p90_and_penalties_kept_in_total(self):
+        """M4c2b (D15): np_shots_on_target is summed and gets a p90;
+        shots_on_target still counts the penalties on target."""
+        row = _season_one([
+            _match_row(shots=3, shots_on_target=2, np_shots=2, np_shots_on_target=1),
+            _match_row(shots=2, shots_on_target=1),
+        ], min_minutes=0)
+        assert (row["shots_on_target"], row["np_shots_on_target"]) == (3, 2)
+        assert row["np_shots_on_target_p90"] == pytest.approx(2 / 180 * 90)
+        assert row["shots_on_target_p90"] == pytest.approx(3 / 180 * 90)
 
     def test_team_pass_share_from_season_totals(self):
         row = _season_one([

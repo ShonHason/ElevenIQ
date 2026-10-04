@@ -384,6 +384,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 
 ### M4f — Player DNA vector
 - **Per-family contribution report** (stats-reviewer, user 2026-10-04): for each group, each family's share of the distance between neighbours, next to the equal-family-weight sensitivity check (ADR 004 §10.8, §10.11).
+- **Sensitivity check with and without `np_shots_on_target`** (stats-reviewer M4c2b review, user 2026-10-04): it correlates 0.79–0.80 with `np_shots` in AM-Winger and ST and halves its weight inside Goal threat. Run the equal vs family weight check both ways and report the top-10 neighbour overlap for AM-Winger and ST.
 - `analytics/dna.py` + `pipeline/build_player_dna.py` → `player_dna.parquet`.
 - Per scored row:
   - the feature vector on the D10 basis (percentile and robust z, both stored);
@@ -393,6 +394,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 
 ### M4g — Football validation (brief §20)
 - **Multi-split reliability averaging** (stats-reviewer, user 2026-10-04): r_full averaged over many random match splits instead of one odd/even split, applied to all metrics at once (never to single boundary cells). Then re-derive the registry. It addresses the cells decided by < 0.001 at the 0.6 cut-off, e.g. CB `interceptions` 0.599849 and ST `np_xg` 0.599369 (ADR 004 §10.11).
+- **"Majority of leagues above the trigger" possession rule** (stats-reviewer M4c2b review, user 2026-10-04): evaluate a trigger that fires when most pool leagues' within-league |ρ| ≥ 0.4 (with the sign test), next to the current mean rule. Apply it to all metrics at once, never to single cells, then re-derive the registry and report every status change. It addresses ST `np_shots_on_target` (3 of 4 leagues above 0.4, mean 0.395) and ST `np_shots` (2 of 4, mean 0.372), where Serie A masks the others (ADR 004 §10.10).
 Analyses in `spikes/m4_validation.py`, written up in `docs/reviews/m4-validation.md`:
 - threshold sensitivity (from D1);
 - split-half reliability per metric;
@@ -687,6 +689,13 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   | Bundesliga (9) | 308 | 9 | 317 |
 
   Pool leagues: 376 penalties on target, as in ADR 004 §10.2 (Bundesliga 9 is outside the pool; all five leagues: 385). Known red until step 2: `test_core_metrics_reconcile` (5 leagues, column not found).
+- **Step 2 done (pipeline):** `np_shots_on_target` in `_aggregate_events` (match) and `_COUNT_COLS` (season, so it gets a p90).
+  - **Before/after** against `data/interim/m4c2b_snapshot` (sha256 equal to the M4c2 JSON's provenance), with `spikes/expected_m4c2b_flips.json` (none). Every existing column is identical (78 match, 142 season), and there are 0 flips. New columns: `np_shots_on_target` (match); `np_shots_on_target` and `np_shots_on_target_p90` (season).
+  - **Identity:** np + penalties on target = `shots_on_target` on all 43,044 match rows. The before/after spike re-counts penalties on target from the raw events (385). Season sums and the p90 recompute.
+  - **`--write-json` re-run:** two runs are identical. Against the M4c2 file, the only changes are the new metric, the parquet hashes, 2 season columns (144) and 18 new D17 report pairs (|ρ| ≥ 0.7); the 211 earlier pairs are unchanged.
+  - **Rules:** `np_shots_on_target` is DNA in AM-Winger (r 0.700) and ST (r 0.679, lower reliability), and display in CB, FB-WB and DM-CM (r < 0.6). ADR 004 §10.6.
+- **Derived DNA counts after M4c2b:** CB 16, FB-WB 19, DM-CM 24, AM-Winger 22, ST 20. M4c3's `derive()` must reproduce these.
+- **M4c3 boundary report** (user, 2026-10-04): `derive()` also reports DNA cells within ±0.02 of the 0.7 lower-reliability bar (11 cells in 2015/16), and each ρ row carries the four within-league values (ADR 004 §10.10).
 
 ---
 
