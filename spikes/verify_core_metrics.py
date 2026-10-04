@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Spike: core DNA metric reference totals for one competition-season (plan 004 H2, H4a;
-plan 005 M4b1).
+plan 005 M4b1, M4b3, M4c2b).
 
 Computes league totals of the core columns from raw StatsBomb JSON and writes
 them to the "core" section of
@@ -46,6 +46,11 @@ timeline inconsistency, reported as events_outside_credited_time); every pass mu
 be credited to 7-11 players (the Laws minimum on the pitch), otherwise the spike
 fails. Only progressive_passes may change against an
 existing core section; every other value must come out identical.
+
+M4c2b (ADR 004 D15, §10.2): np_shots_on_target is shots_on_target (the §30 outcome
+list) without penalties. Penalties on target are counted on their own, and the
+spike fails unless np_shots_on_target + penalties on target = shots_on_target.
+Only a new key is written; every recorded value must come out identical.
 
 Scope rule shared by every column: period-5 (shootout) events are excluded
 (ADR 002 §3). Events are counted league-wide, not per output row: a dropped
@@ -211,6 +216,7 @@ KINDS = {
     "fouls_committed": "independent", "fouls_won": "independent", "carries": "independent",
     "np_xg": "independent (shot.type, ADR 004 D15)",
     "np_shots": "independent (shot.type, ADR 004 D15)",
+    "np_shots_on_target": "second implementation (§30) + shot.type (ADR 004 D15)",
     "passes_injury_clearance": "independent (pass.outcome, ADR 004 D13)",
     "open_play_passes_attempted": "independent (pass.type, ADR 004 D12)",
     "team_open_play_passes_while_on": "second implementation (ADR 004 D12) + 7-11 credit check",
@@ -296,10 +302,14 @@ def count_events(events: list[dict], t: Counter) -> None:
         elif kind == "Shot":
             s = e.get("shot") or {}
             t["shots"] += 1
-            if (s.get("outcome") or {}).get("name") in ON_TARGET:
+            on_target = (s.get("outcome") or {}).get("name") in ON_TARGET
+            penalty = (s.get("type") or {}).get("name") == "Penalty"
+            if on_target:
                 t["shots_on_target"] += 1
+                # Report-only (not in KINDS): the identity check in main().
+                t["penalties_on_target" if penalty else "np_shots_on_target"] += 1
             t["xg"] += s["statsbomb_xg"]  # a missing xG raises: H1.4 says 0 occur
-            if (s.get("type") or {}).get("name") != "Penalty":
+            if not penalty:
                 t["np_shots"] += 1
                 t["np_xg"] += s["statsbomb_xg"]
         elif kind == "Carry":
@@ -773,6 +783,10 @@ def main() -> None:
     for total in ("key_passes", "assists"):
         if totals[f"op_{total}"] + totals[f"restart_{total}"] != totals[total]:
             raise SystemExit(f"FAIL: op + restart {total} != {total}")
+    if totals["np_shots_on_target"] + totals["penalties_on_target"] != totals["shots_on_target"]:
+        raise SystemExit("FAIL: np_shots_on_target + penalties on target != shots_on_target")
+    print(f"\nShots on target (ADR 004 D15): non-penalty {totals['np_shots_on_target']:,}, "
+          f"penalties {totals['penalties_on_target']:,}, total {totals['shots_on_target']:,}")
     print(f"\nKey passes (ADR 004 §9): open play {totals['op_key_passes']:,}, restart "
           f"{totals['restart_key_passes']:,}; assists open play {totals['op_assists']:,}, "
           f"restart {totals['restart_assists']:,}")
@@ -878,7 +892,8 @@ def main() -> None:
 
 # Recorded core values the current chunk may change; every other recorded value
 # must come out identical, and new keys are added. History: M4b allowed
-# progressive_passes (ADR 004 D14); M4b3 (ADR 004 §9) only adds keys.
+# progressive_passes (ADR 004 D14); M4b3 (ADR 004 §9) and M4c2b
+# (np_shots_on_target, ADR 004 D15) only add keys.
 CHANGED_BY_CURRENT_CHUNK: frozenset[str] = frozenset()
 
 

@@ -676,6 +676,17 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - then a before/after against a snapshot: 0 flips and identical values on every existing column;
   - identity test: `np_shots_on_target` + penalties on target = `shots_on_target`.
 - **Afterwards:** it goes through the registry rules like any metric, with no guaranteed DNA status. Re-run `--write-json`, re-derive, and update ADR 004 §10.6 and the expected counts.
+- **Step 1 done (spike checkpoint):** `spikes/verify_core_metrics.py` writes `np_shots_on_target` to the core section. Only a new key is added; every may-change set is empty. The spike fails unless np + penalties on target = `shots_on_target`.
+
+  | League | np on target | Penalties on target | `shots_on_target` |
+  |---|---|---|---|
+  | La Liga (11) | 3,174 | 89 | 3,263 |
+  | Premier League (2) | 3,135 | 85 | 3,220 |
+  | Serie A (12) | 3,067 | 117 | 3,184 |
+  | Ligue 1 (7) | 3,018 | 85 | 3,103 |
+  | Bundesliga (9) | 308 | 9 | 317 |
+
+  Pool leagues: 376 penalties on target, as in ADR 004 §10.2 (Bundesliga 9 is outside the pool; all five leagues: 385). Known red until step 2: `test_core_metrics_reconcile` (5 leagues, column not found).
 
 ---
 

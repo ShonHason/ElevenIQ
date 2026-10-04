@@ -735,6 +735,32 @@ class TestSpikeM4bEventCounts:
         assert t["xg"] == pytest.approx(0.86)
         assert t["np_xg"] == pytest.approx(0.1)
 
+    def test_np_shots_on_target_leaves_out_penalties_on_target_only(self):
+        """M4c2b (ADR 004 D15, ADR 002 §30): np_shots_on_target counts on-target
+        outcomes (Goal, Saved, Saved to Post) of non-penalty shots. A saved penalty
+        is on target but not np; Saved Off Target and Off T are never on target."""
+        cases = [("Penalty", "Goal"), ("Penalty", "Saved"), ("Penalty", "Off T"),
+                 ("Open Play", "Saved to Post"), ("Open Play", "Saved"),
+                 ("Free Kick", "Goal"), ("Open Play", "Saved Off Target"),
+                 ("Open Play", "Off T"), ("Open Play", "Blocked")]
+        shots = [{"period": 1, "player": {"id": 1}, "type": {"name": "Shot"},
+                  "shot": {"statsbomb_xg": 0.1, "type": {"name": kind},
+                           "outcome": {"name": outcome}}}
+                 for kind, outcome in cases]
+        t: Counter = Counter()
+        spike.count_events(shots, t)
+        assert (t["shots"], t["shots_on_target"], t["np_shots"]) == (9, 5, 6)
+        assert (t["np_shots_on_target"], t["penalties_on_target"]) == (3, 2)
+        assert t["np_shots_on_target"] + t["penalties_on_target"] == t["shots_on_target"]
+
+    def test_a_period_5_penalty_counts_nowhere(self):
+        """Shootout penalties (period 5) are not shots (ADR 002 §3)."""
+        t: Counter = Counter()
+        spike.count_events([{"period": 5, "player": {"id": 1}, "type": {"name": "Shot"},
+                             "shot": {"statsbomb_xg": 0.76, "type": {"name": "Penalty"},
+                                      "outcome": {"name": "Goal"}}}], t)
+        assert t["shots_on_target"] == t["np_shots_on_target"] == t["penalties_on_target"] == 0
+
 
 class TestSpikeTeamOpenPlayPassCredits:
     """ADR 004 D12: a team open-play pass is credited to every teammate whose

@@ -60,6 +60,7 @@
     "carries": 280820,
     "np_xg": 825.9758,
     "np_shots": 9877,
+    "np_shots_on_target": 3067,
     "passes_injury_clearance": 825,
     "open_play_passes_attempted": 331843,
     "team_open_play_passes_while_on": 3637485,

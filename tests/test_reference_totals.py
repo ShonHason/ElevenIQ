@@ -78,7 +78,8 @@ class TestReferenceTotalsFixtures:
             "assists", "tackles_attempted", "tackles_won", "dribbles_attempted",
             "dribbles_completed", "interceptions", "clearances", "blocks",
             "fouls_committed", "fouls_won", "carries",
-            "np_xg", "np_shots", "passes_injury_clearance", "open_play_passes_attempted",
+            "np_xg", "np_shots", "np_shots_on_target", "passes_injury_clearance",
+            "open_play_passes_attempted",
             "team_open_play_passes_while_on",
             "op_key_passes", "restart_key_passes", "op_assists", "restart_assists",
             "minutes_am_winger", "minutes_cb", "minutes_dm_cm", "minutes_fb_wb",
@@ -125,14 +126,17 @@ class TestReferenceTotalsFixtures:
 
     @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
     def test_m4b_columns_are_subsets_of_their_totals(self, cs):
-        """ADR 004 D12-D15 on the committed totals: penalties are a subset of shots
-        and xG; Injury Clearances are incomplete passes; open-play passes are a subset
+        """ADR 004 D12-D15 on the committed totals: penalties are a subset of shots,
+        shots on target and xG; Injury Clearances are incomplete passes; open-play passes are a subset
         of all passes; long-pass unknown and Injury Clearance outcomes share the
         long-pass predicate, so both are incomplete long passes."""
         ref = _load(cs)
         core, a = ref["core"], ref["chunk_a"]
         assert core["np_shots"] <= core["shots"]
         assert 0 <= core["np_xg"] <= core["xg"]
+        # M4c2b: penalties on target are penalties, so at most the penalties taken.
+        assert core["np_shots_on_target"] <= min(core["np_shots"], core["shots_on_target"])
+        assert core["shots_on_target"] - core["np_shots_on_target"] <= core["shots"] - core["np_shots"]
         assert core["passes_injury_clearance"] <= core["passes_attempted"] - core["passes_completed"]
         assert core["open_play_passes_attempted"] <= core["passes_attempted"]
         assert (a["long_passes_unknown_outcome"] + a["long_passes_injury_clearance"]
