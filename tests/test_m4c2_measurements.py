@@ -66,7 +66,7 @@ def _possession_blocks(m: dict):
         for grp, cell in spec["groups"].items():
             for proxy, block in cell.get("possession", {}).items():
                 yield f"{ratio}/{grp}", proxy, block
-    for grp, cell in (m["team_pass_share"] or {}).items():
+    for grp, cell in m["team_pass_share"].items():
         for proxy, block in cell["possession"].items():
             yield f"team_pass_share/{grp}", proxy, block
 
@@ -155,7 +155,8 @@ class TestMeasurementsInternalConsistency:
         for grp, c in m["ratios"]["np_xg_per_shot"]["groups"].items():
             vc = c["variance_components"]
             assert vc["tau2"] > 0
-            assert c["M"] == pytest.approx(vc["sigma2_w"] / vc["tau2"], rel=1e-12), grp
+            # Stored at 9 decimals (§10.1): τ² ≥ ~1.5e-4, so rounding moves the ratio by < ~3.5e-6.
+            assert c["M"] == pytest.approx(vc["sigma2_w"] / vc["tau2"], rel=1e-5), grp
             assert c["M"] == vc["M"]
             assert vc["rows"] == c["n_estimate_rows"]
             b = vc["bootstrap"]
@@ -183,7 +184,7 @@ class TestMeasurementsInternalConsistency:
                 assert sum(c["ref_n_local"].values()) >= c["ref_n_global"], where
                 # coverage counts gated rows before dedupe; dedupe can only shrink.
                 meeting = c["coverage"] * c["n_gated"]
-                assert meeting == pytest.approx(round(meeting), abs=1e-9), where
+                assert meeting == pytest.approx(round(meeting), abs=1e-6), where   # coverage stored at 9 decimals
                 assert c["ref_n_global"] <= round(meeting), where
         for spec in m["metrics"].values():
             for grp, c in spec["groups"].items():
@@ -222,6 +223,16 @@ class TestMeasurementsInternalConsistency:
                 n_ok += rule
         assert n_ok == 166   # §10.1: 166 of 215 (M4c2b: np_shots_on_target is global_ok in all 5)
 
+    def test_team_pass_share_d9_league_means(self, m):
+        """M4c3 (user, 2026-10-05): D9 league means for team_pass_share, as for the per-90s.
+        ADR 004 §10.3: DM-CM is inside [40, 60] in every league; CB fails on the PL (39.69)."""
+        for grp in ("DM-CM", "CB"):
+            assert set(m["team_pass_share"][grp]["league_mean_global_pct"]) == set(POOL)
+        dm = m["team_pass_share"]["DM-CM"]["league_mean_global_pct"]
+        assert all(40.0 <= v <= 60.0 for v in dm.values())
+        assert {c: round(v, 2) for c, v in dm.items()} == {"11": 50.43, "2": 56.11, "12": 42.50, "7": 52.75}
+        assert round(m["team_pass_share"]["CB"]["league_mean_global_pct"]["2"], 2) == 39.69
+
     def test_rho_within_mean_is_mean_of_the_pool_leagues(self, m):
         """§10.3: rho for a proxy is the mean of the four within-league Spearman rho, defined only
         when all four pool leagues have a rho; otherwise it is null (the cell is untestable).
@@ -234,7 +245,7 @@ class TestMeasurementsInternalConsistency:
             assert set(by) <= set(b["n_by_league"]) <= set(POOL), (where, proxy)
             assert all(-1.0 <= v <= 1.0 for v in by.values()), (where, proxy)
             if set(by) == set(POOL):
-                assert b["rho_within_mean"] == pytest.approx(sum(by.values()) / 4, abs=1e-12), (where, proxy)
+                assert b["rho_within_mean"] == pytest.approx(sum(by.values()) / 4, abs=1e-9), (where, proxy)   # 9-decimal storage
             else:
                 assert b["rho_within_mean"] is None, (where, proxy, by)
             n += 1
@@ -484,40 +495,29 @@ class TestCountP90AgainstParquet:
                 n = len(vals)
                 assert n == c["n_gated"], (name, grp)
                 p90 = next(v for v in sorted(set(vals)) if sum(x <= v for x in vals) >= 0.9 * n)
-                assert c["count_p90"] == pytest.approx(p90, abs=1e-12), (name, grp)
+                assert c["count_p90"] == pytest.approx(p90, abs=1e-9), (name, grp)   # 9-decimal storage
                 assert c["holders_at_count"][str(c["count_p90"])] == sum(x >= p90 for x in vals), (name, grp)
                 checked += 1
         assert checked == 43 * 5
 
 
-def _assert_close(a, b, path="$"):
-    if isinstance(a, dict):
-        assert isinstance(b, dict) and set(a) == set(b), (path, set(a) ^ set(b) if isinstance(b, dict) else b)
-        for k in a:
-            _assert_close(a[k], b[k], f"{path}.{k}")
-    elif isinstance(a, list):
-        assert isinstance(b, list) and len(a) == len(b), path
-        for i, (x, y) in enumerate(zip(a, b)):
-            _assert_close(x, y, f"{path}[{i}]")
-    elif isinstance(a, float) or isinstance(b, float):
-        assert a is not None and b is not None, (path, a, b)
-        assert a == pytest.approx(b, abs=1e-9), (path, a, b)
-    else:
-        assert a == b, (path, a, b)
-
-
 @pytest.mark.integration
 @pytest.mark.skipif(not (_SEASON_PARQUET.exists() and _MATCH_PARQUET.exists() and _RAW_MATCHES.exists()),
                     reason="raw data or pipeline output missing")
-def test_spike_rerun_reproduces_committed_json(tmp_path):
-    """§10.1: two runs agree within 1e-9 on every value (fixed bootstrap seed). A fresh run must
-    reproduce the committed file, so the file is what the current spike code produces."""
-    out = tmp_path / "statsbomb_27.json"
-    proc = subprocess.run([sys.executable, str(_SPIKE), "--write-json", str(out)],
-                          cwd=_ROOT, capture_output=True, text=True, timeout=1800)
-    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
-    with _JSON.open() as f:
-        committed = json.load(f)
-    with out.open() as f:
-        fresh = json.load(f)
-    _assert_close(committed, fresh)
+def test_spike_reruns_are_byte_identical_and_reproduce_committed_json(tmp_path):
+    """§10.1: the spike rounds every stored float to 9 decimals, so two runs (fixed bootstrap
+    seed) write identical bytes, equal to the committed file, and give the same
+    REGISTRY_VERSION (user, 2026-10-05: the version must not change on a rerun)."""
+    from eleveniq.analytics import registry as R
+
+    outs = []
+    for run in ("a", "b"):
+        out = tmp_path / f"statsbomb_27_{run}.json"
+        proc = subprocess.run([sys.executable, str(_SPIKE), "--write-json", str(out)],
+                              cwd=_ROOT, capture_output=True, text=True, timeout=1800)
+        assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
+        outs.append(out)
+    assert outs[0].read_bytes() == outs[1].read_bytes()
+    assert outs[0].read_bytes() == _JSON.read_bytes()
+    versions = [R.derive(measurements=json.loads(o.read_text())).version for o in outs]
+    assert versions[0] == versions[1] == R.REGISTRY_VERSION

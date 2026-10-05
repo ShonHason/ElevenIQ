@@ -61,6 +61,7 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
   - statsbomb/  - source adapter: download + load raw StatsBomb files
   - metrics/    - pure metric functions (minutes, progressive, positions, ...)
   - pipeline/   - build stages (player_match, player_season) + quality checks
+  - analytics/  - metric registry (registry.py) derived from committed measurements
 - Future (when built): api/ -> services/ -> analytics/ -> repositories/,
   all inside src/eleveniq/. No analytics logic inside API endpoints.
 - Data: data/raw/ (downloaded, never edited), data/interim/, data/processed/.

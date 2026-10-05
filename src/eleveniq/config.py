@@ -168,3 +168,42 @@ def select_competition_seasons(
             f"competition_id={competition_id} season_id={season_id}"
         )
     return selected
+
+# ── Metric registry rules (ADR 004 §10.3; plan 005 M4c) ─────────────────────────
+# Applied by eleveniq.analytics.registry.derive() to the committed measurements
+# (analytics/measurements/statsbomb_27.json). The spike that writes that file applies
+# none of them, so changing one here re-derives every status without regenerating it.
+
+# D19 (user): a DNA metric needs split-half reliability r_full >= this (inclusive).
+DNA_RELIABILITY_MIN: float = 0.6
+# A DNA cell with r below this (strict) carries a "lower reliability" note (§10.3 step 7).
+LOW_RELIABILITY_BELOW: float = 0.7
+# §1, R15: a per-90 whose gated zero share is above this (strict) is a signature trait
+# when r_full >= DNA_RELIABILITY_MIN, otherwise display.
+ZERO_HEAVY_SHARE: float = 0.30
+# U5: a ratio enters DNA only when at least this share of gated rows meet min_attempts.
+RATIO_MIN_COVERAGE: float = 0.90
+# D12 (§10.3 step 5): a cell is possession-triggered when, for at least one proxy, the
+# mean of the four within-league Spearman rho is >= this in absolute value (inclusive)
+# and the sign test passes. Leagues with |rho| below POSSESSION_SIGN_NEUTRAL have no sign.
+POSSESSION_RHO_TRIGGER: float = 0.4
+POSSESSION_SIGN_NEUTRAL: float = 0.05
+# D12: an allow-list entry admits a triggered cell when the larger proxy |mean rho| is
+# <= this (inclusive). No entry may declare a looser bound.
+POSSESSION_ALLOW_MAX_RHO: float = 0.55
+# D12b: team_pass_share enters DNA (DM-CM, CB only) iff |rho| < this on both proxies.
+TEAM_PASS_SHARE_MAX_RHO: float = 0.3
+# D17: a pair of metrics at |rho| >= this in a group keeps one (an explicit choice).
+COLLINEAR_RHO: float = 0.85
+# D9: global_ok iff every pool league's mean global percentile is in this band (inclusive).
+GLOBAL_OK_BAND: tuple[float, float] = (40.0, 60.0)
+# §10.2: a signature trait's minimum season count is max(this, the group's P90 of the
+# count among gated rows). Integer count columns only; xG sums have no count minimum.
+SIGNATURE_TRAIT_MIN_COUNT_FLOOR: int = 5
+# §10.10: derive() reports every judged value within this distance of its threshold.
+BOUNDARY_MARGIN: float = 0.02
+# §10.10 (user, 2026-10-05): derive() also reports DNA cells whose D9 margin (the
+# nearest pool league mean's distance to the GLOBAL_OK_BAND edge) is within this many
+# percentile points. A league mean of percentiles over ~80 players has a standard
+# error of ≈ 29/√80 ≈ 3.2 pts, so a margin under 3 pts is within sampling noise.
+D9_BOUNDARY_MARGIN_PTS: float = 3.0

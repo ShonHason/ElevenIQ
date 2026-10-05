@@ -94,7 +94,7 @@ KEY = ["player_id", "team_id", "competition_id", "season_id", "source"]
 # Plan 005 thresholds under test (proposals; the ADR fixes the final values).
 ZERO_HEAVY_SHARE = 0.30
 AMBIGUOUS_MARGIN = 0.05
-GLOBAL_OK_BAND = 10.0          # D9: each league's mean global percentile within 50 ± 10
+GLOBAL_OK_BAND = (40.0, 60.0)  # D9: each league's mean global percentile in the band (config.GLOBAL_OK_BAND, written out)
 MEDIAN_RATIO_BAND = (0.8, 1.25)  # D9 original proposal, shown for comparison
 MIN_COHORT_SIZE = 30
 POSSESSION_RHO = 0.4
@@ -108,6 +108,7 @@ TRAIT_COUNTS = (5, 10, 15)
 COLLINEAR_REPORT_FLOOR = 0.7   # --write-json keeps every pair with |ρ| ≥ this (the D17 rule is 0.85)
 BOOTSTRAP_B = 2000             # np_xg_per_shot M interval (stats-reviewer condition 2, M4c2)
 BOOTSTRAP_SEED = 27
+JSON_FLOAT_DECIMALS = 9        # --write-json rounds every float (ADR 004 §10.1: runs agree within 1e-9)
 
 # Ratio metrics: (name, numerator column, denominator expression columns (+, -)).
 RATIOS = {
@@ -234,7 +235,7 @@ base = season.filter(pl.col("in_percentile_pool") & pl.col("is_outfield"))
 gated = base.filter("gate")
 
 
-def dedupe_global(df: pl.DataFrame, by: tuple[str, ...] = ("position_group",)) -> pl.DataFrame:
+def dedupe_population(df: pl.DataFrame, by: tuple[str, ...] = ("position_group",)) -> pl.DataFrame:
     """D3: each reference population holds one row per (player_id, season_id, source): most minutes,
     tie → lowest competition_id, then lowest team_id. A population is a position group (global) or a
     league × position group (local: by=("competition_id", "position_group")), so the dedupe runs after
@@ -338,8 +339,8 @@ pool_tot = base.group_by(["player_id", "season_id", "source"]).agg(
     pl.col("competition_id").n_unique().alias("comps"), pl.col("player_name").first())
 print("combined-only (pool rows sum ≥ gate across competitions, no row ≥ gate):")
 show(pool_tot.filter((pl.col("comps") >= 2) & (pl.col("total") >= GATE) & (pl.col("max_row") < GATE)))
-gpop = dedupe_global(gated)
-lpop = dedupe_global(gated, by=("competition_id", "position_group"))   # local populations (D3 amended)
+gpop = dedupe_population(gated)
+lpop = dedupe_population(gated, by=("competition_id", "position_group"))   # local populations (D3 amended)
 dup_keys = multi.filter(pl.col("n") >= 2)["player_id"].to_list()
 movers = gated.filter(pl.col("player_id").is_in(dup_keys))
 mx = 0.0
@@ -544,7 +545,7 @@ print("Not re-measured: ADR 002 §31.6 events_outside_credited_time attributes i
       "Milinković-Savić 3879637 (11 events, 3.5 min); the other 4 are single mistimed receipts. Count = 1.")
 
 # ── D9 ────────────────────────────────────────────────────────────────────────
-section("D9 — global_ok: league mean of global percentile within 50 ± 10 (vs median-ratio band)")
+section("D9 — global_ok: every league mean of global percentile in [40, 60] (vs median-ratio band)")
 d9 = []
 d9_league_means: dict[tuple[str, str], dict[str, float]] = {}   # (metric, group) -> {competition_id: mean}
 
@@ -568,7 +569,7 @@ for m in P90:
         worst = means.sort((pl.col("gp") - 50).abs(), descending=True).row(0, named=True)
         d9.append({"metric": m, "group": grp, "min_league_mean": lo, "max_league_mean": hi,
                    "worst_league": LEAGUES[worst["competition_id"]],
-                   "global_ok": lo >= 50 - GLOBAL_OK_BAND and hi <= 50 + GLOBAL_OK_BAND,
+                   "global_ok": lo >= GLOBAL_OK_BAND[0] and hi <= GLOBAL_OK_BAND[1],
                    "median_ratio": ratio,
                    "median_band_ok": MEDIAN_RATIO_BAND[0] <= 1 / ratio and ratio <= MEDIAN_RATIO_BAND[1]})
 d9 = pl.DataFrame(d9)
@@ -870,8 +871,8 @@ for name, (num, pos, neg) in RATIOS_ALL.items():
         ratio_min_att[(name, grp)] = min_att
         # Filter by min_attempts first, then dedupe (user, 2026-10-04): a mover whose most-minutes row
         # misses min_attempts is represented by his other row in the group if that one meets it.
-        ref_global = dedupe_global(meeting)
-        ref_l = dedupe_global(meeting, by=("competition_id", "position_group"))
+        ref_global = dedupe_population(meeting)
+        ref_l = dedupe_population(meeting, by=("competition_id", "position_group"))
         ref_local = {str(c): ref_l.filter(pl.col("competition_id") == c).height for c in POOL_LEAGUES}
         cell = {"n_gated": g_sub.height, "n_estimate_rows": rows_r.filter(pl.col("position_group") == grp).height,
                 "p_bar": pbar, "M": M, "no_signal": M is None, "min_attempts": min_att,
@@ -949,6 +950,10 @@ print(f"distinct gated rows above their group P99 on ≥ 1 metric (to trace in M
 section("D12b — team_pass_share (open play) for DM-CM and CB: possession ρ and split-half "
         "(ADR 004 D12, pre-registered: enters DNA iff |ρ| < 0.3 and r_full ≥ 0.6)")
 if "team_pass_share" not in season.columns:
+    # The registry requires the D12b measurements (plan 005 M4c3): a file without them
+    # would silently leave team_pass_share out of DM-CM DNA.
+    if ARGS.write_json:
+        sys.exit("team_pass_share not in the season parquet (pre-M4b output): --write-json needs it (D12b)")
     print("team_pass_share not in the season parquet (pre-M4b output): skipped")
 else:
     d12b = []
@@ -966,12 +971,17 @@ else:
             per[proxy + "_detail"] = possession_rho(sub, "team_pass_share", proxy)
             per[proxy] = per[proxy + "_detail"]["rho_within_mean"]
         r_full = rel_tps.get(grp)
+        # D9 as for the per-90s: gated rows of the group scored against its deduped global
+        # population (plan 005 M4c3: the registry needs global_ok for the DM-CM DNA cell).
+        tps_means = league_mean_global_pct(sub, "team_pass_share", gpop.filter(pl.col("position_group") == grp))
         d12b_json[grp] = {"n_gated": sub.height, "split_half_r_full": r_full,
+                          "league_mean_global_pct": tps_means,
                           "possession": {proxy: per[proxy + "_detail"] for proxy in ("poss_dur_loo", "poss_pass_loo")}}
         d12b.append({"group": grp, "n": sub.height,
                      "rho_dur_mean": per["poss_dur_loo"], "rho_pass_mean": per["poss_pass_loo"],
                      "rho_dur_by_league": str([round(v, 3) for v in per["poss_dur_loo_detail"]["by_league"].values()]),
                      "r_full": r_full,
+                     "d9_league_means": str({c: round(v, 2) for c, v in tps_means.items()}),
                      "enters_dna": abs(per["poss_dur_loo"]) < 0.3 and abs(per["poss_pass_loo"]) < 0.3
                                    and r_full is not None and r_full >= 0.6})
     show(pl.DataFrame(d12b))
@@ -985,6 +995,24 @@ if ARGS.write_json:
             for block in iter(lambda: f.read(1 << 20), b""):
                 h.update(block)
         return h.hexdigest()
+
+    def round_floats(obj):
+        """Every stored float to JSON_FLOAT_DECIMALS, so two runs write identical bytes: float sums
+        differ between runs in the last digits (≤ 1e-12), and REGISTRY_VERSION hashes the values.
+        + 0.0 turns -0.0 into 0.0, so noise around zero cannot flip a sign."""
+        if isinstance(obj, float):
+            return round(obj, JSON_FLOAT_DECIMALS) + 0.0
+        if isinstance(obj, dict):
+            return {k: round_floats(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [round_floats(v) for v in obj]
+        return obj
+
+    def count_key(t) -> str:
+        """A holders_at_count key. An xG count's P90 is a float key, which round_floats does not
+        reach: round it the same way so the key cannot change between runs (the count of holders
+        still uses the exact threshold)."""
+        return str(round(t, JSON_FLOAT_DECIMALS) + 0.0) if isinstance(t, float) else str(t)
 
     def strip_sign(d: dict) -> dict:
         """Measurements only: the sign test is a rule, applied in eleveniq from by_league."""
@@ -1013,7 +1041,7 @@ if ARGS.write_json:
                 "zero_share": zero_of[(m, grp)],
                 "r_full": rfull_of.get((m, grp)),
                 "count_p90": count_p90,
-                "holders_at_count": {str(t): int((cnt >= t).sum()) for t in sorted({*TRAIT_COUNTS, count_p90})},
+                "holders_at_count": {count_key(t): int((cnt >= t).sum()) for t in sorted({*TRAIT_COUNTS, count_p90})},
                 "global_ok": d9_ok[(m, grp)],
                 "league_mean_global_pct": d9_league_means[(m, grp)],
                 "possession": {proxy: strip_sign(d12_detail[(m, proxy, grp)]) for proxy in ("poss_dur_loo", "poss_pass_loo")},
@@ -1050,11 +1078,11 @@ if ARGS.write_json:
         "cohorts": cohorts,
         "metrics": metrics_json,
         "ratios": ratio_json,
-        "team_pass_share": d12b_json if "team_pass_share" in season.columns else None,
+        "team_pass_share": d12b_json,
         "collinear_pairs": pairs,
     }
     ARGS.write_json.parent.mkdir(parents=True, exist_ok=True)
     with ARGS.write_json.open("w") as f:
-        json.dump(out, f, indent=1, sort_keys=True, allow_nan=False, ensure_ascii=False)
+        json.dump(round_floats(out), f, indent=1, sort_keys=True, allow_nan=False, ensure_ascii=False)
         f.write("\n")
     print(f"\nwrote {ARGS.write_json}")

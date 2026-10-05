@@ -592,9 +592,12 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 - **Contents:**
   - per metric × group (43 per-90s since M4c2b): n, zero share, r_full, the P90 of the season count with holders at count ≥ 5/10/15/P90, `global_ok` with each league's mean global percentile, and possession ρ for both proxies (within-league mean, per-league values and per-league n);
   - per ratio × group (7 ratios): M, `min_attempts`, coverage, split-half r_full, reference-population sizes (global and per league) and possession ρ on the global reference population (rows meeting `min_attempts`, deduped);
-  - D12b for DM-CM and CB;
+  - D12b for DM-CM and CB, with the D9 league means (since M4c3);
   - every D17 pair with |ρ| ≥ 0.7 (a reporting floor; the rule is 0.85) over the per-90s, the ratios and `team_pass_share`. A ratio enters a pair only on gated rows that meet its `min_attempts` in that group.
-- **Reproducible:** two runs agree within 1e-9 on every value. The np_xg_per_shot bootstrap has a fixed seed. Float sums differ between runs in the last digit (≤ 1e-15), so the values below are printed to 6 decimals and compared at full precision.
+- **Reproducible:** two runs agree within 1e-9 on every value. The np_xg_per_shot bootstrap has a fixed seed. Float sums differ between runs in the last digits (up to 2.4e-13 measured), so the values below are printed to 6 decimals and compared at full precision.
+  - **Since M4c3 (user, 2026-10-05) the spike rounds every stored float to 9 decimals** (`JSON_FLOAT_DECIMALS`), including the float keys of `holders_at_count` (the xG count P90s). So two runs write identical bytes.
+  - `REGISTRY_VERSION` hashes the rounded measurements, the rules and the resolved cells. It changes only when a measurement, a rule or an entry changes.
+  - An integration test runs the spike twice and asserts identical bytes, equal to the committed file, and the same version.
 - **Gate (user, 2026-10-04):** "gated" uses `meets_min_minutes` semantics. The spike recomputes `minutes_nominal_equiv ≥ 900 − 1e-6` from the match parquet and fails unless it equals the parquet's `meets_min_minutes` on every row. 2015/16: equal on all 2,628 rows (1,346 true).
   - Until M4c2 the spike's own recomputation was silently shadowed by the parquet column of the same name. The two agree, so no figure changes.
 - **Ratio denominators follow the stored columns** (stats-reviewer, M4c2). The completion rates subtract unknown outcomes **and** Injury Clearances (D13), as the pipeline does; crosses keep their Injury Clearances. Until M4c2 the spike left Injury Clearances in, and its rates differed from the stored columns by up to 0.083.
@@ -662,12 +665,25 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 - **Trigger:** for at least one proxy, |mean ρ| ≥ 0.4 and the sign test passes. Sign test: drop leagues with |ρ| < 0.05; at least one league remains and all remaining leagues share a sign.
 - **Allow-list "max |ρ|"** is the larger of the two proxies' |mean ρ|, compared ≤ 0.55. Single-league ρ values are not used: CB `progressive_carries` passes at 0.5487 only under this reading.
 - **Comparisons:** zero share > 0.30 (strict); r ≥ 0.6, coverage ≥ 0.90, ρ ≥ 0.4 and allow ≤ 0.55 are inclusive. D12b uses \|ρ\| < 0.3 (strict).
-- **D9 band:** inclusive, `global_ok` iff every league mean is in [40, 60].
+- **D9 band:** inclusive, `global_ok` iff every league mean is in [40, 60]. The band is defined once, as `config.GLOBAL_OK_BAND`. The spike cannot import eleveniq, so it writes out its own copy, and a fast test asserts the two are equal.
 - **Validation** (the registry raises `RegistryRuleError`):
   - every metric kept by a D17 choice must itself be DNA in that group; otherwise the drop would silently remove both;
   - every allow-list entry's measured max |ρ| must be within its bound;
   - a zero-heavy xG count cell must not become a signature trait (10.2);
   - an override needs a reason and an ADR reference, must change the derived status, and may never put goals or assists into DNA.
+  - **Added in M4c3 (2026-10-04)** (guards only; no 2015/16 status changes):
+    - no final DNA cell is a goals/assists or `restart_` column (§8). Without the U2 override, AM-Winger `restart_key_passes` would be DNA and the registry raises;
+    - every D17 choice is backed by a measured pair at |ρ| ≥ 0.85 in each of its groups;
+    - an allow-list entry may not declare a bound above 0.55;
+    - every measured metric and ratio has a registry spec, with the same count column or ratio terms as the measurement;
+    - every derived cell has its measurement;
+    - the `team_pass_share` (D12b) block is required, for exactly DM-CM and CB. The spike's `--write-json` now fails without the column; it used to write `null`.
+  - **D9 for `team_pass_share` (user, 2026-10-05).** The spike now writes its league means: gated rows of the group, scored against the deduped global population, as for the per-90s. `derive()` computes `global_ok` from them like any other cell.
+    - DM-CM: 50.43 / 56.11 / 42.50 / 52.75 (La Liga / PL / Serie A / Ligue 1), so `global_ok`. The DNA cell has a global basis, and no DNA cell has an unmeasured D9.
+    - CB: the PL is 39.69, so not `global_ok`. The cell is display anyway.
+    - **Check:** the file at HEAD (M4c2b) was rounded to 9 decimals the same way and compared recursively with the regenerated file: equal everywhere except the two added `league_mean_global_pct` keys.
+    - The raw git diff is large only because every float is now stored at 9 decimals (a one-time change).
+  - **`global_ok` is null** (basis local) where D9 is undefined: the unmeasured fixed-display columns, and ratio cells with a pool league without rows (ST `dribble_success_pct`, no Ligue 1 row). Both are display.
 
 **Fixed display:**
 
@@ -701,7 +717,7 @@ So DM-CM gets `team_pass_share` as its possession-neutral pass-volume metric. CB
 - `progressive_passes` and `progressive_carries`: every group (D12). The entries matter only where the cell triggers: CB and DM-CM both; FB-WB `progressive_passes` (ρ 0.51) and `progressive_carries` (0.407).
 - `long_pass_completion_pct`: CB, FB-WB and DM-CM only, the groups where it triggers (10.2).
 
-**Override:** AM-Winger `restart_key_passes` dna → signature (U2). It is the only override.
+**Override:** AM-Winger `restart_key_passes` dna → signature (U2). It is the only override. An overridden cell's reasons are its status and the override's reference, e.g. `('signature', 'override: ADR 004 §8, §10.2 U2')`, not the rule outcome it replaces (M4e shows reasons; user, 2026-10-05).
 
 ### 10.4 Outcomes of the re-run (no decision; the rules decide)
 - FB-WB `final_third_entries_pass_p90` now triggers D12 (ρ 0.410 duration / 0.402 pass share) → `team_style_biased`, out (no allow-list; §7 item 3 precedent).
@@ -850,7 +866,7 @@ Directions:
 - **Redundancy below 0.85** inside the lists: `np_shots` ~ `np_xg` 0.79–0.80; `np_shots` ~ `np_shots_on_target` 0.791 (AM-Winger), 0.804 (ST); `progressive_passes` ~ `final_third_entries_pass` 0.81–0.83 (CB, AM-Winger); `op_key_passes` ~ `op_xg_assisted` 0.825 (DM-CM); ST `aerial_win_pct` = won / (won + lost), so its three aerial dimensions carry two degrees of freedom. These are handled by the family weights (10.8), not by D17.
 
 ### 10.10 Boundary report: fragile decisions to re-check on a new source
-Each value is compared at full precision (printed here to 6 decimals) against the threshold of the rule that judged it, and listed when within ±0.02 of that threshold. M4c3's `derive()` returns this list.
+Each value is compared at full precision (printed here to 6 decimals) against the threshold of the rule that judged it, and listed when within ±0.02 of that threshold. M4c3's `derive()` returns this list. The table below has the 35 status and note rows; the 51 D9 rows are described at the end of this section.
 - **The 0.7 lower-reliability bar is tracked too** (user, 2026-10-04, after the M4c2b review). It changes no status, only the "lower reliability" note on a DNA cell, but a cell can lose or gain that note on a new source. `derive()` reports DNA cells within ±0.02 of 0.7 in the same list.
 - **ρ rows show the four within-league values** (user, 2026-10-04): the rule compares their mean, and the mean can hide a split.
 
@@ -900,10 +916,20 @@ Each value is compared at full precision (printed here to 6 decimals) against th
   - Plan 005 M4g evaluates a "majority of leagues above the trigger" rule, applied to all metrics at once (never to these cells alone).
 - No zero-share, ratio-r, coverage or D12b value is within ±0.02 of a status threshold (the 0.6, 0.90 and 0.3 cut-offs).
 - The `shots_on_target_p90` cells of the first draft (DM-CM r 0.619, AM-Winger ρ 0.386, ST ρ 0.382) left the report when the column became fixed display.
-- D9 (`global_ok`) is outside this report: it sets the percentile basis (global or local), not the status. It is fragile too: about 30 cells have a league mean within 0.5 pts of the [40, 60] band. Examples:
-  - `miscontrols_p90` FB-WB 40.0014 (ok);
-  - `fouls_committed_p90` DM-CM 40.0146 (ok);
-  - `tackles_attempted_p90` AM-Winger 39.99 (fails since the per-group dedupe, 10.1).
+- **D9 rows (user, 2026-10-05).** D9 sets the percentile basis (global or local), not the status. `derive()` reports every **DNA** cell whose D9 margin is within **3 pts** (`D9_BOUNDARY_MARGIN_PTS`).
+  - **The margin** (`Cell.d9_margin`, on every cell) is the deciding league mean's signed distance to the [40, 60] edge:
+    - inside the band, the nearest league mean's distance (positive);
+    - outside, the furthest-out league's distance (negative).
+  - **The row** shows that league mean, the edge and the four league means.
+  - **Why 3 pts:** a league mean of global percentiles over ~80 players has a standard error of about 29/√80 ≈ 3.2 pts (the SD of uniform percentiles is 100/√12 ≈ 29). A margin under 3 pts is within sampling noise.
+  - **2015/16: 51 of 101 DNA cells are within 3 pts.** 33 are `global_ok` but could fail, and 18 fail but could pass.
+    - Example: DM-CM `team_pass_share` is 2.50 pts inside (Serie A 42.50).
+    - A first count of 61 used each league's unsigned distance to either edge. That also counted cells whose D9 is decided by another league far outside the band, e.g. CB `clearances` (PL 73.5, margin −13.5).
+  - **Input for the M4f one-basis decision (§10.8):** half the DNA cells' basis is within noise of flipping, so a per-cell basis would not be stable across sources or seasons.
+  - Every cell (not only DNA) carries `d9_margin`. About 30 cells have a margin within 0.5 pts. Examples:
+    - `miscontrols_p90` FB-WB 40.0014 (ok);
+    - `fouls_committed_p90` DM-CM 40.0146 (ok);
+    - `tackles_attempted_p90` AM-Winger 39.99 (fails since the per-group dedupe, 10.1).
 
 ### 10.11 Recorded concerns (stats-reviewer, M4c2 review; user 2026-10-04: record only, no rule changes)
 - **The hard 0.6 cut-off vs its own sampling error.** One fixed odd/even split at n ≈ 250 has a standard error of several hundredths.

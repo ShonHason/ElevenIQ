@@ -697,9 +697,43 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
 - **Derived DNA counts after M4c2b:** CB 16, FB-WB 19, DM-CM 24, AM-Winger 22, ST 20. M4c3's `derive()` must reproduce these.
 - **M4c3 boundary report** (user, 2026-10-04): `derive()` also reports DNA cells within ±0.02 of the 0.7 lower-reliability bar (11 cells in 2015/16), and each ρ row carries the four within-league values (ADR 004 §10.10).
 
+### M4c3 — registry code (2026-10-04)
+- `src/eleveniq/analytics/registry.py`; rule constants in `config.py`.
+  - `derive()` applies ADR 004 §10.3 to `statsbomb_27.json`. `REGISTRY` is resolved at import, so a rule-breaking entry fails the import.
+  - Surface: `cell`, `dna_metrics`, `display_metrics`, `signature_traits`, `REGISTRY_VERSION` (sha256 of cells, rules and provenance) and `MEASUREMENT_SOURCE`.
+- **Reproduces ADR 004 §10.6:**
+  - DNA counts CB 16, FB-WB 19, DM-CM 24, AM-Winger 22, ST 20, with the same `*` and (AL) markers;
+  - `restart_key_passes` is the only signature trait, minimums 5 / 5 / 13 / 19 / 5;
+  - the §10.10 boundary report has exactly its 35 rows, plus the D9 rows below.
+- **Carried items:**
+  - `MetricSpec.integer_count` (False for the six xG count columns; the integration test checks it against the parquet dtypes);
+  - `team_pass_share` D12b measurements are required (spike, registry, test);
+  - the spike's `dedupe_global` is renamed `dedupe_population`, since it dedupes local populations too;
+  - the 0.7 lower-reliability rows are in the boundary report.
+- **D9 for `team_pass_share` (user, 2026-10-05).** The spike writes its league means and `derive()` computes `global_ok` from them.
+  - DM-CM is `global_ok` (42.50–56.11), so its DNA cell has a global basis. Before this, its `global_ok` was null.
+  - CB fails D9 (PL 39.69); the cell is display.
+  - DNA cells failing D9 on their own measurements still exist in every group, so M4f's one-basis-per-vector decision (ADR 004 §10.8) stands.
+- **Review fixes (user, 2026-10-05), from the /finish-chunk stats-reviewer and code-reviewer:**
+  - **Stable version:** the spike rounds every stored float, including float dict keys, to 9 decimals. Reruns are byte-identical, and `REGISTRY_VERSION` hashes the rounded measurements. An integration test runs the spike twice and checks the bytes and the version.
+  - **ADR wording:** the sentence on the regenerated JSON is corrected; HEAD rounded the same way equals it except the two keys.
+  - **Override reasons** are `(status, "override: <adr>")`.
+  - **D9 rows in the boundary report:** DNA cells within 3 pts (≈ the standard error of a league mean of percentiles). 51 of 101 DNA cells; `Cell.d9_margin` on every cell. Input for M4f.
+  - **One D9 band:** `config.GLOBAL_OK_BAND`; the spike's copy is asserted equal.
+  - Consistency tests on the JSON now use the 9-decimal storage precision.
+- **Tests:**
+  - `tests/test_registry.py`: schema; an independent re-check of every DNA and signature cell; derive == REGISTRY; rule-breaking fixtures; threshold edges.
+  - `tests/test_registry_spec.py` (qa-tester, from the ADR text).
+  - The plan's six rule-breaking fixtures were mutation-checked: each goes red when its guard is disabled. A tampered override fails the import.
+
 ---
 
 ## Backlog
+- **Registry follow-ups from the M4c3 reviews** (user, 2026-10-05):
+  - an override to `signature` or `dna` should meet the bars it bypasses: r ≥ 0.6 (R15 / D19) and, for `dna`, no unadmitted possession trigger. Today's only override has r 0.838;
+  - ADR 004 §10.3 should state that signature traits are exempt from the possession step (step 3 precedes step 5; set-piece duty is a role, not possession);
+  - an override from display to `dna` forces `low_reliability` False, while `reliability` keeps the measured value. Derive the note from `reliability` instead;
+  - the registry docstring's step list omits the ratio `no_signal` gate (step 4 in effect).
 - **Empirical-Bayes shrinkage of ratios** (user, 2026-10-03): shrink each ratio toward its group mean by attempts, then re-evaluate `aerial_win_pct` for CB and FB-WB DNA. CB aerial ability is a known DNA gap: `aerial_win_pct` r 0.499 with 63.5% coverage, so only the aerial volumes are in DNA (ADR 004 §10.9).
   - **Linked: ST DNA has no chance-quality metric.** np_xg 0.599, op_key_passes 0.540 and op_xg_assisted 0.534 are below 0.6, and `np_xg_per_shot` is display (r 0.464, coverage 61.4%).
 - **`op_crosses_attempted`** (stats-reviewer, user 2026-10-04; priority): crosses that are not restart deliveries. FB-WB DNA has no crossing metric, because `crosses_attempted` (r 0.787, 0% zeros) includes corners and free kicks and is fixed display (ADR 004 §10.3).
