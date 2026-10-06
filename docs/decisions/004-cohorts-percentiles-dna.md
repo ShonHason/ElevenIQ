@@ -1134,7 +1134,7 @@ The four open M4f items in §10.8 and plan 005 M4f were decided from the 2015/16
 - **Partial rows (§12.2):** a missing metric leaves no vertex. The outline breaks on both sides (an open path instead of a closed one), a cross marks the rim, and a note names the status ("below the minimum of ≥ 33 long passes"). Walcott in the second golden.
 - **Dimension scores:** shown in a table under the radar and as a "Dimension score" row at the head of each family's DNA section.
   - An ok score reads "61 · based on 2 metrics: …".
-  - Defending reads "withheld until M4g (possession adjustment pending)"; Passing, where withheld (below), reads "withheld until M4g (team-influenced; mover stability check pending)".
+  - Defending reads "withheld until M4g (possession adjustment pending)"; Passing, where withheld (below), reads "withheld until M4g (team-influenced; xPass candidate pre-registered)".
   - A null score reads "no directional metric present in this row".
 - **Tests:**
   - **Fast tests** cover axes grouped by family, vertex radius and angle, gap not zero, open outline, no radar for mixed groups, uncoloured style axes, member counts and withheld Defending, and the DNA guards and copy check.
@@ -1151,11 +1151,12 @@ The four open M4f items in §10.8 and plan 005 M4f were decided from the 2015/16
   - Dropping the family sort alone is an equivalent mutant, because `SPECS` is already contiguous by family.
 - **Passing dimension score withheld where it rests on `long_pass_completion_pct` alone (user, 2026-10-07).**
   - **Why:** in CB, FB-WB, DM-CM and AM-Winger, `long_pass_completion_pct` is the only directional Passing DNA member. §11.5 says a low long-pass completion is never presented as poor individual passing (Koné 0.319 at Sunderland, 0.595 at Lorient). A one-metric Passing score does exactly that (Busquets 98, Kanté 38, Özil 87).
-  - **Rule:** treated like Defending (§12.6). The score is null with `score_status` `pending_mover_stability`, and the page reads "withheld until M4g (team-influenced; mover stability check pending)". ST keeps its Passing score (`pass_completion_pct`). The metric stays in the vector, so weights, distances and neighbours are unchanged.
+  - **Rule:** treated like Defending (§12.6). The score is null with `score_status` `pending_mover_stability`, and the page reads "withheld until M4g (team-influenced; xPass candidate pre-registered)". ST keeps its Passing score (`pass_completion_pct`). The metric stays in the vector, so weights, distances and neighbours are unchanged.
   - **Code:** `config.DNA_WITHHELD_DIMENSIONS` (family → status and groups) replaces `DNA_WITHHELD_FAMILIES` (§12.8). The build passes `dna.withheld_for(group)` to `row_dna`, and the spike holds the same table written out. A fast test asserts the Passing groups are exactly those whose only directional Passing DNA member is `long_pass_completion_pct`. The page refuses a dimensions file whose withheld statuses differ from the config.
   - **Effect (2015/16):** 1,075 Passing scores withheld (every non-ST row). This includes the 30 rows that were `no_directional_metric` (§12.6): the withhold is checked first, so `no_directional_metric` now occurs 0 times. The 158 ST scores are unchanged, and the vector file's cells are unchanged. The spike's `--check-output` passes (25,121 vector cells, 7,963 dimension scores), and the fixture changes only on the Passing scores of the 7 non-ST rows.
   - **Goldens:** each changes by one line, with 2 `data-dim` cells removed: Ben Arfa Passing 62 in the M4e golden, Özil Passing 87 in the radar golden. 0 `data-src` cells changed. The golden diff summary now counts `data-dim` cells.
-  - **Restoring it is an M4g decision**, taken with the mover stability check (plan 005 M4g). The candidate metrics are pre-registered there (user, 2026-10-07):
+  - **Restoring it is an M4g decision**, taken with the mover stability check (plan 005 M4g).
+  - **Page wording (user, 2026-10-07, after the M4g pre-registration):** "withheld until M4g (team-influenced; xPass candidate pre-registered)". The status code stays `pending_mover_stability`, because the mover check is still one of the rules the xPass candidate must pass. The candidate metrics are pre-registered there (user, 2026-10-07):
     - for StatsBomb, an xPass model with execution, execution under pressure (the Passing score) and ambition (`style`);
     - for aggregated sources (Sportmonks), "accuracy vs context";
     - all under the same rules, reviewed by the stats-reviewer before code.

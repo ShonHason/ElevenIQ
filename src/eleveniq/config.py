@@ -227,8 +227,9 @@ DNA_NEIGHBOURS_K: int = 10
 #   possession question.
 # - Passing where its only directional DNA member is long_pass_completion_pct (ADR 004
 #   §12.9, user 2026-10-07): that metric reflects team style (§11.5), so a one-metric
-#   Passing score would present a low value as poor individual passing. M4g's mover
-#   stability check decides whether to restore it. ST keeps Passing (pass_completion_pct).
+#   Passing score would present a low value as poor individual passing. M4g decides
+#   whether to restore it from the pre-registered xPass candidate (plan 005 M4g). ST
+#   keeps Passing (pass_completion_pct).
 #   tests/test_dna.py::test_passing_withheld_exactly_where_long_pass_completion_is_its_only_
 #   directional_member re-derives these groups from the registry: re-check it if they change.
 DNA_WITHHELD_DIMENSIONS: dict[str, tuple[str, tuple[str, ...]]] = {

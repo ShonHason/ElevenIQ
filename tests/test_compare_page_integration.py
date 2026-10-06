@@ -125,7 +125,7 @@ def test_radar_golden_covers_the_dna_rules(radar_page, golden_page):
     text = re.sub(r"<[^>]+>", "", radar_page)
     assert "withheld until M4g" in text and "based on 1 metric:" in text
     # Passing withheld for both AM-Wingers (§12.9), incl. Walcott who also lacks the metric
-    assert "team-influenced; mover stability check pending" in text
+    assert "team-influenced; xPass candidate pre-registered" in text
     assert "|Passing|score" not in radar_page
 
 

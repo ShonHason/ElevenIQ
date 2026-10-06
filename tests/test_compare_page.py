@@ -531,7 +531,7 @@ def test_passing_withheld_where_it_rests_on_long_pass_completion(group):
     """ADR 004 §12.9: a one-metric long-pass Passing score would read a team-style value as
     poor individual passing (§11.5), so it is withheld, never a number."""
     page = P.render(_pair(group))
-    assert "withheld until M4g (team-influenced; mover stability check pending)" in _text(page)
+    assert "withheld until M4g (team-influenced; xPass candidate pre-registered)" in _text(page)
     assert "|Passing|score" not in page and "|Passing|members" not in page
 
 

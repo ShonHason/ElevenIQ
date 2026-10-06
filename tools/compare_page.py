@@ -132,7 +132,7 @@ STATIC_REFS: frozenset[str] = frozenset({"D9", "D5", "ADR 004 §11", "ADR 004 §
 # raises. A withheld status (dna.WITHHELD_STATUSES) reads "withheld until M4g (<text>)".
 DIM_STATUS_TEXT: dict[str, str] = {
     D.PENDING_POSSESSION_ADJUSTMENT: "possession adjustment pending",
-    D.PENDING_MOVER_STABILITY: "team-influenced; mover stability check pending",
+    D.PENDING_MOVER_STABILITY: "team-influenced; xPass candidate pre-registered",
     D.NO_DIRECTIONAL_METRIC: "no directional metric present in this row",
 }
 
