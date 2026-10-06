@@ -1118,3 +1118,41 @@ The four open M4f items in §10.8 and plan 005 M4f were decided from the 2015/16
   - **C2: z is heavy-tailed.** 2.1% of z cells have |z| > 3, against 0.27% for a normal distribution; 95 exceed 5 and 10 exceed 8, concentrated in sparse per-90 counts (`box_entries_pass`, `aerials_won`, `dribbles_attempted`, `box_entries_carry`, `progressive_passes`). Isco's 13.66 comes from a near-zero scale (median 0.087, scale 0.081). Raw z is not comparable across metrics; M5 decides the cap (§12.6).
   - Also noted: the 32 partial rows keep the raw below-minimum ratio in `value` with null percentile, z and weight, so a display must label it. Several dimension scores rest on one metric (Aerial in CB, FB-WB, DM-CM and AM-Winger; Creation in FB-WB and AM-Winger; Passing in every group, with ST Passing `pass_completion_pct` alone).
 - **Display (user, 2026-10-06; M4e page, M4f4 radar):** a dimension score shows its member count ("based on 1 metric").
+
+### 12.9 Radar on the comparison page (M4f4, 2026-10-07)
+`tools/compare_page.py` draws an inline-SVG radar from `player_dna.parquet` and shows the dimension scores from `player_dna_dimensions.parquet`. It computes nothing: every value is a parquet cell.
+- **Guards:** both DNA files must carry this `REGISTRY_VERSION`, source and `DNA_PERCENTILE_BASIS`, plus the sha256 of the season parquet and of the percentiles parquet the page reads. A player's DNA metrics must equal the registry's list for the group, and `pct_local` / `n_local` must equal the percentiles rows.
+- **Radar:**
+  - **Axes:** the group's DNA metrics on local percentiles (§12.1), grouped by family (alternate families shaded and labelled).
+  - **Players:** one outline per player, told apart by colour and dash pattern, with a legend "vs <league> <group> (n …)".
+  - **Only for one shared group:** with mixed groups the page says why there is no radar.
+  - **No DNA vector:** a player without one (not a primary scored row) is listed with the row status.
+- **Direction:** outward means more, not better (percentiles are not directional, §11.1).
+  - Style and uncoloured axes (`style`, long pass completion, `team_style_biased`, the same predicate as the table bars) have a grey italic label and a dashed spoke.
+  - Directional axes are in ink, and a `lower_better` axis says "(lower better)".
+  - The good/poor colours are not used on the radar, because the player colours carry identity there.
+- **Partial rows (§12.2):** a missing metric leaves no vertex. The outline breaks on both sides (an open path instead of a closed one), a cross marks the rim, and a note names the status ("below the minimum of ≥ 33 long passes"). Walcott in the second golden.
+- **Dimension scores:** shown in a table under the radar and as a "Dimension score" row at the head of each family's DNA section.
+  - An ok score reads "61 · based on 2 metrics: …".
+  - Defending reads "withheld until M4g (possession adjustment pending)"; Passing, where withheld (below), reads "withheld until M4g (team-influenced; mover stability check pending)".
+  - A null score reads "no directional metric present in this row".
+- **Tests:**
+  - **Fast tests** cover axes grouped by family, vertex radius and angle, gap not zero, open outline, no radar for mixed groups, uncoloured style axes, member counts and withheld Defending, and the DNA guards and copy check.
+  - **Integration tests:**
+    - every `data-dim` span equals its parquet cell, and "based on N" equals the member count;
+    - every vertex sits at `RADAR_R · pct_local / 100` on its axis, and its tooltip shows the same value and n;
+    - every DNA metric is a vertex or a gap, never both;
+    - second golden `golden_radar_walcott_ozil.html`.
+  - **Golden diff:** the M4e golden changes by +18 / −3 lines (git; the dimension-score rows, the no-radar note, the legend sentence, the footer and two CSS lines), with 0 `data-src` cells changed.
+- **Mutation checks** (each reverted):
+  - missing metric plotted as 0 → 1 fast test and 3 integration tests red;
+  - style axes coloured → 1 fast test red;
+  - axes in the registry's alphabetical order → 2 fast tests red.
+  - Dropping the family sort alone is an equivalent mutant, because `SPECS` is already contiguous by family.
+- **Passing dimension score withheld where it rests on `long_pass_completion_pct` alone (user, 2026-10-07).**
+  - **Why:** in CB, FB-WB, DM-CM and AM-Winger, `long_pass_completion_pct` is the only directional Passing DNA member. §11.5 says a low long-pass completion is never presented as poor individual passing (Koné 0.319 at Sunderland, 0.595 at Lorient). A one-metric Passing score does exactly that (Busquets 98, Kanté 38, Özil 87).
+  - **Rule:** treated like Defending (§12.6). The score is null with `score_status` `pending_mover_stability`, and the page reads "withheld until M4g (team-influenced; mover stability check pending)". ST keeps its Passing score (`pass_completion_pct`). The metric stays in the vector, so weights, distances and neighbours are unchanged.
+  - **Code:** `config.DNA_WITHHELD_DIMENSIONS` (family → status and groups) replaces `DNA_WITHHELD_FAMILIES` (§12.8). The build passes `dna.withheld_for(group)` to `row_dna`, and the spike holds the same table written out. A fast test asserts the Passing groups are exactly those whose only directional Passing DNA member is `long_pass_completion_pct`. The page refuses a dimensions file whose withheld statuses differ from the config.
+  - **Effect (2015/16):** 1,075 Passing scores withheld (every non-ST row). This includes the 30 rows that were `no_directional_metric` (§12.6): the withhold is checked first, so `no_directional_metric` now occurs 0 times. The 158 ST scores are unchanged, and the vector file's cells are unchanged. The spike's `--check-output` passes (25,121 vector cells, 7,963 dimension scores), and the fixture changes only on the Passing scores of the 7 non-ST rows.
+  - **Goldens:** each changes by one line, with 2 `data-dim` cells removed: Ben Arfa Passing 62 in the M4e golden, Özil Passing 87 in the radar golden. 0 `data-src` cells changed. The golden diff summary now counts `data-dim` cells.
+  - **Restoring it is an M4g decision**, taken with the mover stability check (plan 005 M4g).

@@ -108,11 +108,18 @@ def test_provenance_is_stamped(built):
 
 
 def test_defending_withheld_and_passing_null_counts(built):
+    """§12.6, §12.9: Defending withheld everywhere; Passing withheld in every non-ST row
+    (1,075), which absorbs the 30 rows that had no directional Passing member."""
     dim = built[2]
     assert dim.filter(pl.col("family") == "Defending")["score_status"].unique().to_list() == \
         ["pending_possession_adjustment"]
-    nd = dim.filter(pl.col("score_status") == "no_directional_metric")
-    assert nd.height == 30 and nd["family"].unique().to_list() == ["Passing"]
+    passing = dim.filter(pl.col("family") == "Passing")
+    held = passing.filter(pl.col("score_status") == "pending_mover_stability")
+    assert held.height == 1075 and "ST" not in held["position_group"].to_list()
+    assert held["score"].null_count() == held.height
+    st = passing.filter(pl.col("position_group") == "ST")
+    assert st["score_status"].unique().to_list() == ["ok"]
+    assert dim.filter(pl.col("score_status") == "no_directional_metric").is_empty()
 
 
 def test_hand_picked_fixture_rows_match(built):

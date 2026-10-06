@@ -381,11 +381,9 @@
      "score_status": "ok"
     },
     "Passing": {
-     "members": [
-      "long_pass_completion_pct"
-     ],
-     "score": 38.059701492537314,
-     "score_status": "ok"
+     "members": [],
+     "score": null,
+     "score_status": "pending_mover_stability"
     },
     "Progression": {
      "members": [
@@ -786,11 +784,9 @@
      "score_status": "ok"
     },
     "Passing": {
-     "members": [
-      "long_pass_completion_pct"
-     ],
-     "score": 97.76119402985076,
-     "score_status": "ok"
+     "members": [],
+     "score": null,
+     "score_status": "pending_mover_stability"
     },
     "Progression": {
      "members": [
@@ -1191,11 +1187,9 @@
      "score_status": "ok"
     },
     "Passing": {
-     "members": [
-      "long_pass_completion_pct"
-     ],
-     "score": 63.43283582089553,
-     "score_status": "ok"
+     "members": [],
+     "score": null,
+     "score_status": "pending_mover_stability"
     },
     "Progression": {
      "members": [
@@ -1568,7 +1562,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "no_directional_metric"
+     "score_status": "pending_mover_stability"
     },
     "Progression": {
      "members": [
@@ -1590,7 +1584,7 @@
    },
    "player_name": "Theo Walcott",
    "position_group": "AM-Winger",
-   "why": "partial AM-Winger: long_pass_completion_pct below min_attempts, so Passing keeps long_passes_attempted_p90 at 1/7 and its score is null (no_directional_metric)"
+   "why": "partial AM-Winger: long_pass_completion_pct below min_attempts, so Passing keeps long_passes_attempted_p90 at 1/7; its score is withheld (pending_mover_stability, as for every AM-Winger)"
   },
   {
    "cells": {
@@ -2311,11 +2305,9 @@
      "score_status": "ok"
     },
     "Passing": {
-     "members": [
-      "long_pass_completion_pct"
-     ],
-     "score": 22.388059701492537,
-     "score_status": "ok"
+     "members": [],
+     "score": null,
+     "score_status": "pending_mover_stability"
     },
     "Progression": {
      "members": [
@@ -2587,11 +2579,9 @@
      "score_status": "pending_possession_adjustment"
     },
     "Passing": {
-     "members": [
-      "long_pass_completion_pct"
-     ],
-     "score": 26.27118644067797,
-     "score_status": "ok"
+     "members": [],
+     "score": null,
+     "score_status": "pending_mover_stability"
     },
     "Progression": {
      "members": [
@@ -2963,11 +2953,9 @@
      "score_status": "ok"
     },
     "Passing": {
-     "members": [
-      "long_pass_completion_pct"
-     ],
-     "score": 88.96103896103897,
-     "score_status": "ok"
+     "members": [],
+     "score": null,
+     "score_status": "pending_mover_stability"
     },
     "Progression": {
      "members": [
@@ -3006,9 +2994,10 @@
    "metric": "box_entries_carry_p90",
    "value": 13.658146580351891
   },
-  "no_directional_metric": 30,
+  "no_directional_metric": 0,
   "pairs_checked": 156961,
   "partial": 32,
+  "pending_mover_stability": 1075,
   "rows": 1233,
   "scale_methods": [
    "mad"

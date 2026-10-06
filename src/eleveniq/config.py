@@ -221,7 +221,17 @@ D9_BOUNDARY_MARGIN_PTS: float = 3.0
 DNA_PERCENTILE_BASIS: str = "local"
 # ADR 004 §12: neighbours per row in the M4f weighting checks (not a product setting).
 DNA_NEIGHBOURS_K: int = 10
-# ADR 004 §12.6 (user, 2026-10-06): dimension scores withheld in every group (null, reason
-# pending_possession_adjustment) until M4g settles the possession question. The metrics stay
-# in the vector, so similarity is unaffected.
-DNA_WITHHELD_FAMILIES: tuple[str, ...] = ("Defending",)
+# Dimension scores withheld (null, with the score_status given) per family and group. The
+# metrics stay in the vector, so similarity is unaffected.
+# - Defending, every group (ADR 004 §12.6, user 2026-10-06): until M4g settles the
+#   possession question.
+# - Passing where its only directional DNA member is long_pass_completion_pct (ADR 004
+#   §12.9, user 2026-10-07): that metric reflects team style (§11.5), so a one-metric
+#   Passing score would present a low value as poor individual passing. M4g's mover
+#   stability check decides whether to restore it. ST keeps Passing (pass_completion_pct).
+#   tests/test_dna.py::test_passing_withheld_exactly_where_long_pass_completion_is_its_only_
+#   directional_member re-derives these groups from the registry: re-check it if they change.
+DNA_WITHHELD_DIMENSIONS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "Defending": ("pending_possession_adjustment", ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")),
+    "Passing": ("pending_mover_stability", ("CB", "FB-WB", "DM-CM", "AM-Winger")),
+}

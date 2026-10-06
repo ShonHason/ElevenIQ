@@ -22,8 +22,10 @@ Rules (ADR 004 §10.8, §12.1, §12.2, §12.6):
 - Dimension scores, per DNA family of the group: the mean local percentile of the family's
   present directional members (lower_better enters as 100 − p), naming those members in
   metric-name order.
-  Defending is withheld in every group (pending_possession_adjustment, until M4g); a family
-  with no present directional member is null (no_directional_metric).
+  Withheld (null, before any other rule): Defending in every group
+  (pending_possession_adjustment, until M4g); Passing in CB, FB-WB, DM-CM and AM-Winger, where
+  its only directional DNA member is long_pass_completion_pct (pending_mover_stability, §12.9).
+  A family with no present directional member is null (no_directional_metric).
 - Pair distance (the checks' provisional distance; M5 picks the product metric): weighted
   squared Euclidean on percentile / 100 with pair weights — each family's weight re-split
   over the metrics both rows have, families with no shared metric dropped, the rest
@@ -65,7 +67,11 @@ KEY = m4d.KEY
 DNA_PERCENTILE_BASIS = "local"       # ADR 004 §12.1
 MAD_SCALE = 1.4826                   # ADR 004 §12.6
 IQR_SCALE = 1.349
-WITHHELD_FAMILY = "Defending"        # §12.6: pending_possession_adjustment until M4g
+# §12.6, §12.9: family -> (score_status, groups) whose dimension score is withheld.
+WITHHELD = {
+    "Defending": ("pending_possession_adjustment", ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")),
+    "Passing": ("pending_mover_stability", ("CB", "FB-WB", "DM-CM", "AM-Winger")),
+}
 
 H, L, S = "higher_better", "lower_better", "style"
 # ADR 004 §10.6 / §10.7 after §12.3: metric -> (family, direction), for every DNA metric.
@@ -110,7 +116,8 @@ DNA: dict[str, tuple[str, ...]] = {g: tuple(sorted(_COMMON + extra)) for g, extr
 
 Z_TOL = 1e-9          # z, median and scale (plain Python vs polars order of operations)
 W_TOL = 1e-12
-EXPECTED = {"rows": 1233, "partial": 32, "dna_incomplete": 0, "no_directional_metric": 30,
+EXPECTED = {"rows": 1233, "partial": 32, "dna_incomplete": 0, "no_directional_metric": 0,
+            "pending_mover_stability": 1075,
             "zero_spread": 0, "iqr_scale": 0}
 
 # Hand-picked rows: (player_name, team_id, why). Each claim in `why` is asserted below.
@@ -121,8 +128,8 @@ PICKS = (
     ("Francisco Román Alarcón Suárez", 220, "Isco: the largest |z| of the season (DM-CM "
                                           "box_entries_carry_p90, ≈ 13.7), stored uncapped"),
     ("Theo Walcott", 1, "partial AM-Winger: long_pass_completion_pct below min_attempts, so "
-                        "Passing keeps long_passes_attempted_p90 at 1/7 and its score is null "
-                        "(no_directional_metric)"),
+                        "Passing keeps long_passes_attempted_p90 at 1/7; its score is withheld "
+                        "(pending_mover_stability, as for every AM-Winger)"),
     ("Antonio Di Natale", 230, "partial ST: aerial_win_pct below min_attempts; Aerial keeps "
                                "aerials_won/lost and its score uses aerials_won_p90 only"),
     ("Jonjo Shelvey", 37, "D3 outsider (Swansea/Newcastle): scored against a local population "
@@ -227,8 +234,8 @@ def family_members(group: str, present: set[str]) -> dict[str, list[str]]:
 def dimensions(group: str, cells: dict[str, dict]) -> dict[str, dict]:
     out = {}
     for f in sorted({SPEC[m][0] for m in DNA[group]}):
-        if f == WITHHELD_FAMILY:
-            out[f] = {"score": None, "score_status": "pending_possession_adjustment", "members": []}
+        if f in WITHHELD and group in WITHHELD[f][1]:
+            out[f] = {"score": None, "score_status": WITHHELD[f][0], "members": []}
             continue
         # DNA[group] is sorted, so `members` is in metric-name order (the output contract).
         used = [m for m in DNA[group] if SPEC[m][0] == f and SPEC[m][1] != S
@@ -268,6 +275,8 @@ def season_checks(dna: Dna) -> dict:
         "dna_incomplete": sum(v["dna_status"] == "dna_incomplete" for v in vecs),
         "no_directional_metric": sum(d["score_status"] == "no_directional_metric"
                                      for v in vecs for d in v["dimensions"].values()),
+        "pending_mover_stability": sum(d["score_status"] == "pending_mover_stability"
+                                       for v in vecs for d in v["dimensions"].values()),
         "zero_spread": sum(c["z_status"] == "zero_spread" for v in vecs for c in v["cells"].values()),
         "iqr_scale": sum(c["z_scale_method"] == "iqr" for v in vecs for c in v["cells"].values()),
     }
@@ -278,8 +287,9 @@ def season_checks(dna: Dna) -> dict:
         total = sum(c["weight"] for c in v["cells"].values() if c["weight"] is not None)
         if abs(total - 1.0) > W_TOL:
             fail(f"row weights of {k} sum to {total!r}")
-        if v["dimensions"][WITHHELD_FAMILY]["score"] is not None:
-            fail(f"Defending score on {k}")
+        for f, (_, groups) in WITHHELD.items():
+            if v["group"] in groups and v["dimensions"][f]["score"] is not None:
+                fail(f"{f} score on {k}")
     # Symmetry and pair weights over every same-group pair.
     by_group: dict[str, list[dict]] = defaultdict(list)
     for v in vecs:
@@ -325,8 +335,8 @@ def assert_claims(dna: Dna, picked: dict[str, dict], counts: dict) -> None:
     if wal["dna_status"] != "partial" or \
             wal["cells"]["long_pass_completion_pct"]["metric_status"] != "below_min_attempts" or \
             abs(wal["cells"]["long_passes_attempted_p90"]["weight"] - 1 / 7) > W_TOL or \
-            wal["dimensions"]["Passing"]["score_status"] != "no_directional_metric":
-        fail("Walcott: partial, long passes at 1/7, Passing no_directional_metric")
+            wal["dimensions"]["Passing"]["score_status"] != "pending_mover_stability":
+        fail("Walcott: partial, long passes at 1/7, Passing withheld (pending_mover_stability)")
     din = v("Antonio Di Natale")
     if din["dna_status"] != "partial" or \
             din["cells"]["aerial_win_pct"]["metric_status"] != "below_min_attempts" or \

@@ -16,9 +16,10 @@ the M4d output and the populations from analytics.cohorts.
   its vector, weights and dimension scores; only the distance refuses it.
 - Dimension scores, per DNA family of the group: the mean local percentile of the family's
   present directional members (lower_better as 100 − p), naming them in metric-name order.
-  the withheld families (the build passes config.DNA_WITHHELD_FAMILIES) are null
-  (pending_possession_adjustment); a family with no
-  present directional member is null (no_directional_metric).
+  A withheld family is null with its status (config.DNA_WITHHELD_DIMENSIONS via
+  withheld_for: Defending pending_possession_adjustment in every group; Passing
+  pending_mover_stability where it rests on long_pass_completion_pct alone, §12.9); a
+  family with no present directional member is null (no_directional_metric).
 - Pair distance (the M4f checks' provisional distance; M5 picks the product metric):
   weighted squared Euclidean on percentile / 100, with each family's weight re-split over
   the metrics both rows have, so d(A, B) = d(B, A).
@@ -43,6 +44,9 @@ PARTIAL = "partial"
 DNA_INCOMPLETE = "dna_incomplete"
 NO_DIRECTIONAL_METRIC = "no_directional_metric"
 PENDING_POSSESSION_ADJUSTMENT = "pending_possession_adjustment"
+PENDING_MOVER_STABILITY = "pending_mover_stability"
+WITHHELD_STATUSES: frozenset[str] = frozenset({PENDING_POSSESSION_ADJUSTMENT,
+                                               PENDING_MOVER_STABILITY})
 
 
 class DnaError(ValueError):
@@ -134,12 +138,22 @@ def split_weights(specs: Sequence[MetricSpec], present: frozenset[str] | set[str
     return {m: 1.0 / len(fams) / len(ms) for ms in fams.values() for m in ms}
 
 
+def withheld_for(group: str, table: Mapping[str, tuple[str, Sequence[str]]] | None = None
+                 ) -> dict[str, str]:
+    """Family -> score_status of the families whose score is withheld in `group`
+    (default table: config.DNA_WITHHELD_DIMENSIONS)."""
+    table = config.DNA_WITHHELD_DIMENSIONS if table is None else table
+    return {fam: status for fam, (status, groups) in table.items() if group in groups}
+
+
 def _dimensions(specs: Sequence[MetricSpec], cells: Mapping[str, VectorCell],
-                withheld: Sequence[str]) -> dict[str, Dimension]:
+                withheld: Mapping[str, str]) -> dict[str, Dimension]:
     out: dict[str, Dimension] = {}
     for fam in sorted({s.family for s in specs}):
         if fam in withheld:
-            out[fam] = Dimension(None, PENDING_POSSESSION_ADJUSTMENT, ())
+            if withheld[fam] not in WITHHELD_STATUSES:
+                raise ValueError(f"{fam}: unknown withheld status {withheld[fam]!r}")
+            out[fam] = Dimension(None, withheld[fam], ())
             continue
         used = [s for s in specs if s.family == fam and s.direction != "style"
                 and cells[s.column].metric_status == OK]
@@ -161,9 +175,9 @@ def _dimensions(specs: Sequence[MetricSpec], cells: Mapping[str, VectorCell],
 
 
 def row_dna(group: str, specs: Sequence[MetricSpec], inputs: Mapping[str, MetricInput], *,
-            withheld: Sequence[str]) -> RowDna:
+            withheld: Mapping[str, str]) -> RowDna:
     """The DNA of one row. `specs` are the group's DNA metrics; `inputs` holds each one;
-    `withheld` are the families whose score is withheld (config.DNA_WITHHELD_FAMILIES)."""
+    `withheld` maps each family whose score is withheld to its status (withheld_for)."""
     specs = sorted(specs, key=lambda s: s.column)
     if {s.column for s in specs} != set(inputs):
         raise ValueError(f"{group}: inputs {sorted(inputs)} are not the DNA metrics "

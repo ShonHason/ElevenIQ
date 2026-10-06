@@ -26,8 +26,9 @@ _SPIKE = _ROOT / "spikes" / "m4f_dna_reference.py"
 _BY_COL = {s.column: s for s in SPECS}
 
 
-def _row_dna(group, specs, inputs, withheld=config.DNA_WITHHELD_FAMILIES):
-    return D.row_dna(group, specs, inputs, withheld=withheld)
+def _row_dna(group, specs, inputs, withheld=None):
+    return D.row_dna(group, specs, inputs,
+                     withheld=D.withheld_for(group) if withheld is None else withheld)
 
 
 def _specs(group: str):
@@ -122,7 +123,11 @@ def test_partial_row_re_splits_the_family_weight():
     assert row.cells["long_pass_completion_pct"].z_status == "below_min_attempts"
     assert row.cells["long_passes_attempted_p90"].weight == pytest.approx(1 / 7, abs=1e-15)
     assert math.isclose(sum(c.weight for c in row.cells.values() if c.weight), 1.0, abs_tol=1e-12)
-    assert row.dimensions["Passing"] == D.Dimension(None, "no_directional_metric", ())
+    # AM-Winger Passing is withheld (§12.9); without the withhold it has no directional member.
+    assert row.dimensions["Passing"] == D.Dimension(None, "pending_mover_stability", ())
+    unheld = _row_dna("AM-Winger", _specs("AM-Winger"),
+                      _inputs("AM-Winger", missing=("long_pass_completion_pct",)), withheld={})
+    assert unheld.dimensions["Passing"] == D.Dimension(None, "no_directional_metric", ())
 
 
 def test_two_missing_metrics_make_the_row_dna_incomplete_but_keep_its_data():
@@ -153,10 +158,44 @@ def test_one_missing_metric_that_empties_a_family_is_dna_incomplete():
 # ── dimension scores ────────────────────────────────────────────────────────────
 
 def test_defending_is_withheld_in_every_group():
-    assert config.DNA_WITHHELD_FAMILIES == ("Defending",)
+    assert config.DNA_WITHHELD_DIMENSIONS["Defending"] == ("pending_possession_adjustment", GROUPS)
     for g in GROUPS:
         d = _row_dna(g, _specs(g), _inputs(g)).dimensions["Defending"]
         assert d == D.Dimension(None, "pending_possession_adjustment", ())
+
+
+def test_passing_withheld_exactly_where_long_pass_completion_is_its_only_directional_member():
+    """ADR 004 §12.9 (user, 2026-10-07): the configured groups are the groups whose only
+    directional Passing DNA member is long_pass_completion_pct; ST keeps its score."""
+    status, groups = config.DNA_WITHHELD_DIMENSIONS["Passing"]
+    assert status == D.PENDING_MOVER_STABILITY
+    rule = {g for g in GROUPS if {m for m in REGISTRY.dna_metrics(g)
+                                  if _BY_COL[m].family == "Passing"
+                                  and _BY_COL[m].direction != "style"}
+            == {"long_pass_completion_pct"}}
+    assert set(groups) == rule == {"CB", "FB-WB", "DM-CM", "AM-Winger"}
+    for g in GROUPS:
+        d = _row_dna(g, _specs(g), _inputs(g)).dimensions["Passing"]
+        if g in groups:
+            assert d == D.Dimension(None, "pending_mover_stability", ())
+        else:
+            assert d.score_status == "ok" and d.members == ("pass_completion_pct",)
+
+
+def test_withheld_precedes_no_directional_metric():
+    """A withheld family keeps its withheld status even when its directional member is
+    missing (2015/16: the 30 rows below the long-pass minimum)."""
+    d = _row_dna("AM-Winger", _specs("AM-Winger"), _inputs(
+        "AM-Winger", missing={"long_pass_completion_pct"})).dimensions["Passing"]
+    assert d.score_status == "pending_mover_stability"
+
+
+def test_withheld_for_and_unknown_status():
+    assert D.withheld_for("ST") == {"Defending": "pending_possession_adjustment"}
+    assert D.withheld_for("CB") == {"Defending": "pending_possession_adjustment",
+                                    "Passing": "pending_mover_stability"}
+    with pytest.raises(ValueError, match="unknown withheld status"):
+        _row_dna("ST", _specs("ST"), _inputs("ST"), withheld={"Aerial": "made_up"})
 
 
 def test_score_is_mean_of_directional_members_with_lower_better_inverted():
@@ -164,7 +203,7 @@ def test_score_is_mean_of_directional_members_with_lower_better_inverted():
     the style members (clearances, pressures, tackles_attempted) do not enter."""
     pct = {"ball_recoveries_p90": 80.0, "dribbled_past_p90": 30.0, "clearances_p90": 1.0,
            "pressures_p90": 1.0, "tackles_attempted_p90": 1.0}
-    d = _row_dna("CB", _specs("CB"), _inputs("CB", pct), withheld=()).dimensions["Defending"]
+    d = _row_dna("CB", _specs("CB"), _inputs("CB", pct), withheld={}).dimensions["Defending"]
     assert d.score == pytest.approx((80.0 + 70.0) / 2, abs=1e-12)
     assert d.members == ("ball_recoveries_p90", "dribbled_past_p90")
     assert d.score_status == "ok"
@@ -267,11 +306,10 @@ def test_spike_dna_lists_families_and_directions_equal_the_registry():
 @pytest.mark.parametrize("name, want", [
     ("MAD_SCALE", D.MAD_SCALE), ("IQR_SCALE", D.IQR_SCALE),
     ("DNA_PERCENTILE_BASIS", config.DNA_PERCENTILE_BASIS),
-    ("WITHHELD_FAMILY", config.DNA_WITHHELD_FAMILIES[0]),
+    ("WITHHELD", config.DNA_WITHHELD_DIMENSIONS),
 ])
 def test_spike_constants_equal_the_package(name, want):
     tree = ast.parse(_SPIKE.read_text())
     values = [ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
               and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)]
     assert values == [want]
-    assert len(config.DNA_WITHHELD_FAMILIES) == 1   # the spike holds one withheld family
