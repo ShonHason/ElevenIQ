@@ -221,3 +221,7 @@ D9_BOUNDARY_MARGIN_PTS: float = 3.0
 DNA_PERCENTILE_BASIS: str = "local"
 # ADR 004 §12: neighbours per row in the M4f weighting checks (not a product setting).
 DNA_NEIGHBOURS_K: int = 10
+# ADR 004 §12.6 (user, 2026-10-06): dimension scores withheld in every group (null, reason
+# pending_possession_adjustment) until M4g settles the possession question. The metrics stay
+# in the vector, so similarity is unaffected.
+DNA_WITHHELD_FAMILIES: tuple[str, ...] = ("Defending",)

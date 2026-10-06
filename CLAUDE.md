@@ -62,7 +62,7 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
   - metrics/    - pure metric functions (minutes, progressive, positions, ...)
   - pipeline/   - build stages (player_match, player_season) + quality checks
   - analytics/  - metric registry (registry.py) derived from committed measurements;
-                  cohorts.py, percentiles.py
+                  cohorts.py, percentiles.py, dna.py (DNA vector, dimension scores, pair distance)
 - tools/ (outside the package): dev tools that import eleveniq, e.g. compare_page.py
   (M4e comparison page). Counts as logic in /finish-chunk (qa-tester runs).
 - Future (when built): api/ -> services/ -> analytics/ -> repositories/,
@@ -155,6 +155,13 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 # Independent check of the percentiles output (no eleveniq imports)
 .venv/bin/python spikes/m4d_percentiles_reference.py --check-output data/processed/player_season_percentiles.parquet
+
+# DNA (ADR 004 §12): season stats + percentiles → data/processed/player_dna.parquet and
+# player_dna_dimensions.parquet. Refuses percentiles from another registry version or season parquet
+.venv/bin/python -m eleveniq.pipeline.build_player_dna
+
+# Independent check of the DNA output (no eleveniq imports; reads the dimensions file alongside)
+.venv/bin/python spikes/m4f_dna_reference.py --check-output data/processed/player_dna.parquet
 
 # Comparison page (M4e): 2–3 players, one season → data/processed/reports/*.html
 # (--player is a player_id, player_id@team_id, or a name fragment)
