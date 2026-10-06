@@ -9,8 +9,8 @@ uncommitted work of this chunk. Every agent is scoped to it and reviews nothing 
 
 **Classify the diff first** (from `git diff --name-only HEAD` and the untracked files). This
 decides which agents run:
-- `src_logic`: a file under src/ changed other than docs or comments (any .py logic,
-  config constants, or a committed measurement file).
+- `src_logic`: a file under src/ or tools/ changed other than docs or comments (any .py
+  logic, config constants, or a committed measurement file).
 - `stats_scope`: a metric definition, cohort/percentile rule, measurement, or registry
   status changed (src/eleveniq/metrics/, pipeline aggregation or ratio code,
   analytics/, config thresholds those use, measurements/*.json, or an ADR rule they implement).
@@ -19,7 +19,7 @@ decides which agents run:
 
 1. Run fast tests: .venv/bin/python -m pytest tests/ -q -m "not integration"
 
-2. qa-tester: **only if `src_logic`**. Skip it for docs/, spikes/, fixtures or tests-only
+2. qa-tester: **only if `src_logic`** (src/ or tools/). Skip it for docs/, spikes/, fixtures or tests-only
    changes. Wait for it to finish before continuing.
    Give it only:
    - The list of changed source files (from `git diff --name-only HEAD`)
@@ -64,6 +64,8 @@ Steps 5 and 6 are always sequential. Never run them in parallel.
 
 8. Commit proposal - ONLY if every step above is PASS or SKIPPED:
    - Show `git status` and `git diff --stat`.
+   - Call out any changed golden file (tests/fixtures/**/golden_*) explicitly, with its
+     `--update-golden` diff summary.
    - Flag anything suspicious: data files, caches, .venv, secrets,
      files unrelated to this chunk, tests whose expected values were changed.
    - Propose a commit message in this format:

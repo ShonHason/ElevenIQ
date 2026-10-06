@@ -569,6 +569,25 @@ class TestThresholdEdges:
         assert _cell(meas, "restart_key_passes_p90", "CB").signature_min_count == 21
 
 
+# ── is_signature_holder (ADR 004 §1) ─────────────────────────────────────────────
+# The boundary, "below_gate"/None and null-count-raises cases are covered by
+# tests/test_compare_page.py::test_is_signature_holder_edges; these fill the gaps.
+
+class TestIsSignatureHolder:
+    def test_zero_season_count_on_a_scored_row_is_non_holder_not_an_error(self):
+        """Zero is a real count, not a missing value: must not be mistaken for None."""
+        c = R.cell("restart_key_passes_p90", "CB")
+        assert c.signature_min_count is not None and c.signature_min_count > 0
+        assert R.is_signature_holder(c, 0, "scored") is False
+
+    def test_display_status_cell_raises_same_as_dna(self):
+        """The guard is "not signature", not "is dna": a display-status cell must raise too."""
+        c = R.cell("pass_completion_pct", "CB")
+        assert c.status == "display"
+        with pytest.raises(ValueError, match="not a signature trait"):
+            R.is_signature_holder(c, 50, "scored")
+
+
 # ── Integration: the specs against the real parquet ─────────────────────────────
 
 @pytest.mark.integration

@@ -61,7 +61,10 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
   - statsbomb/  - source adapter: download + load raw StatsBomb files
   - metrics/    - pure metric functions (minutes, progressive, positions, ...)
   - pipeline/   - build stages (player_match, player_season) + quality checks
-  - analytics/  - metric registry (registry.py) derived from committed measurements
+  - analytics/  - metric registry (registry.py) derived from committed measurements;
+                  cohorts.py, percentiles.py
+- tools/ (outside the package): dev tools that import eleveniq, e.g. compare_page.py
+  (M4e comparison page). Counts as logic in /finish-chunk (qa-tester runs).
 - Future (when built): api/ -> services/ -> analytics/ -> repositories/,
   all inside src/eleveniq/. No analytics logic inside API endpoints.
 - Data: data/raw/ (downloaded, never edited), data/interim/, data/processed/.
@@ -92,7 +95,7 @@ future-potential prediction. Do not add these without explicit re-scoping.
   /finish-chunk. Everything else still goes through /finish-chunk.
 - **/finish-chunk is tiered** (.claude/skills/finish-chunk/SKILL.md):
   - code-reviewer: always, scoped to the chunk's git diff only;
-  - qa-tester: only when src/ logic changed (skipped for docs/, spikes/ or tests-only changes);
+  - qa-tester: only when src/ or tools/ logic changed (skipped for docs/, spikes/ or tests-only changes);
   - stats-reviewer: only when a metric definition, cohort/percentile rule, measurement or
     registry status changed. If the method was reviewed before the code, the end-of-chunk
     run reviews the produced output only;
@@ -152,6 +155,13 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 # Independent check of the percentiles output (no eleveniq imports)
 .venv/bin/python spikes/m4d_percentiles_reference.py --check-output data/processed/player_season_percentiles.parquet
+
+# Comparison page (M4e): 2–3 players, one season → data/processed/reports/*.html
+# (--player is a player_id, player_id@team_id, or a name fragment)
+.venv/bin/python tools/compare_page.py --season-id 27 --player 3244 --player "Wes Morgan"
+
+# Rewrite the M4e golden page (prints a diff summary; call the change out in the commit)
+.venv/bin/python -m pytest tests/test_compare_page_integration.py -q -m integration --update-golden
 
 # Fast unit tests (default — no I/O, sub-second)
 .venv/bin/python -m pytest tests/ -q -m "not integration"

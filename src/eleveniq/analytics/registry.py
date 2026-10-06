@@ -828,3 +828,20 @@ def display_metrics(group: str) -> tuple[str, ...]:
 
 def signature_traits(group: str) -> tuple[str, ...]:
     return REGISTRY.signature_traits(group)
+
+
+def is_signature_holder(cell: Cell, season_count: float | None, row_status: str) -> bool | None:
+    """ADR 004 §1: does a row hold the signature trait `cell`?
+
+    A gated row (row_status "scored": pool, outfield, gate) holds it when its season count
+    of the metric is >= the cell's minimum (max(5, the group's P90), §10.2); the D19
+    reliability bar is already in the cell's status. Any other row is not assessed: None.
+    A null count on a gated row raises, as does a cell that is not a signature trait.
+    """
+    if cell.status != "signature" or cell.signature_min_count is None:
+        raise ValueError(f"{cell.column} × {cell.group} is not a signature trait ({cell.status})")
+    if row_status != "scored":
+        return None
+    if season_count is None:
+        raise ValueError(f"{cell.column} × {cell.group}: a gated row has no season count")
+    return season_count >= cell.signature_min_count
