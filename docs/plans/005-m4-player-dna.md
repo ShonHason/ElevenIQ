@@ -469,7 +469,54 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - **Multi-split reliability averaging** (stats-reviewer, user 2026-10-04): r_full averaged over many random match splits instead of one odd/even split, applied to all metrics at once (never to single boundary cells). Then re-derive the registry. It addresses the cells decided by < 0.001 at the 0.6 cut-off, e.g. CB `interceptions` 0.599849 and ST `np_xg` 0.599369 (ADR 004 §10.11).
 - **"Majority of leagues above the trigger" possession rule** (stats-reviewer M4c2b review, user 2026-10-04): evaluate a trigger that fires when most pool leagues' within-league |ρ| ≥ 0.4 (with the sign test), next to the current mean rule. Apply it to all metrics at once, never to single cells, then re-derive the registry and report every status change. It addresses ST `np_shots_on_target` (3 of 4 leagues above 0.4, mean 0.395) and ST `np_shots` (2 of 4, mean 0.372), where Serie A masks the others (ADR 004 §10.10).
 - **Mover stability check** (user, 2026-10-06): for players with two stints in a season, measure per DNA metric how much the value changes with the team, e.g. Koné `long_pass_completion_pct` 0.595 at Lorient → 0.319 at Sunderland. Applied to all DNA metrics at once; report only.
-  - **Then decide whether to restore the Passing dimension score** in CB, FB-WB, DM-CM and AM-Winger (user, 2026-10-07; ADR 004 §12.9). It is withheld (`pending_mover_stability`) because it rests on `long_pass_completion_pct` alone.
+  - **Then decide whether to restore the Passing dimension score** in CB, FB-WB, DM-CM and AM-Winger (user, 2026-10-07; ADR 004 §12.9). It is withheld (`pending_mover_stability`) because it rests on `long_pass_completion_pct` alone. The candidate replacements are pre-registered below.
+- **Passing pre-registration (user, 2026-10-07; revises the bullet above).** Cohorts are per source (CLAUDE.md), so the passing metric need not be the same in every source. It must, however, pass the same rules in every source. **The stats-reviewer reviews both specs before any code.**
+  - **StatsBomb: xPass model and three derived metrics (user, 2026-10-07: the best StatsBomb Passing score the data supports).**
+    - **Model:** a per-pass completion probability xP from start and end location, distance, direction, `under_pressure`, pass height and body part. It is fitted on one source's passes and split into fit and test sets by match, never by pass. **Calibration and AUC are reported on the held-out matches.**
+    - **Metrics**, each stored as numerator, denominator and pass count:
+      - **execution** = (completed − Σ xP) per 100 passes, `higher_better`;
+      - **execution under pressure** = the same on `under_pressure` passes only, `higher_better`. It has its own `min_attempts` and is subject to it;
+      - **ambition** = mean (1 − xP) per pass, `style`.
+    - **Role if the rules pass:**
+      - The StatsBomb Passing dimension score = the mean of execution and execution under pressure. Each enters only if it passes the rules.
+      - Ambition enters DNA as a `style` metric (in the vector, never in the score, never coloured).
+      - `long_pass_completion_pct`'s role is decided with the outcome. If the new members pass, the Passing score no longer rests on it: it may stay in the vector, move to `style`, or move to display.
+    - **Open spec items for the stats-reviewer, decided by default until then:**
+      - Every pass gets an out-of-fold prediction (cross-fitting by match), so no pass is scored by a model that saw it. Calibration and AUC are reported on these held-out predictions.
+      - Calibration is also reported within each subset a metric uses (`under_pressure` passes, each position group, long passes). A model miscalibrated on pressured passes would shift every player's execution under pressure.
+      - Open-play passes only (the `op_` convention: type ∉ `RESTART_TYPES`).
+      - Completed means a null outcome. "Pass Offside" counts as incomplete. "Injury Clearance" and "Unknown" are dropped.
+      - The model is a logistic regression with spline terms (scikit-learn, no new dependency). A more flexible model only if calibration fails, and only with the reason recorded.
+      - `min_attempts` uses the variance-components form, because these are continuous per-pass values (R1, as for `np_xg_per_shot`), not the beta-binomial.
+    - **Known risk: the end location may leak the outcome.** The stats-reviewer decides the mitigation before any code (user, 2026-10-07). For an incomplete pass, the end location is where the ball was stopped (intercepted, blocked or out of play), not where it was aimed. Distance and end location may therefore partly encode the outcome. Ambition is the most exposed: a failed pass looks shorter and easier. Options include start location and direction only for the distance feature, or a sensitivity run without end-location features.
+    - **Other rules to check:**
+      - D17 applies: execution and execution under pressure share passes, and if their ρ ≥ 0.85 in a group, one is kept. The Passing score would otherwise count one signal twice.
+      - The zero-heavy rule does not apply to execution (a residual with no mass at zero). It is reported as not applicable, not as a pass.
+  - **Aggregated sources (Sportmonks): "accuracy vs context".**
+    - **Definition:** actual − expected completion, where expected comes from completion ~ long-ball share + team possession + position group. It is fitted per league-season and per source.
+    - **Naming:** never named "Passing quality".
+    - **Recorded limitations:**
+      - (a) It rewards safe passing: aggregated data has no pass direction or difficulty.
+      - (b) Controlling for team possession partly removes real skill (over-control): good passers help create possession.
+      - (c) Fitting per league-season centres the residual at zero in every league, so D9 passes by construction. D9 is reported but counts as no evidence for this metric (user, 2026-10-07).
+    - **Display:** always shown next to an ambition measure (long balls, through balls and key passes per 100 passes).
+    - **Text only (user, 2026-10-07).** CLAUDE.md allows no Sportmonks code before the source ADR is approved and its milestone is open. That ADR confirms the inputs exist per player and per team (long balls, through balls, team possession) and their definitions.
+  - **The same evaluation for every candidate metric, applied to every group at once, never to single cells:**
+    - D19 reliability, r_full ≥ 0.6 (multi-split, above), plus the ratio coverage rule and `min_attempts`;
+    - the zero-heavy rule where it applies, and D17 collinearity;
+    - the D12 possession trigger (|ρ| ≥ 0.4, sign test) and the M4g possession pass criteria: within-league mean |ρ| < 0.1, top vs bottom possession-quintile gap ≤ 10 pts;
+    - D9 league means reported;
+    - the mover stability check.
+      - **Koné, prediction recorded before results (user):** execution should move him much less between Lorient and Sunderland than `long_pass_completion_pct` does (0.595 → 0.319).
+      - To compare two metrics on one scale, the move is measured in local percentile points and in units of the metric's between-player SD in the group.
+      - It is reported as an illustration of the group-level check, not as a criterion: one player never decides a metric.
+    - **Threshold fixed before any metric is computed (user, 2026-10-07):** the mover stability check is report only today, so it has no pass threshold. The stats-reviewer proposes one (e.g. the stint-to-stint change of movers against a split-half baseline of non-movers), and the user fixes it.
+  - **Two candidates only (user, 2026-10-07):** xPass for StatsBomb and "accuracy vs context" for aggregated sources. Team-relative completion (player minus team while on, the 2026-10-04 backlog item) is dropped. Fewer candidates means less chance of choosing a metric after seeing the results.
+  - **Outcome:**
+    - StatsBomb: the Passing score is restored from the execution metrics that pass, and ambition joins DNA as `style` if it passes.
+    - Aggregated sources: "accuracy vs context" may become the directional Passing member in its groups.
+    - A metric that fails stays display-only.
+    - Either way the decision is recorded in ADR 004.
 - **Mixed-role z extremes** (stats-reviewer C1, user 2026-10-06; ADR 004 §12.8): report the main-group minute share next to every row with |z| > 5 (34.4% of them are below 0.70, against 10.0% of the other rows).
 - **Teammates among neighbours** (stats-reviewer, M4f3 review, user 2026-10-07): under family weights, CB and FB-WB top-10 neighbours are teammates 1.96× and 2.04× as often as a uniform draw (47 vs 24.0, 47 vs 23.1), AM-Winger 1.51×, DM-CM 0.96×, ST 0.75×; same-league neighbours run at 0.80–0.95×, so local percentiles remove league effects but not team style. Re-run this count after the possession / team-style work (same pass criteria applied to all groups at once); report only.
 - **DM-CM role split** (user, 2026-10-06): DM-CM mixes holding 6s and advanced 8s; Isco (Real Madrid's 4-3-3 left-centre-mid, mapped to DM-CM) is the |z| 13.7 outlier on `box_entries_carry_p90` (ADR 004 §12.7). Evaluate whether DM-CM needs a role split, using the M4f3 neighbours; no change before then.
@@ -820,7 +867,7 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
 - **Empirical-Bayes shrinkage of ratios** (user, 2026-10-03): shrink each ratio toward its group mean by attempts, then re-evaluate `aerial_win_pct` for CB and FB-WB DNA. CB aerial ability is a known DNA gap: `aerial_win_pct` r 0.499 with 63.5% coverage, so only the aerial volumes are in DNA (ADR 004 §10.9).
   - **Linked: ST DNA has no chance-quality metric.** np_xg 0.599, op_key_passes 0.540 and op_xg_assisted 0.534 are below 0.6, and `np_xg_per_shot` is display (r 0.464, coverage 61.4%).
 - **`op_crosses_attempted`** (stats-reviewer, user 2026-10-04; priority): crosses that are not restart deliveries. FB-WB DNA has no crossing metric, because `crosses_attempted` (r 0.787, 0% zeros) includes corners and free kicks and is fixed display (ADR 004 §10.3).
-- **Possession-relative completion** (stats-reviewer, 2026-10-04): player pass completion minus his team's completion while he is on, on the D12b pattern. `pass_completion_pct` left DNA in four groups through the possession trigger (ADR 004 §10.2).
+- **Pass value (xT / OBV-style)** (user, 2026-10-07): the value a pass adds (threat at the end location minus threat at the start, or an on-ball-value model), as a later extension of the M4g xPass work. It measures what a pass is worth; xPass measures how likely it was to arrive. Not part of M4g.
 - **Direct free-kick shots in `np_xg_per_shot`** (user, 2026-10-04): 1,801 shots (4.7% of non-penalty shots) stay in. Taking free kicks is a team role (the D15 argument), and they pull down designated takers' xG per shot. Removing them needs a D15 amendment.
 - **Second-ball creation** (user, 2026-10-03): an open-play key pass within N seconds after a corner or free kick, in the same possession. It measures creation from set-piece second phases, which the key-pass split (ADR 004 §9) counts as open play. It needs its own definition (N, which restarts, same possession) and a measurement. No work now.
 - **Return the xG split instead of out-parameter dicts** (user, 2026-10-03): `compute_xg_assisted_per_player` fills `open_play_xga` / `restart_xga` (and `fallbacks`) passed in by the caller. Returning the parts (a small dataclass per player) would be a simpler API.
