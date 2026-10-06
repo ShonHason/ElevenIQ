@@ -214,3 +214,10 @@ BOUNDARY_MARGIN: float = 0.02
 # percentile points. A league mean of percentiles over ~80 players has a standard
 # error of ≈ 29/√80 ≈ 3.2 pts, so a margin under 3 pts is within sampling noise.
 D9_BOUNDARY_MARGIN_PTS: float = 3.0
+
+# ADR 004 §12 (user, 2026-10-06): the DNA vector uses one percentile basis, league-local,
+# for every row. 29 of 101 DNA cells have no global percentile (D9) and 51 are within
+# noise of flipping, so a global or per-cell basis would not be stable.
+DNA_PERCENTILE_BASIS: str = "local"
+# ADR 004 §12: neighbours per row in the M4f weighting checks (not a product setting).
+DNA_NEIGHBOURS_K: int = 10

@@ -386,7 +386,7 @@ FAMILY_DIRECTION: dict[str, tuple[str, str]] = {
     "tackles_attempted_p90": ("Defending", "style"),
     "tackles_won_p90": ("Defending", "higher_better"),
     "tackle_success_pct": ("Defending", "higher_better"),
-    "interceptions_p90": ("Defending", "higher_better"),
+    "interceptions_p90": ("Defending", "style"),  # ADR 004 §12 (user, 2026-10-06)
     "ball_recoveries_p90": ("Defending", "higher_better"),
     "pressures_p90": ("Defending", "style"),
     "clearances_p90": ("Defending", "style"),
@@ -420,6 +420,16 @@ class TestFamilyAndDirection:
     def test_no_spec_applies_to_gk(self):
         for spec in R.SPECS:
             assert "GK" not in spec.applies_to, f"{spec.column} applies_to includes GK"
+
+    def test_interceptions_style_note_reaches_the_cell_in_every_group(self):
+        # ADR 004 §12.3: the note documenting why interceptions is style, not higher_better,
+        # must reach Cell.notes in every group, including CB and ST where the cell is
+        # display (not DNA) for unrelated reasons (r_full below the DNA bar) — notes are
+        # attached from the spec before the status is known.
+        for group in GROUPS:
+            cell = R.cell("interceptions_p90", group)
+            assert "team-style influenced (league means differ in every group, D9)" in cell.notes, (
+                group, cell.notes)
 
 
 # ── §10.2: integer_count ──────────────────────────────────────────────────────────────

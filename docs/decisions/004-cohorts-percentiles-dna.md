@@ -836,7 +836,7 @@ Directions:
 | Carrying | progressive_carries (higher), final_third_entries_carry (higher), box_entries_carry (higher), dribbles_attempted (style), dribbles_completed (higher), dribble_success_pct (higher), carries (style), fouls_won (style) |
 | Creation | op_key_passes (higher), op_xg_assisted (higher), key_passes (higher), xg_assisted (higher), xg_assisted_direct (higher), crosses_attempted (style), cross_completion_pct (higher), op_assists (higher), assists (higher), restart_key_passes (higher), restart_xg_assisted (higher), restart_assists (higher) |
 | Goal threat | np_shots (higher), np_xg (higher), np_shots_on_target (higher), shots_on_target (higher), np_xg_per_shot (higher), shots (higher), xg (higher), xg_per_shot (higher), goals (higher) |
-| Defending | tackles_attempted (style), tackles_won (higher), tackle_success_pct (higher), interceptions (higher), ball_recoveries (higher), pressures (style), clearances (style), blocks (style), dribbled_past (lower), fouls_committed (style) |
+| Defending | tackles_attempted (style), tackles_won (higher), tackle_success_pct (higher), interceptions (style; was higher, §12), ball_recoveries (higher), pressures (style), clearances (style), blocks (style), dribbled_past (lower), fouls_committed (style) |
 | Aerial | aerials_won (higher), aerial_win_pct (higher), aerials_lost (style) |
 | Ball security | dispossessed (lower), miscontrols (lower) |
 
@@ -1015,3 +1015,79 @@ Each value is compared at full precision (printed here to 6 decimals) against th
   - **Busquets' low defensive volumes are mainly a Barcelona team effect, not possession** (stats-reviewer). He is at the 11th percentile for interceptions and the 17th for ball recoveries, which reads as a weak defender. Barcelona make 9.1 interceptions per match against 13–18 for every other La Liga team, and PSG, at similar possession, sit near the middle. Opponent possession matters with an elasticity well below 1, so a rate per 1,000 opponent passes (the user's first idea) was rejected: it over-corrects and flips the possession correlation. A partial adjustment with a pre-registered β ∈ {0, 1, fitted}, fitted on one season and tested on another, and a team-share variant are pre-registered for M4g in plan 005. The direction of `interceptions` is open for M4f/M9.
   - Morgan's local clearances percentile (30th) is not a Leicester effect: Huth, at the same club, is 94th.
 - **Known StatsBomb coding quirk: a passed penalty is a shot** (2026-10-06). In Barcelona 6–1 Celta Vigo (La Liga, 2016-02-14), Messi touched a penalty off to Suárez (80:58). StatsBomb codes the touch as a Shot of type Penalty, not a Pass, and Suárez's 81' goal has no key pass and no `goal_assist`. So Messi has 15 assists in our data against the official 16. Side effect under D15: the touch counts as a missed penalty for Messi (outcome Wayward, xG 0.78), in his `shots` and `xg` but not in `np_shots` or `np_xg` (match row: shots 4 / np 3, xg 0.928 / np 0.144), and Suárez's goal counts as an open-play goal with no assist: his 81' shot is of type Open Play, so it is in his `np_shots`, `np_xg` and goals (one shot of contamination in his non-penalty metrics). No change: we keep StatsBomb's coding.
+
+---
+
+## 12. DNA vector (plan 005 M4f, user decisions 2026-10-06)
+The four open M4f items in §10.8 and plan 005 M4f were decided from the 2015/16 data (primary scored rows of the pool leagues, the M4d output). The possession adjustment is not part of M4f; it stays pre-registered for M4g (plan 005).
+
+### 12.1 One percentile basis per vector: local
+- **Data:**
+  - 29 of 101 DNA cells have a null global percentile, because D9 fails or is undefined (CB 6, FB-WB 7, DM-CM 8, AM-Winger 4, ST 4; `interceptions` in every group where it is DNA);
+  - 51 of 101 are within 3 pts of flipping D9 (§10.10);
+  - every DNA cell has a local percentile (local n 35–84).
+- **Decision (user):** every vector uses league-local percentiles (`config.DNA_PERCENTILE_BASIS`). The robust z is computed on the same local reference population (the D3-deduped population of §11.1).
+  - D9 therefore no longer affects the vector.
+  - The registry's per-cell `basis` stays a display field (M4e tables).
+  - Global percentiles stay in the display tables.
+- **Cost, accepted:**
+  - leagues count as equal strength (consistent with "no league adjustment", CLAUDE.md);
+  - ST local cohorts are small (n 35 ≈ 2.9 pts per rank step, §10.11);
+  - an explanation names the league population ("vs La Liga STs").
+- The global alternative (dropping the failing cells) was rejected. It would change the DNA lists by 4–8 metrics per group and flip on a new source.
+
+### 12.2 Missing DNA ratio: the §10.8 proposal, adopted
+- **Data:** 32 of 1,233 primary scored rows miss exactly one DNA ratio (`below_min_attempts`).
+  - `long_pass_completion_pct`: FB-WB 12, AM-Winger 16, DM-CM 2;
+  - ST `aerial_win_pct`: 2.
+  - No row misses two, and no family is emptied, so `dna_incomplete` does not occur in 2015/16.
+- **Decision (user):**
+  - no imputation;
+  - the missing metric's family weight is re-split among the family's present members;
+  - a row missing more than one DNA metric, or a whole family, is `dna_incomplete` (no similarity results);
+  - a pair distance uses the metrics both rows have, normalised by the weight they share.
+
+### 12.3 `interceptions` is `style`
+- **Data:** it fails D9 in every group, and it tracks team style (Barcelona 9.1 interceptions per match against 13–18 for every other La Liga team, §11.5). Its Defending siblings `tackles_attempted`, `pressures`, `clearances` and `blocks` are already `style` (§10.7).
+- **Decision (user):**
+  - `higher_better` → `style`, with the note "team-style influenced (league means differ in every group, D9)";
+  - it is never coloured, and it leaves the Defending dimension score (directional metrics only, §10.8);
+  - the vector and the distance are unchanged (percentiles are not directional, §11.1).
+- **No status changes.** The M4e golden page changes only on the interceptions row (direction label, neutral colour, note) and the registry version.
+
+### 12.4 `REGISTRY_VERSION` covers every spec field
+`_version` hashed the measurements, the rules and the cells, but not `MetricSpec`, so §12.3 would not have changed it.
+- **The fix (user, 2026-10-06):** the hash now includes every `MetricSpec` field, sorted by column. That covers family, direction, unit, display name, count column, ratio terms, `applies_to`, fixed display and notes. A wording-only edit therefore also requires a percentiles rebuild.
+- **Tests, each mutation-checked against the earlier (column, family, direction, unit) hash:**
+  - with identical cells, a direction-only, a family-only or a display-name-only change alters the version;
+  - reordering `SPECS` does not alter it.
+- **Ratio terms were already guarded.** `_validate_specs` raises unless a spec's ratio terms equal the measured definition, so a spec-only edit fails, and an edit with a spike re-run changes the measurements and thus the version. A test covers both paths.
+- Version: d21458f9… → aaecf86f….
+- The percentiles were rebuilt, and `spikes/m4d_percentiles_reference.py --check-output` passes (181 / 51 / 3, 263 populations).
+
+### 12.5 Weighting checks: report only
+- Family weights stay as pre-registered (§10.8).
+- M4f reports, without a switch rule:
+  - the equal vs family weight check;
+  - the with/without `np_shots_on_target` check (AM-Winger, ST);
+  - the per-family contribution report;
+  - (user) the top-10 neighbours of the face-validity players: Kanté, Busquets, Özil, Payet, Messi, Neymar, Stones, Morgan.
+- Any weighting change needs a new ADR entry argued from that report. M4g owns validation.
+
+### 12.6 Method (decided by default; reviewed by the stats-reviewer in the M4f1 `/finish-chunk`, user decisions 2026-10-06 below)
+- **Robust z:** (x − median) / (1.4826 · MAD) over the local reference population. When MAD = 0, use IQR / 1.349; when both are 0, z is null with reason `zero_spread` (plan 005 D10).
+  - **Stored uncapped (user).** |z| reaches 13.7 (Isco, DM-CM `box_entries_carry_p90`); values above 8 are real role outliers.
+  - In 2015/16, MAD = 0 and IQR = 0 never occur in the 404 local populations.
+  - **M5 decides whether z is used, and how it is capped.**
+- **Weights:** each family present in the group's DNA gets 1/|F|, split equally among its present members. In every row the weights sum to 1.
+- **Dimension scores:** the mean local percentile of the family's directional members, with `lower_better` entering as 100 − p. Every score names the member metrics it uses.
+  - **Per row:** a family with no directional member present in that row is null, reason `no_directional_metric`. In 2015/16 these are the 30 rows missing `long_pass_completion_pct` in FB-WB (12), AM-Winger (16) and DM-CM (2), where it is the only directional Passing member.
+  - **Defending is withheld in every group** (null, reason `pending_possession_adjustment`) until M4g settles the possession question.
+    - Without `interceptions`, its directional members are `ball_recoveries` and `dribbled_past`. `dribbled_past` rewards not engaging: its local percentile has ρ 0.47–0.65 with `tackles_attempted` and `pressures` (stats-reviewer). `ball_recoveries` is team-driven (Busquets, §11.5).
+    - The metrics stay in the vector and the tables, so similarity is unaffected.
+- **Checks' provisional distance:** weighted squared Euclidean on local percentile / 100, which decomposes exactly into family shares. M5 chooses the product metric.
+- **Pair weights are symmetric (user).** For a pair, each family's weight is re-split over the metrics both rows have, so d(A, B) = d(B, A) (tested with a missing-metric case). One row's own re-split weights would make the distance asymmetric: for an AM-Winger missing `long_pass_completion_pct`, `long_passes_attempted_p90` would weigh 1/7 against 1/14. M4f3 reports whether the 32 partial rows are over-represented among the top-10 neighbours.
+- **Single-metric families weigh most per metric** (stats-reviewer). For example, AM-Winger Creation (`op_key_passes`, 1/7) weighs 8× each Defending member (1/56). This is pre-registered (§10.8), and M4f3's contribution report shows it.
+- **Neighbours:** same group, primary scored rows, any pool league, excluding the same `player_id`; k = `config.DNA_NEIGHBOURS_K` (10).
+- **Rows:** primary only (`cohort_role = "primary"`); D5 second-group rows never enter.
+

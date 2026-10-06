@@ -210,6 +210,55 @@ class TestDeterminism:
         meas["provenance"]["season_parquet_sha256"] = "0" * 64
         assert derive(measurements=meas).version != R.REGISTRY_VERSION
 
+    def test_version_tracks_a_direction_only_change(self, meas):
+        # ADR 004 §12: a spec change that moves no cell (e.g. interceptions → style) must
+        # still change the version, so a percentile parquet built before it is refused.
+        specs = tuple(dataclasses.replace(s, direction="higher_better")
+                      if s.column == "interceptions_p90" else s for s in R.SPECS)
+        again = derive(specs=specs, measurements=meas)
+        assert dict(again.cells) == dict(R.REGISTRY.cells)
+        assert again.version != R.REGISTRY_VERSION
+
+    def test_version_tracks_a_family_only_change(self, meas):
+        # The §12.4 hash covers (column, family, direction, unit), not just direction: a
+        # family-only edit (no cell moves, family is display-only metadata) must also change
+        # the version, or a stale percentile parquet would silently be accepted.
+        specs = tuple(dataclasses.replace(s, family="Aerial")
+                      if s.column == "interceptions_p90" else s for s in R.SPECS)
+        again = derive(specs=specs, measurements=meas)
+        assert dict(again.cells) == dict(R.REGISTRY.cells)
+        assert again.version != R.REGISTRY_VERSION
+
+    def test_a_ratio_term_change_raises_or_moves_the_version(self, meas):
+        # §12.4 (user, 2026-10-06): every MetricSpec field is hashed. A ratio-term edit
+        # cannot slip through: without a spike re-run the spec no longer matches the measured
+        # definition and derive() raises; with one, the version changes.
+        def edit(s):
+            if s.column != "pass_completion_pct":
+                return s
+            return dataclasses.replace(s, ratio=dataclasses.replace(
+                s.ratio, denominator_minus=("passes_unknown_outcome",)))
+        specs = tuple(edit(s) for s in R.SPECS)
+        with pytest.raises(RegistryRuleError, match="ratio terms differ"):
+            derive(specs=specs, measurements=meas)
+        meas["ratios"]["pass_completion_pct"]["denominator_minus"] = ["passes_unknown_outcome"]
+        assert derive(specs=specs, measurements=meas).version != R.REGISTRY_VERSION
+
+    def test_version_tracks_a_display_name_only_change(self, meas):
+        # Full-field hash: a field no cell carries (display_name) still changes the version.
+        specs = tuple(dataclasses.replace(s, display_name="Interceptions (renamed)")
+                      if s.column == "interceptions_p90" else s for s in R.SPECS)
+        again = derive(specs=specs, measurements=meas)
+        assert dict(again.cells) == dict(R.REGISTRY.cells)
+        assert again.version != R.REGISTRY_VERSION
+
+    def test_version_is_invariant_to_spec_order(self, meas):
+        # _version sorts specs by column before hashing (docstring); a reordering of SPECS
+        # itself must not change the version, only a content change should.
+        reordered = tuple(reversed(R.SPECS))
+        again = derive(specs=reordered, measurements=meas)
+        assert again.version == R.REGISTRY_VERSION
+
     def test_measurement_source(self):
         assert R.MEASUREMENT_SOURCE == config.SOURCE_STATSBOMB
 

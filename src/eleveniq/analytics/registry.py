@@ -237,6 +237,7 @@ _NON_RESTART = "non-restart delivery"
 _LONG_THROW_NOTE = ("restart deliveries include throw-ins (5.6% of restart key passes), "
                     "so long-throw specialists score slightly higher")
 _DRIBBLED_PAST_NOTE = "rises with how often a player engages"
+_INTERCEPTIONS_NOTE = "team-style influenced (league means differ in every group, D9)"
 _XG_COUNTS = frozenset({"xg", "np_xg", "xg_assisted", "xg_assisted_direct",
                         "op_xg_assisted", "restart_xg_assisted"})
 
@@ -322,7 +323,10 @@ SPECS: tuple[MetricSpec, ...] = (
     _p90("tackles_won", "Tackles won", "Defending", "higher_better"),
     _ratio("tackle_success_pct", "Tackle success", "Defending",
            RatioSpec("tackles_won", ("tackles_attempted",)), fixed=_D19),
-    _p90("interceptions", "Interceptions", "Defending", "higher_better"),
+    # style, not higher_better (ADR 004 §12, user 2026-10-06): fails D9 in every group and
+    # tracks team style (Barcelona 9.1 per match vs 13–18), like its Defending siblings.
+    _p90("interceptions", "Interceptions", "Defending", "style",
+         notes=(_INTERCEPTIONS_NOTE,)),
     _p90("ball_recoveries", "Ball recoveries", "Defending", "higher_better"),
     _p90("pressures", "Pressures", "Defending", "style"),
     _p90("clearances", "Clearances", "Defending", "style"),
@@ -698,13 +702,16 @@ def _measurement(meas: Mapping[str, Any], spec: MetricSpec, grp: str) -> Mapping
     return meas[section].get(spec.column, {}).get("groups", {}).get(grp)
 
 
-def _version(cells: Mapping[tuple[str, str], Cell], meas: Mapping[str, Any], rules: Rules) -> str:
-    """sha256 of the measurements, the rules and the resolved cells. The spike rounds every
-    stored float to 9 decimals, so reruns on the same data write identical bytes and the
-    version changes only when a measurement, a rule or an entry does."""
+def _version(cells: Mapping[tuple[str, str], Cell], meas: Mapping[str, Any], rules: Rules,
+             specs: Sequence[MetricSpec]) -> str:
+    """sha256 of the measurements, the rules, every spec field and the resolved cells. The
+    spike rounds every stored float to 9 decimals, so reruns on the same data write identical
+    bytes and the version changes only when a measurement, a rule, a spec (e.g. a direction or
+    a ratio term, ADR 004 §12.4) or an entry does."""
     canonical = {
         "measurements": meas,
         "rules": asdict(rules),
+        "specs": [asdict(s) for s in sorted(specs, key=lambda s: s.column)],
         "cells": [asdict(cells[k]) for k in sorted(cells)],
     }
     blob = json.dumps(canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -804,7 +811,7 @@ def derive(specs: Sequence[MetricSpec] = SPECS,
          for b in boundary),
         key=lambda b: (b.rule, GROUPS.index(b.group), b.column)))
     return Derivation(cells=cells, boundary=resolved, source=source,
-                      version=_version(cells, meas, rules))
+                      version=_version(cells, meas, rules, specs))
 
 
 # ── Resolved at import ──────────────────────────────────────────────────────────

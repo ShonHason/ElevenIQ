@@ -413,6 +413,23 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 
 
 ### M4f — Player DNA vector
+- **Decisions (user, 2026-10-06; ADR 004 §12):**
+  - local basis for every vector;
+  - the §10.8 missing-ratio proposal (32 partial rows, 0 incomplete in 2015/16);
+  - `interceptions` → `style`;
+  - weighting checks are report only.
+  - Found and fixed in M4f1: `REGISTRY_VERSION` now hashes every `MetricSpec` field (d21458f9… → aaecf86f…).
+  - **Method decisions after the M4f1 stats review (user, 2026-10-06; ADR 004 §12.6):**
+    - the Defending dimension score is withheld (`pending_possession_adjustment`) until M4g;
+    - pair weights are re-split over the shared metrics (symmetric, tested);
+    - a per-row Passing score with no directional member is null (`no_directional_metric`, 30 rows);
+    - z is stored uncapped, and M5 decides its use and cap;
+    - every dimension score names its members.
+- **Chunks:**
+  - **M4f1** registry, config and ADR (this outcome);
+  - **M4f2** `analytics/dna.py` + `pipeline/build_player_dna.py` + `spikes/m4f_dna_reference.py`, after the stats-reviewer reviews the §12.6 method;
+  - **M4f3** `spikes/m4f_weighting_checks.py` → `docs/reviews/m4f-weighting.md`, report only, incl. the top-10 neighbours (name, group, team, league) of Kanté, Busquets, Özil, Payet, Messi, Neymar, Stones and Morgan (user; M4g owns validation);
+  - **M4f4** radar (local basis) on the comparison page.
 - **Per-family contribution report** (stats-reviewer, user 2026-10-04): for each group, each family's share of the distance between neighbours, next to the equal-family-weight sensitivity check (ADR 004 §10.8, §10.11).
 - **Sensitivity check with and without `np_shots_on_target`** (stats-reviewer M4c2b review, user 2026-10-04): it correlates 0.79–0.80 with `np_shots` in AM-Winger and ST and halves its weight inside Goal threat. Run the equal vs family weight check both ways and report the top-10 neighbour overlap for AM-Winger and ST.
 - **Exclude second-group rows** (M4d2 stats review, user 2026-10-06): M4f and M6 read only `cohort_role = "primary"` rows. D5 second-group percentiles are skewed as expected (9.0% of local values ≥ 95; the 0/100 cells cluster in AM-Winger xG-assisted metrics) and are display-only.
