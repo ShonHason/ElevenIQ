@@ -1,7 +1,7 @@
 # ADR 004 — Cohorts, Percentiles and Player DNA
 
 **Date:** 2026-10-02
-**Status:** Accepted 2026-10-02 (plan 005, M4a). Implementation: M4b (pipeline columns), M4c (registry; decisions in §10), M4d (percentiles).
+**Status:** Accepted 2026-10-02 (plan 005, M4a). Implementation: M4b (pipeline columns), M4c (registry; decisions in §10), M4d (percentiles; §11).
 - All figures come from `spikes/m4_decision_measurements.py` (2015/16, source `statsbomb`).
 - Items marked **decided by user** were brought to the user (§6) and accepted as recommended. Every other item is **decided by default** (plan 005 decision mode).
 
@@ -149,6 +149,7 @@
 
 ### D11 — Method, cohort size and zero mass (decided by default)
 - **Formula:** Hazen, (rank − 0.5) / n with average ranks for ties, so values are never 0 or 100.
+  - **Amended (user, 2026-10-05, §11.1):** this holds for members of the reference population. A row scored against a population without it (a D3 outsider, or a D5 second-group row) can be exactly 0 or 100; M4e shows those as "<1" and ">99".
 - **Minimum cohort:** `MIN_COHORT_SIZE = 30`. Each percentile is stored with its cohort size `n`.
 - **Cohort sizes** (nominal gate):
 
@@ -944,3 +945,28 @@ Each value is compared at full precision (printed here to 6 decimals) against th
   - M pools the leagues while the reliability check demeans within league: within-league M is up to 7% higher (CB `pass_completion_pct` 37.6 pooled vs 40.3).
   - No ratio status changes on these margins.
 - **Small local cohorts.** ST local cohorts are 35–44, and ST `aerial_win_pct` local populations 35–42; at n = 35 one rank step is about 2.9 percentile points. About 30 D9 cells sit within 0.5 pts of the band (10.10).
+
+---
+
+## 11. Cohorts and percentiles (plan 005 M4d, 2026-10-05)
+
+`analytics/cohorts.py` is the only place that applies these rules; `analytics/percentiles.py` holds the formula; `pipeline/build_percentiles.py` writes `data/processed/player_season_percentiles.parquet`. `spikes/m4d_percentiles_reference.py` re-implements them without eleveniq and checks the output.
+
+### 11.1 Definitions
+- **Row status** (`percentile_status`), first match: `not_in_pool` → `goalkeeper` (not `is_outfield`) → `below_gate` (not `meets_min_minutes`) → `scored` (D4). Only `scored` rows receive a percentile; every other row keeps its raw value with null percentiles.
+- **Eligible** for metric m in group g: a scored row of g whose value is non-null and, for a ratio, whose denominator (as stored: Σ plus − Σ minus) is ≥ the cell's `min_attempts` (D19). A ratio cell without `min_attempts` has no eligible row: `no_signal` (τ² ≤ 0, §10.5) or `no_min_attempts` (`xg_per_shot`, unmeasured, fixed display).
+- **Reference population** for (m, g, scope): the eligible rows of g (local: and of one league), then the D3 dedupe within that population (most `minutes_played`, then lowest `competition_id`, then lowest `team_id`). Filter first, then dedupe (§10.2).
+- **Scored cells:** every eligible row, scored against its population. The rows D3 drops from a population (2015/16: 5 global — Shelvey, Khazri, Quagliarella, Perotti, Koné — and 3 local — Shelvey, Quagliarella, Perotti) are scored but are not reference rows.
+- **Formula:** percentile = (less + 0.5 · equal) / n × 100 against the population, n its size. For a member this is Hazen with average ranks (D11), strictly inside (0, 100). **A row scored against a population that does not contain it can be exactly 0 or 100**: a D3 outsider, or a D5 second-group row (user, 2026-10-05: the formula is kept so the D9 league means match the measurements exactly). 2015/16: Shelvey `fouls_won_p90` local 0, Perotti `progressive_carries_p90` local 100, Ben Arfa (second group ST) `dribbles_attempted_p90` local and global 100.
+  - **M4e display (user, 2026-10-05):** a stored 100 is shown as ">99" and a stored 0 as "<1". The stored values are unchanged.
+- **Direction is not applied:** a percentile is a rank of the raw value (high = more). `higher_better` / `lower_better` only colour it (§10.7), so the D9 means stay comparable.
+- **Cell status** per scope (`status_local`, `status_global`), first match: the row status (if not scored) → `no_signal` / `no_min_attempts` → `below_min_attempts` → `null_value` → `cohort_too_small` (n < `MIN_COHORT_SIZE` 30) → global only: `d9_undefined` (`global_ok` None) / `league_inconsistent` (D9 fails) → `ok`. Only `ok` carries a percentile; n is stored whenever the row is eligible.
+- **D9 (user, 2026-10-05): a failing cell's global percentile is null**, as D9 says; an undefined D9 (goals/assists p90, `xg_per_shot`, ST `dribble_success_pct`, `team_pass_share` outside DM-CM/CB) is null too. `basis` comes from the registry cell. M4d stores both scopes and does **not** decide M4f's one basis per vector (§10.8).
+- **D5 (user, 2026-10-05):** a gated ambiguous row with a `second_position_group` gets a second set of output rows (`cohort_role = "second"`), scored against the second group's populations with that group's `min_attempts`. It is never a member of them, and it is display-only: never DNA, similarity or rarity.
+- **Output (user, 2026-10-05): long format**, one row per season row × registry metric × cohort role, sorted by (key, `cohort_role`, `metric`), byte-deterministic for the same inputs and environment. Plan 005 sketched wide columns; ratio populations differ per metric, so n and status are per metric. Provenance columns: `registry_version`, `measurement_source`, `min_cohort_size`, `min_minutes_threshold`, `season_parquet_sha256`.
+- **Guards (the build raises):** a row whose `source` ≠ `MEASUREMENT_SOURCE` (CLAUDE.md: one source per cohort); a season parquet whose sha256 differs from the measurements' provenance (re-run `--write-json` after any rebuild, so the registry describes the data scored); a D6 row (`minutes_gk` ≥ 45 and outfield minutes ≥ 45); `meets_min_minutes` ≠ the recomputed nominal gate; a GK row or a group outside `applies_to` reaching a population (D21).
+
+### 11.2 Spike (M4d1)
+`spikes/m4d_percentiles_reference.py` counts ranks in plain Python and reads `min_attempts`, `no_signal` and the D9 league means from the measurements file. It fails unless the parquet hash and source match the provenance, the gate recomputes, no D6 row exists, and every stored ratio equals numerator / denominator (`aerial_win_pct` is stored null below `MIN_AERIAL_CONTESTS` 10, below every aerial `min_attempts`).
+- **Fixture** `tests/fixtures/m4d_percentiles/reference.json`: 15 output rows × 54 metrics for hand-picked rows, each with its reason asserted by the spike — the movers above (both edges), Khazri (global outsider, local member), a CB tie at `box_entries_carry_p90` = 0 (percentile = 0.5 · zeros / n; CB `tackle_success_pct` no_signal), Ighalo (ST, 40 long passes < 43: null, absent from both populations, and removing him changes no other row), Kane (ST long-pass local `cohort_too_small`, global scored), Naismith (below gate), Schmeichel (GK), Bellarabi (Bundesliga), Ben Arfa (primary AM-Winger and second ST), one plain row per group.
+- **Self-check** (the spike's own full output fed to `--check-output`): 142,614 cells; the D9 league means of all 184 `global_ok` cells reproduce the measurements within 1e-8; the 53 `league_inconsistent` and 3 `cohort_too_small` cells agree with them; 263 population sizes equal the recorded `ref_n_*`.

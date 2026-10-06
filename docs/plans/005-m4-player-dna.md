@@ -374,12 +374,19 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
   - D20 holds.
 - qa-tester writes spec tests from ADR 004, covering ties, small cohorts, the dedupe, GK refusal and null statuses.
 
+**M4d plan (approved 2026-10-05; definitions in ADR 004 §11).**
+- **User decisions:** D9-failing and D9-undefined cells get a null global percentile; D3 outsiders keep the spike formula (exact D9 match; 0/100 possible only for rows outside their population, including D5 second-group rows); the D5 second-group percentile is built in M4d (`cohort_role = "second"`); long output format; direction not applied; M4f's one-basis question stays open.
+- **Determinism (user):** sorted by (key, `cohort_role`, `metric`), stable floats, fixed write settings; an integration test builds twice and compares the file sha256.
+- **M4d1 (spike) done:** `spikes/m4d_percentiles_reference.py` and `tests/fixtures/m4d_percentiles/reference.json` (15 hand-picked output rows). Self-check: the D9 means of all 184 `global_ok` cells reproduce the measurements; 53 `league_inconsistent`, 3 `cohort_too_small` and 263 population sizes agree.
+- **M4d2 (code):** `config.MIN_COHORT_SIZE`, `config.MIXED_POSITION_MINUTES`; `analytics/cohorts.py`, `analytics/percentiles.py`, `pipeline/build_percentiles.py`; fast tests (hand-computed ties, gate, min_attempts exclusion, 29/30, (0, 100) for members, D3 tie-break and order, guards, statuses), integration tests (fixture, `--check-output`, D20, n, one source, two-build sha256), two mutation checks (gate, tie rule); stats-reviewer on the run; `/finish-chunk`.
+
 ### M4e — A comparison page (visual sanity check)
 - A generator script writes **one self-contained static HTML file** from the two parquets.
   - It has two player pickers, a radar of the DNA metrics' percentiles (local/global toggle), and a table: p90, percentile, cohort n, status and flags.
   - It has no server and no new runtime dependency.
   - It lives in `spikes/` (or `tools/`) because it is a check, not the M9 frontend.
 - Streamlit or FastAPI would add a dependency for a throwaway page, and M7/M9 own those decisions.
+- **Display rule (user, 2026-10-05; ADR 004 §11.1):** a stored percentile of exactly 100 is shown as ">99" and exactly 0 as "<1" (only rows outside their population: D3 outsiders and D5 second-group rows).
 - Used straight away on known 2015/16 pairs for a face-validity pass before the DNA vector, e.g. Kanté vs Busquets, Özil vs Payet, Messi vs Neymar, two CBs from opposite styles.
 
 ### M4f — Player DNA vector
