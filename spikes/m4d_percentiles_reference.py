@@ -18,8 +18,9 @@ Rules (ADR 004 D1, D3, D4, D5, D9, D11, D19, §10.1, §10.2, §10.5, §11):
 - Percentile: (less + 0.5 · equal) / n × 100 against the population (Hazen with average
   ties for a member). A D3 outsider is scored against a population without it, so it
   can be exactly 0 or 100. n < MIN_COHORT_SIZE → null (cohort_too_small).
-- Global only: D9 undefined → null (d9_undefined); a league mean outside the band →
-  null (league_inconsistent).
+- Global only: D9 undefined → null (d9_undefined), including when a pool league's
+  population is below MIN_COHORT_SIZE; a league mean outside the band → null
+  (league_inconsistent).
 - D5: a gated ambiguous row with a second group is also scored against that group's
   populations (cohort_role "second"; never a member of them).
 
@@ -83,7 +84,8 @@ PICKS = (
                             "CB tackle_success_pct is no_signal"),
     ("Odion Jude Ighalo", 23, "ST below long_pass_completion_pct min_attempts (40 < 43): "
                               "null and absent from the reference"),
-    ("Harry Kane", 38, "plain ST; long_pass_completion_pct local cohort_too_small, global scored"),
+    ("Harry Kane", 38, "plain ST; long_pass_completion_pct local cohort_too_small, global "
+                       "d9_undefined (every ST league population < 30), basis local"),
     ("Steven Naismith", 56, "below gate (915 elapsed, below 900 nominal; D1/D2)"),
     ("Kasper Schmeichel", 22, "goalkeeper"),
     ("Karim Bellarabi", 904, "Bundesliga: not_in_pool"),
@@ -142,12 +144,25 @@ def load_metrics(meas: dict) -> dict[str, Metric]:
     return out
 
 
-def global_ok(cell: dict | None, pool: list[str]) -> bool | None:
-    """D9 from the league means; None when undefined (no means, or a pool league missing)."""
+def league_sizes(m: "Metric", group: str, meas: dict) -> dict[str, int] | None:
+    """Each pool league's reference population size for the cell: a ratio's own (min_attempts)
+    populations, otherwise the gated group populations."""
+    if m.unit == "ratio":
+        cell = m.cells.get(group)
+        return None if cell is None else cell["ref_n_local"]
+    cohort = meas["cohorts"].get(group)     # GK has no cohort: never scored, basis local
+    return None if cohort is None else cohort["ref_n_local"]
+
+
+def global_ok(cell: dict | None, pool: list[str], sizes: dict[str, int] | None) -> bool | None:
+    """D9 from the league means; None when undefined: no means, a pool league missing, or a
+    pool league's population below MIN_COHORT_SIZE (§11.1: an untestable check is not a pass)."""
     if not cell or "league_mean_global_pct" not in cell:
         return None
     means = cell["league_mean_global_pct"]
     if any(means.get(c) is None for c in pool):
+        return None
+    if sizes is None or any(sizes.get(c, 0) < MIN_COHORT_SIZE for c in pool):
         return None
     lo, hi = GLOBAL_OK_BAND
     return all(lo <= means[c] <= hi for c in pool)
@@ -201,8 +216,9 @@ def percentile(pop: list[float], x: float) -> float:
 class Cohorts:
     """Every reference population, built once from the scored rows."""
 
-    def __init__(self, rows: list[dict], metrics: dict[str, Metric], pool: list[str]) -> None:
-        self.rows, self.metrics, self.pool = rows, metrics, pool
+    def __init__(self, rows: list[dict], metrics: dict[str, Metric], pool: list[str],
+                 meas: dict) -> None:
+        self.rows, self.metrics, self.pool, self.meas = rows, metrics, pool, meas
         # The stored ratio is the one whose min_attempts is checked: num / den, null at den 0.
         for m in metrics.values():
             if m.num is None:
@@ -261,14 +277,17 @@ class Cohorts:
                 n = len(pop)
                 if n < MIN_COHORT_SIZE:
                     status = "cohort_too_small"
-                elif scope == "global" and global_ok(m.cells.get(group), self.pool) is None:
+                elif scope == "global" and self.global_ok(m, group) is None:
                     status = "d9_undefined"
-                elif scope == "global" and not global_ok(m.cells.get(group), self.pool):
+                elif scope == "global" and not self.global_ok(m, group):
                     status = "league_inconsistent"
                 else:
                     pct = percentile([p[m.name] for p in pop], r[m.name])
             out.update({f"pct_{scope}": pct, f"n_{scope}": n, f"status_{scope}": status})
         return out
+
+    def global_ok(self, m: Metric, group: str) -> bool | None:
+        return global_ok(m.cells.get(group), self.pool, league_sizes(m, group, self.meas))
 
     def roles(self, r: dict) -> list[tuple[str, str]]:
         """(cohort_role, group) pairs for a season row (D5 second group for ambiguous rows)."""
@@ -333,13 +352,14 @@ def assert_claims(co: Cohorts, picked: dict[str, dict]) -> None:
     # Removing Ighalo changes no other row's long-pass percentile.
     before = {key_of(r): co.cell(r, lp, "ST") for r in co.by_group["ST"]}
     rest = [r for r in co.rows if r is not igh]
-    co2 = Cohorts(rest, co.metrics, co.pool)
+    co2 = Cohorts(rest, co.metrics, co.pool, co.meas)
     for r in co2.by_group["ST"]:
         if co2.cell(r, lp, "ST") != before[key_of(r)]:
             fail(f"removing Ighalo changed {r['player_name']}'s long-pass percentile")
     k = co.cell(kane, lp, "ST")
-    if k["status_local"] != "cohort_too_small" or k["status_global"] != "ok":
-        fail("Kane long pass should be cohort_too_small locally and scored globally")
+    if k["status_local"] != "cohort_too_small" or k["status_global"] != "d9_undefined":
+        fail("Kane long pass should be cohort_too_small locally and d9_undefined globally "
+             "(every ST league population is below MIN_COHORT_SIZE)")
 
     for name, status in (("Steven Naismith", "below_gate"), ("Kasper Schmeichel", "goalkeeper"),
                          ("Karim Bellarabi", "not_in_pool")):
@@ -401,6 +421,9 @@ def check_output(co: Cohorts, meas: dict, path: Path) -> None:
             errors.append(f"provenance {col}: {vals} ≠ {want!r}")
     # The spike cannot derive the registry version (it may not import eleveniq); it checks the
     # shape here, and an integration test checks it equals eleveniq's REGISTRY_VERSION.
+    if out["polars_version"].unique().to_list() != [pl.__version__]:
+        errors.append(f"provenance polars_version: {out['polars_version'].unique().to_list()} "
+                      f"≠ the running polars {pl.__version__}")
     versions = out["registry_version"].unique().to_list()
     if len(versions) != 1 or not isinstance(versions[0], str) or len(versions[0]) != 64 \
             or any(ch not in "0123456789abcdef" for ch in versions[0]):
@@ -426,7 +449,9 @@ def check_output(co: Cohorts, meas: dict, path: Path) -> None:
                 bad = [f for f in fields if not same(o[f], want[f])]
                 if o["position_group"] != group or o["percentile_status"] != r["_status"]:
                     bad.append("group/status")
-                exp_basis = "global" if global_ok(m.cells.get(group), co.pool) else "local"
+                # GK has no registry cell (D21): no basis.
+                exp_basis = None if group not in OUTFIELD else \
+                    "global" if co.global_ok(m, group) else "local"
                 if o["basis"] != exp_basis:
                     bad.append("basis")
                 if bad:
@@ -447,7 +472,7 @@ def check_output(co: Cohorts, meas: dict, path: Path) -> None:
             sub = prim.filter((pl.col("metric") == name) & (pl.col("position_group") == group)
                               & (pl.col("percentile_status") == "scored"))
             statuses = set(sub["status_global"].to_list()) - {"below_min_attempts", "null_value"}
-            ok = global_ok(cell, co.pool)
+            ok = co.global_ok(m, group)
             ref_n = cell.get("ref_n_global", meas["cohorts"][group]["ref_n_global"])
             if ref_n < MIN_COHORT_SIZE:
                 small += 1
@@ -515,7 +540,7 @@ def main() -> None:
     with MEASUREMENTS.open(encoding="utf-8") as f:
         meas = json.load(f)
     pool = [str(c) for c in meas["provenance"]["pool_competition_ids"]]
-    co = Cohorts(load_rows(meas), load_metrics(meas), pool)
+    co = Cohorts(load_rows(meas), load_metrics(meas), pool, meas)
     if args.check_output:
         check_output(co, meas, args.check_output)
     else:

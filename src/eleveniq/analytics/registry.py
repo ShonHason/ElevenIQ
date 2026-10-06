@@ -153,6 +153,7 @@ class Rules:
     team_pass_share_max_rho: float = config.TEAM_PASS_SHARE_MAX_RHO
     collinear_rho: float = config.COLLINEAR_RHO
     global_ok_band: tuple[float, float] = config.GLOBAL_OK_BAND
+    min_cohort_size: int = config.MIN_COHORT_SIZE
     signature_min_count_floor: int = config.SIGNATURE_TRAIT_MIN_COUNT_FLOOR
     boundary_margin: float = config.BOUNDARY_MARGIN
     d9_boundary_margin_pts: float = config.D9_BOUNDARY_MARGIN_PTS
@@ -504,13 +505,15 @@ def _d9_edge(mean: float, band: tuple[float, float]) -> tuple[float, float]:
     return min((mean - lo, lo), (hi - mean, hi))
 
 
-def _d9(cell: Mapping[str, Any] | None, pool: Sequence[str],
-        band: tuple[float, float]) -> dict[str, Any]:
+def _d9(cell: Mapping[str, Any] | None, pool: Sequence[str], band: tuple[float, float],
+        ref_n_local: Mapping[str, int] | None, min_n: int) -> dict[str, Any]:
     """D9, recomputed from the league means (the stored flag is not trusted, §10.1).
     d9_margin is the smallest signed distance of a league mean to the band edge: positive
-    inside (global_ok), negative outside; None when D9 is undefined."""
+    inside (global_ok), negative outside; None when D9 is undefined. D9 is undefined when a
+    pool league's reference population for the cell is below min_n (§11.1: an untestable
+    check is not a pass)."""
     means = _league_means(cell, pool)
-    if means is None:
+    if means is None or ref_n_local is None or any(ref_n_local.get(c, 0) < min_n for c in pool):
         return {"global_ok": None, "d9_margin": None}
     margin = min(_d9_edge(v, band)[0] for v in means)
     return {"global_ok": margin >= 0, "d9_margin": margin}
@@ -533,6 +536,12 @@ class _Judge:
         self.allow = {(a.column, a.group): a for a in allow}
         self.dropped = dropped
         self.boundary: list[BoundaryCell] = []
+
+    def d9(self, m: Mapping[str, Any] | None, ref_n_local: Mapping[str, int] | None
+           ) -> dict[str, Any]:
+        """Per-90s and team_pass_share are ranked against the gated group populations
+        (cohorts.ref_n_local); a ratio against its own min_attempts populations."""
+        return _d9(m, self.pool, self.rules.global_ok_band, ref_n_local, self.rules.min_cohort_size)
 
     def near(self, rule: str, col: str, grp: str, value: float, threshold: float,
              per_league: tuple[float, ...] | None = None) -> None:
@@ -578,7 +587,7 @@ class _Judge:
 
     def per90(self, spec: MetricSpec, grp: str) -> Cell:
         m = self.meas["metrics"].get(spec.column, {}).get("groups", {}).get(grp)
-        d9 = _d9(m, self.pool, self.rules.global_ok_band)
+        d9 = self.d9(m, self.meas["cohorts"][grp]["ref_n_local"])
         common = dict(**d9, reliability=None if m is None else m["r_full"])
         if spec.fixed_display:
             return Cell(spec.column, grp, "display", (R_FIXED,), **common)
@@ -603,7 +612,7 @@ class _Judge:
 
     def ratio(self, spec: MetricSpec, grp: str) -> Cell:
         m = self.meas["ratios"].get(spec.column, {}).get("groups", {}).get(grp)
-        d9 = _d9(m, self.pool, self.rules.global_ok_band)
+        d9 = self.d9(m, None if m is None else m["ref_n_local"])
         common = dict(**d9, reliability=None if m is None else m["split_half_r_full"],
                       min_attempts=None if m is None else m["min_attempts"])
         signal = () if m is None or not m["no_signal"] else (R_NO_SIGNAL,)
@@ -630,7 +639,7 @@ class _Judge:
     def share(self, spec: MetricSpec, grp: str) -> Cell:
         """Step 6, team_pass_share (D12b)."""
         m = self.meas["team_pass_share"].get(grp)
-        d9 = _d9(m, self.pool, self.rules.global_ok_band)
+        d9 = self.d9(m, self.meas["cohorts"][grp]["ref_n_local"])
         common = dict(**d9, reliability=None if m is None else m["split_half_r_full"])
         if spec.fixed_display:
             return Cell(spec.column, grp, "display", (R_FIXED,), **common)

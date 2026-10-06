@@ -197,6 +197,13 @@ TEAM_PASS_SHARE_MAX_RHO: float = 0.3
 COLLINEAR_RHO: float = 0.85
 # D9: global_ok iff every pool league's mean global percentile is in this band (inclusive).
 GLOBAL_OK_BAND: tuple[float, float] = (40.0, 60.0)
+# ADR 004 D11: a reference population smaller than this gives null percentiles
+# (cohort_too_small). §11.1 (user, 2026-10-06): D9 is also undefined when any pool league's
+# population for the cell is below it — a league mean over so few rows cannot test the band.
+MIN_COHORT_SIZE: int = 30
+# ADR 004 D6: a season row with at least this many GK minutes and at least this many
+# outfield minutes stops the cohort build until it is explained (2015/16: none).
+MIXED_POSITION_MINUTES: float = 45.0
 # §10.2: a signature trait's minimum season count is max(this, the group's P90 of the
 # count among gated rows). Integer count columns only; xG sums have no count minimum.
 SIGNATURE_TRAIT_MIN_COUNT_FLOOR: int = 5

@@ -2288,7 +2288,7 @@
      "n_local": 25,
      "pct_global": null,
      "pct_local": null,
-     "status_global": "league_inconsistent",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.15242592362522525
     },
@@ -2734,9 +2734,9 @@
     "long_pass_completion_pct": {
      "n_global": 64,
      "n_local": 12,
-     "pct_global": 63.28125,
+     "pct_global": null,
      "pct_local": null,
-     "status_global": "ok",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.5952380952380952
     },
@@ -2790,7 +2790,7 @@
      "n_local": 25,
      "pct_global": null,
      "pct_local": null,
-     "status_global": "league_inconsistent",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.11580386111633986
     },
@@ -3013,7 +3013,7 @@
    "percentile_status": "scored",
    "player_name": "Harry Kane",
    "position_group": "ST",
-   "why": "plain ST; long_pass_completion_pct local cohort_too_small, global scored"
+   "why": "plain ST; long_pass_completion_pct local cohort_too_small, global d9_undefined (every ST league population < 30), basis local"
   },
   {
    "cells": {
@@ -4645,7 +4645,7 @@
      "n_local": 5,
      "pct_global": null,
      "pct_local": null,
-     "status_global": "league_inconsistent",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.6084656084656085
     },
@@ -5244,9 +5244,9 @@
     "long_pass_completion_pct": {
      "n_global": 64,
      "n_local": 17,
-     "pct_global": 51.5625,
+     "pct_global": null,
      "pct_local": null,
-     "status_global": "ok",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.5614973262032086
     },
@@ -5300,7 +5300,7 @@
      "n_local": 23,
      "pct_global": null,
      "pct_local": null,
-     "status_global": "league_inconsistent",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.06746810332758621
     },
@@ -6302,9 +6302,9 @@
     "np_xg_per_shot": {
      "n_global": 43,
      "n_local": 15,
-     "pct_global": 91.86046511627907,
+     "pct_global": null,
      "pct_local": null,
-     "status_global": "ok",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.09031567303684211
     },
@@ -7155,7 +7155,7 @@
      "n_local": 14,
      "pct_global": null,
      "pct_local": null,
-     "status_global": "league_inconsistent",
+     "status_global": "d9_undefined",
      "status_local": "cohort_too_small",
      "value": 0.527027027027027
     },

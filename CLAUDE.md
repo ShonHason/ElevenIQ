@@ -90,6 +90,16 @@ future-potential prediction. Do not add these without explicit re-scoping.
   exception: a commit that touches only docs/, spikes/ and/or CLAUDE.md (no src/ or
   tests/ changes) may be committed directly after explicit user approval, without
   /finish-chunk. Everything else still goes through /finish-chunk.
+- **/finish-chunk is tiered** (.claude/skills/finish-chunk/SKILL.md):
+  - code-reviewer: always, scoped to the chunk's git diff only;
+  - qa-tester: only when src/ logic changed (skipped for docs/, spikes/ or tests-only changes);
+  - stats-reviewer: only when a metric definition, cohort/percentile rule, measurement or
+    registry status changed. If the method was reviewed before the code, the end-of-chunk
+    run reviews the produced output only;
+  - after review fixes: code-reviewer on the fix delta only, no full re-run;
+  - fast tests, coverage and (for pipeline changes) integration tests are unchanged.
+
+  The report states which agents ran and why each skipped one was skipped.
 - **Claude never pushes.** Claude commits (and merges locally) only after my explicit
   approval; I push manually. This covers every branch, tags and force pushes.
   Remote: `origin` = github.com/ShonHason/ElevenIQ (private).
@@ -103,9 +113,9 @@ never fix or commit. Fixes happen in the main session after my approval.
 | Agent | Use when |
 |---|---|
 | data-auditor | Evaluating or profiling a data source (new source, league or season) |
-| stats-reviewer | BEFORE implementing a new metric, definition or methodology; AFTER a pipeline run on new data |
-| qa-tester | After code changes: writes tests from the spec (ADRs, docstrings), not from the implementation |
-| code-reviewer | Before every commit, on the git diff |
+| stats-reviewer | BEFORE implementing a new metric, definition or methodology; AFTER a pipeline run on new data (output only, if the method was reviewed before code) |
+| qa-tester | After src/ logic changes: writes tests from the spec (ADRs, docstrings), not from the implementation |
+| code-reviewer | Before every commit, on the chunk's git diff only (after fixes: the fix delta only) |
 
 - Always invoke agents explicitly by name. Do not replace an agent's review
   with your own.
@@ -134,6 +144,14 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 # Season aggregation: data/interim/player_match_stats.parquet → data/processed/player_season_stats.parquet
 .venv/bin/python -m eleveniq.pipeline.build_player_season
+
+# Percentiles (ADR 004 §11): player_season_stats.parquet → data/processed/player_season_percentiles.parquet.
+# Refuses to run unless the season parquet is the one the registry measured (re-run
+# spikes/m4_decision_measurements.py --write-json after rebuilding the season stats)
+.venv/bin/python -m eleveniq.pipeline.build_percentiles
+
+# Independent check of the percentiles output (no eleveniq imports)
+.venv/bin/python spikes/m4d_percentiles_reference.py --check-output data/processed/player_season_percentiles.parquet
 
 # Fast unit tests (default — no I/O, sub-second)
 .venv/bin/python -m pytest tests/ -q -m "not integration"

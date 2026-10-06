@@ -377,8 +377,12 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 **M4d plan (approved 2026-10-05; definitions in ADR 004 §11).**
 - **User decisions:** D9-failing and D9-undefined cells get a null global percentile; D3 outsiders keep the spike formula (exact D9 match; 0/100 possible only for rows outside their population, including D5 second-group rows); the D5 second-group percentile is built in M4d (`cohort_role = "second"`); long output format; direction not applied; M4f's one-basis question stays open.
 - **Determinism (user):** sorted by (key, `cohort_role`, `metric`), stable floats, fixed write settings; an integration test builds twice and compares the file sha256.
-- **M4d1 (spike) done:** `spikes/m4d_percentiles_reference.py` and `tests/fixtures/m4d_percentiles/reference.json` (15 hand-picked output rows). Self-check: the D9 means of all 184 `global_ok` cells reproduce the measurements; 53 `league_inconsistent`, 3 `cohort_too_small` and 263 population sizes agree.
+- **M4d1 (spike) done** (commit 427f30a): `spikes/m4d_percentiles_reference.py` and `tests/fixtures/m4d_percentiles/reference.json` (15 hand-picked output rows). Self-check: the D9 means of all 184 `global_ok` cells reproduce the measurements; 53 `league_inconsistent`, 3 `cohort_too_small` and 263 population sizes agree.
+- **Stats-reviewer (2026-10-06): approve with conditions.** User: (1) D9 undefined when a pool league population is below 30, in the registry and the spike (ADR 004 §11.3: no status or DNA change, 7 display cells change D9, `REGISTRY_VERSION` changes; self-check now 181 / 51 / 3); (2)–(3) to M4e below; (4) to the M4d2 tests.
 - **M4d2 (code):** `config.MIN_COHORT_SIZE`, `config.MIXED_POSITION_MINUTES`; `analytics/cohorts.py`, `analytics/percentiles.py`, `pipeline/build_percentiles.py`; fast tests (hand-computed ties, gate, min_attempts exclusion, 29/30, (0, 100) for members, D3 tie-break and order, guards, statuses), integration tests (fixture, `--check-output`, D20, n, one source, two-build sha256), two mutation checks (gate, tie rule); stats-reviewer on the run; `/finish-chunk`.
+  - **Added (stats-reviewer condition 4, user 2026-10-06):** no member of its population is at 0 or 100; no outsider or second-group row shares a `player_id` with a member of its population, except a D3 mover's own other stint; the Ighalo-removal invariance (a row below `min_attempts` removed → no other percentile changes) runs against `cohorts.py`, not only the spike.
+  - **Registry version** in the output equals `REGISTRY_VERSION` (the spike checks only its shape; code-reviewer M4d1).
+- **M4d2 progress (2026-10-06):** code, fast tests (`tests/test_cohorts.py`, `tests/test_percentiles.py`) and integration tests (`tests/test_build_percentiles.py`) written; the D9 small-league change (§11.3) and the tiered `/finish-chunk` (CLAUDE.md) are folded into this chunk (user: no separate commit). Run figures in ADR 004 §11.4: the spike check passes on every cell, two builds are byte-identical, both mutation checks go red.
 
 ### M4e — A comparison page (visual sanity check)
 - A generator script writes **one self-contained static HTML file** from the two parquets.
@@ -387,11 +391,20 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
   - It lives in `spikes/` (or `tools/`) because it is a check, not the M9 frontend.
 - Streamlit or FastAPI would add a dependency for a throwaway page, and M7/M9 own those decisions.
 - **Display rule (user, 2026-10-05; ADR 004 §11.1):** a stored percentile of exactly 100 is shown as ">99" and exactly 0 as "<1" (only rows outside their population: D3 outsiders and D5 second-group rows).
+- **Closed as moot (user, 2026-10-06): display when one scope is `cohort_too_small` and the other has a value.** Under ADR 004 §11.3 the case cannot occur: a cell's global population contains every locally eligible player, so it is never smaller than a local one; a local population below 30 makes D9 undefined, so the global percentile is null too. No M4e display rule is needed; reopen only if §11.3 changes.
+  - Measured on the first M4d1 spike output: 183 cells, all with the registry basis holding the value and the other scope null. Example: Kane `long_pass_completion_pct`, basis global, local null (n 12), global 63.28 (n 64). The cells were ST `long_pass_completion_pct` (64 primary + 2 second-group rows) and `np_xg_per_shot` FB-WB (43) and DM-CM (73 + 1), all display-only.
+  - After §11.3 those 183 cells have both scopes null (0 cells of either variant).
+- **Label selected populations** (stats-reviewer condition 2, user 2026-10-06): a ratio percentile ranks only the rows meeting `min_attempts` (e.g. ST `long_pass_completion_pct` 64 of 157 STs, 40.5%; `np_xg_per_shot` similar). M4e shows n and the condition ("among STs with ≥ 43 long passes").
+- **Zero-heavy cells are not ranks** (stats-reviewer condition 3, user 2026-10-06): every zero gets 0.5 × the zero share (CB `box_entries_carry_p90` 36.4 for every zero; CB `restart_key_passes` ≈ 43.8 for every non-taker). M4e must not present such a percentile as a rank; signature traits are shown as holder / non-holder (§1), not as a percentile.
+- **From the M4d2 stats review (user, 2026-10-06):**
+  - **`long_pass_completion_pct` reads as team style:** a low value must not be worded as poor individual passing. Example: Koné 0.319 at Sunderland, the CB minimum, where Yedlin was 31.5% and Kaboul 43.3%; he was 0.595 at Lorient.
+  - **Empty global percentiles show their reason, not a blank:** 3,554 `d9_undefined` and 12,591 `league_inconsistent` global cells in 2015/16. This is the method as designed.
 - Used straight away on known 2015/16 pairs for a face-validity pass before the DNA vector, e.g. Kanté vs Busquets, Özil vs Payet, Messi vs Neymar, two CBs from opposite styles.
 
 ### M4f — Player DNA vector
 - **Per-family contribution report** (stats-reviewer, user 2026-10-04): for each group, each family's share of the distance between neighbours, next to the equal-family-weight sensitivity check (ADR 004 §10.8, §10.11).
 - **Sensitivity check with and without `np_shots_on_target`** (stats-reviewer M4c2b review, user 2026-10-04): it correlates 0.79–0.80 with `np_shots` in AM-Winger and ST and halves its weight inside Goal threat. Run the equal vs family weight check both ways and report the top-10 neighbour overlap for AM-Winger and ST.
+- **Exclude second-group rows** (M4d2 stats review, user 2026-10-06): M4f and M6 read only `cohort_role = "primary"` rows. D5 second-group percentiles are skewed as expected (9.0% of local values ≥ 95; the 0/100 cells cluster in AM-Winger xG-assisted metrics) and are display-only.
 - `analytics/dna.py` + `pipeline/build_player_dna.py` → `player_dna.parquet`.
 - Per scored row:
   - the feature vector on the D10 basis (percentile and robust z, both stored);
@@ -402,6 +415,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 ### M4g — Football validation (brief §20)
 - **Multi-split reliability averaging** (stats-reviewer, user 2026-10-04): r_full averaged over many random match splits instead of one odd/even split, applied to all metrics at once (never to single boundary cells). Then re-derive the registry. It addresses the cells decided by < 0.001 at the 0.6 cut-off, e.g. CB `interceptions` 0.599849 and ST `np_xg` 0.599369 (ADR 004 §10.11).
 - **"Majority of leagues above the trigger" possession rule** (stats-reviewer M4c2b review, user 2026-10-04): evaluate a trigger that fires when most pool leagues' within-league |ρ| ≥ 0.4 (with the sign test), next to the current mean rule. Apply it to all metrics at once, never to single cells, then re-derive the registry and report every status change. It addresses ST `np_shots_on_target` (3 of 4 leagues above 0.4, mean 0.395) and ST `np_shots` (2 of 4, mean 0.372), where Serie A masks the others (ADR 004 §10.10).
+- **Mover stability check** (user, 2026-10-06): for players with two stints in a season, measure per DNA metric how much the value changes with the team, e.g. Koné `long_pass_completion_pct` 0.595 at Lorient → 0.319 at Sunderland. Applied to all DNA metrics at once; report only.
 Analyses in `spikes/m4_validation.py`, written up in `docs/reviews/m4-validation.md`:
 - threshold sensitivity (from D1);
 - split-half reliability per metric;
@@ -736,6 +750,7 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
 ---
 
 ## Backlog
+- **Registry: a clear error for a malformed measurements file** (code-reviewer M4d2, user 2026-10-06): `registry._Judge.d9` and its callers index `meas["cohorts"][group]["ref_n_local"]` directly, so a file missing a group raises a bare `KeyError` rather than `RegistryRuleError`. `ref_n_global` was already read the same way. Add a guard that `cohorts` holds every outfield group.
 - **Registry follow-ups from the M4c3 reviews** (user, 2026-10-05):
   - an override to `signature` or `dna` should meet the bars it bypasses: r ≥ 0.6 (R15 / D19) and, for `dna`, no unadmitted possession trigger. Today's only override has r 0.838;
   - ADR 004 §10.3 should state that signature traits are exempt from the possession step (step 3 precedes step 5; set-piece duty is a role, not possession);

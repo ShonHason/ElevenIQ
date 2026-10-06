@@ -178,9 +178,15 @@ class TestIndependentPredicates:
         for col, grp, m in cells:
             cell = R.cell(col, grp)
             means = m.get("league_mean_global_pct", {})
-            if any(c not in means for c in pool):
-                # Not measured, or a pool league without rows (ST dribble_success_pct
-                # has no Ligue 1 row): D9 is undefined, so the basis is local.
+            # ADR 004 §11.1: a ratio is ranked against its own min_attempts populations, every
+            # other cell against the gated group populations.
+            sizes = m["ref_n_local"] if col in committed["ratios"] else \
+                committed["cohorts"][grp]["ref_n_local"]
+            if any(c not in means for c in pool) or \
+                    any(sizes.get(c, 0) < config.MIN_COHORT_SIZE for c in pool):
+                # Not measured, a pool league without rows (ST dribble_success_pct has no
+                # Ligue 1 row), or a league population below MIN_COHORT_SIZE (§11.1: an
+                # untestable check is not a pass): D9 is undefined, so the basis is local.
                 assert cell.global_ok is None and cell.basis == "local"
                 continue
             ok = all(40 <= means[c] <= 60 for c in pool)
@@ -500,6 +506,26 @@ class TestThresholdEdges:
         c = _cell(meas, self.COL, self.GRP)
         assert c.global_ok is False and c.basis == "local"
 
+    def test_d9_is_undefined_when_a_league_population_is_below_min_cohort(self, meas):
+        # §11.1 (user, 2026-10-06): a league mean over fewer than MIN_COHORT_SIZE rows cannot
+        # test the band. Per-90s use the gated group populations; 29 → undefined, 30 → tested.
+        self._m(meas)["league_mean_global_pct"].update({"11": 50.0, "2": 50.0, "12": 50.0, "7": 50.0})
+        sizes = meas["cohorts"][self.GRP]["ref_n_local"]
+        sizes["7"] = config.MIN_COHORT_SIZE - 1
+        c = _cell(meas, self.COL, self.GRP)
+        assert c.global_ok is None and c.d9_margin is None and c.basis == "local"
+        sizes["7"] = config.MIN_COHORT_SIZE
+        assert _cell(meas, self.COL, self.GRP).basis == "global"
+
+    def test_ratio_d9_uses_its_own_min_attempts_populations(self, meas):
+        # ST long_pass_completion_pct passes the band (min league mean 46.05) but its league
+        # populations are 12–19, so D9 is undefined; at 30 in every league it would be global.
+        m = meas["ratios"]["long_pass_completion_pct"]["groups"]["ST"]
+        assert min(m["ref_n_local"].values()) < config.MIN_COHORT_SIZE
+        assert _cell(meas, "long_pass_completion_pct", "ST").global_ok is None
+        m["ref_n_local"] = {c: config.MIN_COHORT_SIZE for c in m["ref_n_local"]}
+        assert _cell(meas, "long_pass_completion_pct", "ST").basis == "global"
+
     def test_d9_margin_is_the_deciding_leagues_signed_distance(self, committed):
         # Written out from §10.10: inside the band, the nearest league mean's distance to an
         # edge; outside, minus the furthest-out league's distance.
@@ -555,11 +581,17 @@ def test_integer_count_flag_matches_the_parquet_dtypes():
             assert schema[s.count_column].is_integer() == s.integer_count, s.count_column
 
 
-def test_spike_d9_band_equals_config():
-    """One source for the D9 band (user, 2026-10-05): the spike cannot import eleveniq, so it
-    writes out its own copy; this keeps the two equal."""
+@pytest.mark.parametrize("spike, name", [
+    ("m4_decision_measurements.py", "GLOBAL_OK_BAND"),
+    ("m4_decision_measurements.py", "MIN_COHORT_SIZE"),
+    ("m4d_percentiles_reference.py", "GLOBAL_OK_BAND"),
+    ("m4d_percentiles_reference.py", "MIN_COHORT_SIZE"),
+])
+def test_spike_constants_equal_config(spike, name):
+    """One source for the D9 band and the cohort minimum (user, 2026-10-05/06): the spikes
+    cannot import eleveniq, so they write out their own copies; this keeps them equal."""
     import ast
-    tree = ast.parse((_ROOT / "spikes" / "m4_decision_measurements.py").read_text())
+    tree = ast.parse((_ROOT / "spikes" / spike).read_text())
     values = [ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
-              and any(isinstance(t, ast.Name) and t.id == "GLOBAL_OK_BAND" for t in n.targets)]
-    assert values == [config.GLOBAL_OK_BAND]
+              and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)]
+    assert values == [getattr(config, name)]
