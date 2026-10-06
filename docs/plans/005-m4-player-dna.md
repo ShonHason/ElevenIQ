@@ -428,7 +428,10 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - **Chunks:**
   - **M4f1** registry, config and ADR (this outcome);
   - **M4f2** `analytics/dna.py` + `pipeline/build_player_dna.py` + `spikes/m4f_dna_reference.py`, after the stats-reviewer reviews the §12.6 method;
-  - **M4f3** `spikes/m4f_weighting_checks.py` → `docs/reviews/m4f-weighting.md`, report only, incl. the top-10 neighbours (name, group, team, league) of Kanté, Busquets, Özil, Payet, Messi, Neymar, Stones and Morgan (user; M4g owns validation);
+    - spike first (ADR 004 §12.7): `--check-output`, hand-picked fixture, the output schema (two long files); checkpoint commit;
+    - then the code: two builds byte-identical, 32 `partial` / 0 `dna_incomplete`, row weights sum to 1, d(A, B) = d(B, A), mutation checks shown red;
+    - a synthetic `dna_incomplete` test (2015/16 has none): the row keeps its vector, weights and dimension scores, and the distance refuses it (code-reviewer, spike checkpoint);
+  - **M4f3** `spikes/m4f_weighting_checks.py` → `docs/reviews/m4f-weighting.md`, report only, incl. the top-10 neighbours (name, group, team, league) of Kanté, Busquets, Özil, Payet, Messi, Neymar, Stones and Morgan (user; M4g owns validation), plus Isco (user, 2026-10-06: the DM-CM |z| 13.7 outlier, ADR 004 §12.7);
   - **M4f4** radar (local basis) on the comparison page.
 - **Per-family contribution report** (stats-reviewer, user 2026-10-04): for each group, each family's share of the distance between neighbours, next to the equal-family-weight sensitivity check (ADR 004 §10.8, §10.11).
 - **Sensitivity check with and without `np_shots_on_target`** (stats-reviewer M4c2b review, user 2026-10-04): it correlates 0.79–0.80 with `np_shots` in AM-Winger and ST and halves its weight inside Goal threat. Run the equal vs family weight check both ways and report the top-10 neighbour overlap for AM-Winger and ST.
@@ -454,6 +457,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - **Multi-split reliability averaging** (stats-reviewer, user 2026-10-04): r_full averaged over many random match splits instead of one odd/even split, applied to all metrics at once (never to single boundary cells). Then re-derive the registry. It addresses the cells decided by < 0.001 at the 0.6 cut-off, e.g. CB `interceptions` 0.599849 and ST `np_xg` 0.599369 (ADR 004 §10.11).
 - **"Majority of leagues above the trigger" possession rule** (stats-reviewer M4c2b review, user 2026-10-04): evaluate a trigger that fires when most pool leagues' within-league |ρ| ≥ 0.4 (with the sign test), next to the current mean rule. Apply it to all metrics at once, never to single cells, then re-derive the registry and report every status change. It addresses ST `np_shots_on_target` (3 of 4 leagues above 0.4, mean 0.395) and ST `np_shots` (2 of 4, mean 0.372), where Serie A masks the others (ADR 004 §10.10).
 - **Mover stability check** (user, 2026-10-06): for players with two stints in a season, measure per DNA metric how much the value changes with the team, e.g. Koné `long_pass_completion_pct` 0.595 at Lorient → 0.319 at Sunderland. Applied to all DNA metrics at once; report only.
+- **DM-CM role split** (user, 2026-10-06): DM-CM mixes holding 6s and advanced 8s; Isco (Real Madrid's 4-3-3 left-centre-mid, mapped to DM-CM) is the |z| 13.7 outlier on `box_entries_carry_p90` (ADR 004 §12.7). Evaluate whether DM-CM needs a role split, using the M4f3 neighbours; no change before then.
 Analyses in `spikes/m4_validation.py`, written up in `docs/reviews/m4-validation.md`:
 - threshold sensitivity (from D1);
 - split-half reliability per metric;

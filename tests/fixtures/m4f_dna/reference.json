@@ -1,0 +1,3019 @@
+{
+ "dna_percentile_basis": "local",
+ "generated_by": "spikes/m4f_dna_reference.py",
+ "measurements_sha256": "0a58e9e3fc019f44bdb1d66b5260dfccc4ca236b77744bc137cda18408e833fd",
+ "rows": [
+  {
+   "cells": {
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 84.32835820895522,
+     "value": 2.277906671673809,
+     "weight": 0.07142857142857142,
+     "z": 1.2096059873030542,
+     "z_median": 1.4992252066115703,
+     "z_scale": 0.6437480247583695,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 41.04477611940299,
+     "value": 1.3056294337642562,
+     "weight": 0.07142857142857142,
+     "z": -0.22046404486222226,
+     "z_median": 1.4548857787042158,
+     "z_scale": 0.677009918026481,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 7.500424406730834,
+     "weight": 0.017857142857142856,
+     "z": 2.002792271548014,
+     "z_median": 5.362261817773031,
+     "z_scale": 1.0675907927810993,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "blocks_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 3.111287161310568,
+     "weight": 0.017857142857142856,
+     "z": 2.550477692369678,
+     "z_median": 1.899323443609956,
+     "z_scale": 0.47519087162631196,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 64.92537313432835,
+     "value": 0.1944554475819105,
+     "weight": 0.02857142857142857,
+     "z": 0.4232338616877259,
+     "z_median": 0.13934333164745105,
+     "z_scale": 0.13021669796147536,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 72.38805970149254,
+     "value": 0.7500424406730833,
+     "weight": 0.07142857142857142,
+     "z": 0.433996786972552,
+     "z_median": 0.5921879050106673,
+     "z_scale": 0.363722820999593,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 69.40298507462687,
+     "value": 2.1390099234010154,
+     "weight": 0.017857142857142856,
+     "z": 0.41639084202136256,
+     "z_median": 1.7657900473651877,
+     "z_scale": 0.8963210483305488,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "lower_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 58.95522388059702,
+     "value": 1.6389816296189599,
+     "weight": 0.017857142857142856,
+     "z": 0.17738711160355927,
+     "z_median": 1.549038544286247,
+     "z_scale": 0.5070440829643007,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 76.86567164179104,
+     "value": 1.7500990282371944,
+     "weight": 0.02857142857142857,
+     "z": 0.7821167872199101,
+     "z_median": 1.2143407864302234,
+     "z_scale": 0.6850105387858532,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 75.3731343283582,
+     "value": 1.9167751261645463,
+     "weight": 0.02857142857142857,
+     "z": 0.9967039481705408,
+     "z_median": 1.2658227848101267,
+     "z_scale": 0.653105009315202,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_committed_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 41.04477611940299,
+     "value": 1.5000848813461667,
+     "weight": 0.017857142857142856,
+     "z": -0.14686159451734482,
+     "z_median": 1.5734863745201628,
+     "z_scale": 0.4998004646158679,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 39.55223880597015,
+     "value": 0.8333804896367593,
+     "weight": 0.02857142857142857,
+     "z": -0.3892745202040712,
+     "z_median": 1.0228700177456982,
+     "z_scale": 0.4867760880152185,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "interceptions_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 3.0557284620014507,
+     "weight": 0.017857142857142856,
+     "z": 3.5728529040886188,
+     "z_median": 1.3084969813830472,
+     "z_scale": 0.4890297830674605,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 38.059701492537314,
+     "value": 0.6589595375722543,
+     "weight": 0.047619047619047616,
+     "z": -0.3304300521287631,
+     "z_median": 0.6917293233082706,
+     "z_scale": 0.09917313974591652,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 9.701492537313433,
+     "value": 4.8336068398932035,
+     "weight": 0.047619047619047616,
+     "z": -1.1103925203286398,
+     "z_median": 7.860597127647911,
+     "z_scale": 2.726054284712597,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 29.1044776119403,
+     "value": 0.5833663427457315,
+     "weight": 0.07142857142857142,
+     "z": -0.4663531489378002,
+     "z_median": 0.8277361277556367,
+     "z_scale": 0.524001575986995,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_xg_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 15.671641791044777,
+     "value": 0.02127629780851797,
+     "weight": 0.07142857142857142,
+     "z": -0.7583253920320269,
+     "z_median": 0.049499991978468875,
+     "z_scale": 0.03721844799937665,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_key_passes_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 54.47761194029851,
+     "value": 0.7500424406730833,
+     "weight": 0.07142857142857142,
+     "z": 0.1506189213985081,
+     "z_median": 0.6934828248537097,
+     "z_scale": 0.3755146783300087,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_xg_assisted_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 78.35820895522389,
+     "value": 0.0689420079562115,
+     "weight": 0.07142857142857142,
+     "z": 0.8186013251179788,
+     "z_median": 0.044974278068194866,
+     "z_scale": 0.02927887990477214,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 96.26865671641791,
+     "value": 25.16809078703013,
+     "weight": 0.017857142857142856,
+     "z": 1.5506686483725791,
+     "z_median": 18.965247688390583,
+     "z_scale": 4.000108666122455,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 78.35820895522389,
+     "value": 8.500480994294945,
+     "weight": 0.02857142857142857,
+     "z": 0.7789501307540468,
+     "z_median": 6.5146445456092135,
+     "z_scale": 2.549375589376155,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 42.53731343283582,
+     "value": 4.889165539202321,
+     "weight": 0.07142857142857142,
+     "z": -0.2718073339846027,
+     "z_median": 5.2952139646498475,
+     "z_scale": 1.493883257287414,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 4.555813343347618,
+     "weight": 0.017857142857142856,
+     "z": 2.1479837663976826,
+     "z_median": 2.63441091644785,
+     "z_scale": 0.8945144078635624,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "team_pass_share": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 63.43283582089553,
+     "value": 0.12652531371700562,
+     "weight": 0.047619047619047616,
+     "z": 0.4715785120212072,
+     "z_median": 0.11962114125350795,
+     "z_scale": 0.014640557802148511,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 41.04477611940299,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "box_entries_carry_p90",
+      "final_third_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 72.88557213930348,
+     "score_status": "ok"
+    },
+    "Creation": {
+     "members": [
+      "op_key_passes_p90",
+      "op_xg_assisted_p90"
+     ],
+     "score": 66.4179104477612,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Goal threat": {
+     "members": [
+      "np_shots_p90",
+      "np_xg_p90"
+     ],
+     "score": 22.388059701492537,
+     "score_status": "ok"
+    },
+    "Passing": {
+     "members": [
+      "long_pass_completion_pct"
+     ],
+     "score": 38.059701492537314,
+     "score_status": "ok"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 57.462686567164184,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "complete",
+   "key": {
+    "competition_id": 2,
+    "player_id": 3961,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 22
+   },
+   "player_name": "N'Golo Kanté",
+   "position_group": "DM-CM",
+   "why": "face-validity DM-CM (Leicester); complete vector"
+  },
+  {
+   "cells": {
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 29.1044776119403,
+     "value": 1.3775510204081634,
+     "weight": 0.07142857142857142,
+     "z": -0.609609554041296,
+     "z_median": 1.8044574395083093,
+     "z_scale": 0.7002948301417641,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 61.940298507462686,
+     "value": 2.21606033717835,
+     "weight": 0.07142857142857142,
+     "z": 0.38487004843071093,
+     "z_median": 1.8468090598180291,
+     "z_scale": 0.9594180655676506,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 17.16417910447761,
+     "value": 4.2524401064773745,
+     "weight": 0.017857142857142856,
+     "z": -0.9757596055649245,
+     "z_median": 5.103483644089527,
+     "z_scale": 0.872185662081629,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "blocks_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 67.91044776119402,
+     "value": 1.8866459627329193,
+     "weight": 0.017857142857142856,
+     "z": 0.2919033164048761,
+     "z_median": 1.752892394945888,
+     "z_scale": 0.45821188136661023,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 7.462686567164178,
+     "value": 0.0,
+     "weight": 0.02857142857142857,
+     "z": -1.0761426816482829,
+     "z_median": 0.08692152917505029,
+     "z_scale": 0.08077137972254404,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 69.40298507462687,
+     "value": 0.6288819875776398,
+     "weight": 0.07142857142857142,
+     "z": 0.6744907594765952,
+     "z_median": 0.43153886989331397,
+     "z_scale": 0.29258090627878147,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 81.34328358208955,
+     "value": 2.006433007985803,
+     "weight": 0.017857142857142856,
+     "z": 0.8516868246486575,
+     "z_median": 1.4307422559906486,
+     "z_scale": 0.6759418313564278,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "lower_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 47.01492537313433,
+     "value": 1.4673913043478264,
+     "weight": 0.017857142857142856,
+     "z": -0.0969618535065373,
+     "z_median": 1.510386044626599,
+     "z_scale": 0.443419125397329,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 39.55223880597015,
+     "value": 0.8984028393966282,
+     "weight": 0.02857142857142857,
+     "z": -0.41709680809874333,
+     "z_median": 1.108412302008142,
+     "z_scale": 0.5035029243421978,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 21.641791044776117,
+     "value": 0.6887755102040817,
+     "weight": 0.02857142857142857,
+     "z": -0.5236700836388921,
+     "z_median": 0.9986848594443533,
+     "z_scale": 0.591802661490161,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_committed_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 15.671641791044777,
+     "value": 1.1978704525288377,
+     "weight": 0.017857142857142856,
+     "z": -1.1210000173472032,
+     "z_median": 1.9197828124495009,
+     "z_scale": 0.6439896063775599,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 85.82089552238806,
+     "value": 2.4556344276841173,
+     "weight": 0.02857142857142857,
+     "z": 1.3105062137127095,
+     "z_median": 1.5429136598410198,
+     "z_scale": 0.6964642809722573,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "interceptions_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 11.194029850746269,
+     "value": 1.1379769299023959,
+     "weight": 0.017857142857142856,
+     "z": -1.0428827341880405,
+     "z_median": 1.7306544658842253,
+     "z_scale": 0.5683069788697497,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 97.76119402985076,
+     "value": 0.9088319088319088,
+     "weight": 0.047619047619047616,
+     "z": 2.8570857516469497,
+     "z_median": 0.6859504132231405,
+     "z_scale": 0.0780100826446282,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 82.83582089552239,
+     "value": 10.601153504880214,
+     "weight": 0.047619047619047616,
+     "z": 1.3934200695974308,
+     "z_median": 7.644402838110134,
+     "z_scale": 2.121937763982621,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 3.731343283582089,
+     "value": 0.17968056787932565,
+     "weight": 0.07142857142857142,
+     "z": -1.7109157104253339,
+     "z_median": 0.8293911654481785,
+     "z_scale": 0.3797443635650144,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_xg_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 2.2388059701492535,
+     "value": 0.0067785901430789715,
+     "weight": 0.07142857142857142,
+     "z": -1.379892583535226,
+     "z_median": 0.05365001307830806,
+     "z_scale": 0.03396744318687944,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_key_passes_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 51.49253731343284,
+     "value": 0.509094942324756,
+     "weight": 0.07142857142857142,
+     "z": 0.05577179572980135,
+     "z_median": 0.4931872798780732,
+     "z_scale": 0.2852277255649252,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_xg_assisted_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 81.34328358208955,
+     "value": 0.08595749952750666,
+     "weight": 0.07142857142857142,
+     "z": 1.3711644321242877,
+     "z_median": 0.042139091764212024,
+     "z_scale": 0.03195707731085805,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 44.02985074626866,
+     "value": 17.429015084294587,
+     "weight": 0.017857142857142856,
+     "z": -0.25739518611887263,
+     "z_median": 18.49446564433173,
+     "z_scale": 4.13935697905821,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 81.34328358208955,
+     "value": 8.714507542147294,
+     "weight": 0.02857142857142857,
+     "z": 0.8770032509115081,
+     "z_median": 6.620636252177841,
+     "z_scale": 2.387529678816128,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 64.92537313432835,
+     "value": 5.989352262644188,
+     "weight": 0.07142857142857142,
+     "z": 0.6267355197754039,
+     "z_median": 4.788675835759462,
+     "z_scale": 1.9157625329979688,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 81.34328358208955,
+     "value": 3.084516415261757,
+     "weight": 0.017857142857142856,
+     "z": 1.1024208345168964,
+     "z_median": 2.2744530397228417,
+     "z_scale": 0.7348041239568023,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "team_pass_share": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 36.56716417910448,
+     "value": 0.1125195771339076,
+     "weight": 0.047619047619047616,
+     "z": -0.3553034303092345,
+     "z_median": 0.11737677527151211,
+     "z_scale": 0.013670563589484893,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 61.940298507462686,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "box_entries_carry_p90",
+      "final_third_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 36.81592039800995,
+     "score_status": "ok"
+    },
+    "Creation": {
+     "members": [
+      "op_key_passes_p90",
+      "op_xg_assisted_p90"
+     ],
+     "score": 66.4179104477612,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Goal threat": {
+     "members": [
+      "np_shots_p90",
+      "np_xg_p90"
+     ],
+     "score": 2.9850746268656714,
+     "score_status": "ok"
+    },
+    "Passing": {
+     "members": [
+      "long_pass_completion_pct"
+     ],
+     "score": 97.76119402985076,
+     "score_status": "ok"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 67.16417910447761,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "complete",
+   "key": {
+    "competition_id": 11,
+    "player_id": 5203,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 217
+   },
+   "player_name": "Sergio Busquets i Burgos",
+   "position_group": "DM-CM",
+   "why": "face-validity DM-CM (Barcelona); Defending score withheld although his low defensive percentiles stay in the vector"
+  },
+  {
+   "cells": {
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 23.134328358208954,
+     "value": 1.237713227839732,
+     "weight": 0.07142857142857142,
+     "z": -0.8092937249784472,
+     "z_median": 1.8044574395083093,
+     "z_scale": 0.7002948301417641,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 3.731343283582089,
+     "value": 0.4760435491691277,
+     "weight": 0.07142857142857142,
+     "z": -1.4287468204362739,
+     "z_median": 1.8468090598180291,
+     "z_scale": 0.9594180655676506,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 42.53731343283582,
+     "value": 4.903248556442016,
+     "weight": 0.017857142857142856,
+     "z": -0.22957851332893314,
+     "z_median": 5.103483644089527,
+     "z_scale": 0.872185662081629,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "blocks_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 5.223880597014925,
+     "value": 0.9996914532551683,
+     "weight": 0.017857142857142856,
+     "z": -1.6437830888284892,
+     "z_median": 1.752892394945888,
+     "z_scale": 0.45821188136661023,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 1.1901088729228193,
+     "weight": 0.02857142857142857,
+     "z": 13.658146580351891,
+     "z_median": 0.08692152917505029,
+     "z_scale": 0.08077137972254404,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 97.76119402985076,
+     "value": 1.9993829065103366,
+     "weight": 0.07142857142857142,
+     "z": 5.358668330609124,
+     "z_median": 0.43153886989331397,
+     "z_scale": 0.29258090627878147,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 0.7462686567164178,
+     "value": 0.14281306475073832,
+     "weight": 0.017857142857142856,
+     "z": -1.9053846521902535,
+     "z_median": 1.4307422559906486,
+     "z_scale": 0.6759418313564278,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "lower_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 42.53731343283582,
+     "value": 1.4281306475073834,
+     "weight": 0.017857142857142856,
+     "z": -0.1855025920352672,
+     "z_median": 1.510386044626599,
+     "z_scale": 0.443419125397329,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 6.521796623617049,
+     "weight": 0.02857142857142857,
+     "z": 10.751445641912074,
+     "z_median": 1.108412302008142,
+     "z_scale": 0.5035029243421978,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 94.77611940298507,
+     "value": 3.0942830695993297,
+     "weight": 0.02857142857142857,
+     "z": 3.5410422198478346,
+     "z_median": 0.9986848594443533,
+     "z_scale": 0.591802661490161,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_committed_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 33.582089552238806,
+     "value": 1.666152422091947,
+     "weight": 0.017857142857142856,
+     "z": -0.39384236615901963,
+     "z_median": 1.9197828124495009,
+     "z_scale": 0.6439896063775599,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 93.28358208955224,
+     "value": 2.903865649931679,
+     "weight": 0.02857142857142857,
+     "z": 1.954087276652269,
+     "z_median": 1.5429136598410198,
+     "z_scale": 0.6964642809722573,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "interceptions_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 12.686567164179104,
+     "value": 1.1425045180059066,
+     "weight": 0.017857142857142856,
+     "z": -1.0349159340749832,
+     "z_median": 1.7306544658842253,
+     "z_scale": 0.5683069788697497,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 63.43283582089553,
+     "value": 0.7207207207207207,
+     "weight": 0.047619047619047616,
+     "z": 0.4457155577693063,
+     "z_median": 0.6859504132231405,
+     "z_scale": 0.0780100826446282,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 11.194029850746269,
+     "value": 5.331687750694231,
+     "weight": 0.047619047619047616,
+     "z": -1.0899071248325471,
+     "z_median": 7.644402838110134,
+     "z_scale": 2.121937763982621,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 1.9993829065103366,
+     "weight": 0.07142857142857142,
+     "z": 3.0809983065406286,
+     "z_median": 0.8293911654481785,
+     "z_scale": 0.3797443635650144,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_xg_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 97.76119402985076,
+     "value": 0.1707729902393441,
+     "weight": 0.07142857142857142,
+     "z": 3.4480951809253924,
+     "z_median": 0.05365001307830806,
+     "z_scale": 0.03396744318687944,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_key_passes_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 97.76119402985076,
+     "value": 1.5709437122581213,
+     "weight": 0.07142857142857142,
+     "z": 3.7785822898017076,
+     "z_median": 0.4931872798780732,
+     "z_scale": 0.2852277255649252,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_xg_assisted_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 0.2262081928470049,
+     "weight": 0.07142857142857142,
+     "z": 5.75988533908424,
+     "z_median": 0.042139091764212024,
+     "z_scale": 0.03195707731085805,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 33.582089552238806,
+     "value": 16.32829373650108,
+     "weight": 0.017857142857142856,
+     "z": -0.5233112096370818,
+     "z_median": 18.49446564433173,
+     "z_scale": 4.13935697905821,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 99.25373134328358,
+     "value": 13.995680345572355,
+     "weight": 0.02857142857142857,
+     "z": 3.0889853051173284,
+     "z_median": 6.620636252177841,
+     "z_scale": 2.387529678816128,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 75.3731343283582,
+     "value": 6.474192268700137,
+     "weight": 0.07142857142857142,
+     "z": 0.8798149060275322,
+     "z_median": 4.788675835759462,
+     "z_scale": 1.9157625329979688,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 0.7462686567164178,
+     "value": 1.3805262925904704,
+     "weight": 0.017857142857142856,
+     "z": -1.2165510752970727,
+     "z_median": 2.2744530397228417,
+     "z_scale": 0.7348041239568023,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "team_pass_share": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 15.671641791044777,
+     "value": 0.10427989130434782,
+     "weight": 0.047619047619047616,
+     "z": -0.9580354080820872,
+     "z_median": 0.11737677527151211,
+     "z_scale": 0.013670563589484893,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 3.731343283582089,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "box_entries_carry_p90",
+      "final_third_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 97.76119402985074,
+     "score_status": "ok"
+    },
+    "Creation": {
+     "members": [
+      "op_key_passes_p90",
+      "op_xg_assisted_p90"
+     ],
+     "score": 98.50746268656717,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Goal threat": {
+     "members": [
+      "np_shots_p90",
+      "np_xg_p90"
+     ],
+     "score": 98.50746268656717,
+     "score_status": "ok"
+    },
+    "Passing": {
+     "members": [
+      "long_pass_completion_pct"
+     ],
+     "score": 63.43283582089553,
+     "score_status": "ok"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 86.56716417910448,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "complete",
+   "key": {
+    "competition_id": 11,
+    "player_id": 4926,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 220
+   },
+   "player_name": "Francisco Román Alarcón Suárez",
+   "position_group": "DM-CM",
+   "why": "Isco: the largest |z| of the season (DM-CM box_entries_carry_p90, ≈ 13.7), stored uncapped"
+  },
+  {
+   "cells": {
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 44.07894736842105,
+     "value": 1.5419936264263443,
+     "weight": 0.07142857142857142,
+     "z": -0.06745155655767293,
+     "z_median": 1.586995542238575,
+     "z_scale": 0.6671738668291949,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 34.868421052631575,
+     "value": 0.4934379604564301,
+     "weight": 0.07142857142857142,
+     "z": -0.4427480953945318,
+     "z_median": 0.6990795466802691,
+     "z_scale": 0.4644663373212079,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 8.552631578947368,
+     "value": 3.330706233080903,
+     "weight": 0.017857142857142856,
+     "z": -1.4971234122348442,
+     "z_median": 4.751989349964273,
+     "z_scale": 0.9493426562354913,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "blocks_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 20.394736842105264,
+     "value": 1.1719151560840215,
+     "weight": 0.017857142857142856,
+     "z": -0.7339210640720645,
+     "z_median": 1.575423260582453,
+     "z_scale": 0.5497976884048262,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 44.07894736842105,
+     "value": 1.048555665969914,
+     "weight": 0.03571428571428571,
+     "z": -0.1425713247189322,
+     "z_median": 1.1416111371840085,
+     "z_scale": 0.6526941613087052,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 28.289473684210524,
+     "value": 0.8635164307987527,
+     "weight": 0.047619047619047616,
+     "z": -0.559286084127534,
+     "z_median": 1.1433192742320486,
+     "z_scale": 0.5002857238434211,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 44.07894736842105,
+     "value": 0.5551177055134839,
+     "weight": 0.017857142857142856,
+     "z": -0.07874167472321156,
+     "z_median": 0.5803407307211953,
+     "z_scale": 0.32032624777633906,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "lower_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 5.921052631578947,
+     "value": 0.5551177055134839,
+     "weight": 0.017857142857142856,
+     "z": -0.9370432364100515,
+     "z_median": 1.1198825291189545,
+     "z_scale": 0.6027094606318983,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 38.81578947368421,
+     "value": 2.960627762738581,
+     "weight": 0.03571428571428571,
+     "z": -0.35724267355823225,
+     "z_median": 3.3642684758911323,
+     "z_scale": 1.12987821172701,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 1.9736842105263157,
+     "value": 0.8018366857416991,
+     "weight": 0.047619047619047616,
+     "z": -1.0654896678846475,
+     "z_median": 2.029094695825651,
+     "z_scale": 1.1518253504235931,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_committed_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 0.6578947368421052,
+     "value": 0.1850392351711613,
+     "weight": 0.017857142857142856,
+     "z": -1.7417794665685025,
+     "z_median": 1.053157021399323,
+     "z_scale": 0.4984085545218015,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 62.5,
+     "value": 1.7270328615975055,
+     "weight": 0.03571428571428571,
+     "z": 0.3127277694162378,
+     "z_median": 1.540520330047972,
+     "z_scale": 0.5964054036444939,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "interceptions_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 26.973684210526315,
+     "value": 0.5551177055134839,
+     "weight": 0.017857142857142856,
+     "z": -0.46462141300436316,
+     "z_median": 0.6810903566917343,
+     "z_scale": 0.2711296717120255,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "below_min_attempts",
+     "n_local": null,
+     "pct_local": null,
+     "value": 0.4583333333333333,
+     "weight": null,
+     "z": null,
+     "z_median": null,
+     "z_scale": null,
+     "z_scale_method": null,
+     "z_status": "below_min_attempts"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 4.605263157894736,
+     "value": 1.6036733714833982,
+     "weight": 0.14285714285714285,
+     "z": -1.3540545643738908,
+     "z_median": 4.6339340456466545,
+     "z_scale": 2.2379162213189217,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_on_target_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 98.02631578947368,
+     "value": 1.356954391255183,
+     "weight": 0.07142857142857142,
+     "z": 2.4572752973846645,
+     "z_median": 0.6040948683818232,
+     "z_scale": 0.3063798035468983,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 91.44736842105263,
+     "value": 2.837268272624473,
+     "weight": 0.07142857142857142,
+     "z": 1.5029368603338906,
+     "z_median": 1.8248816112969366,
+     "z_scale": 0.6736055838717177,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_key_passes_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 25.657894736842106,
+     "value": 0.9251961758558066,
+     "weight": 0.14285714285714285,
+     "z": -0.5691038245315063,
+     "z_median": 1.1987297625150815,
+     "z_scale": 0.48063916436416726,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 1.9736842105263157,
+     "value": 9.375321248672172,
+     "weight": 0.017857142857142856,
+     "z": -1.27918430936594,
+     "z_median": 15.492030646911374,
+     "z_scale": 4.781726412256497,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 16.447368421052634,
+     "value": 7.03149093650413,
+     "weight": 0.03571428571428571,
+     "z": -0.8824826353741706,
+     "z_median": 9.606746604778213,
+     "z_scale": 2.9181941548143664,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 12.5,
+     "value": 2.343830312168043,
+     "weight": 0.047619047619047616,
+     "z": -1.0077003176773784,
+     "z_median": 3.831013782921927,
+     "z_scale": 1.4758191941247507,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 76,
+     "pct_local": 5.921052631578947,
+     "value": 0.7401569406846452,
+     "weight": 0.017857142857142856,
+     "z": -1.1022402003196448,
+     "z_median": 1.474024741360791,
+     "z_scale": 0.6657966207940224,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 34.868421052631575,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "box_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 30.263157894736842,
+     "score_status": "ok"
+    },
+    "Creation": {
+     "members": [
+      "op_key_passes_p90"
+     ],
+     "score": 25.657894736842106,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Goal threat": {
+     "members": [
+      "np_shots_on_target_p90",
+      "np_shots_p90"
+     ],
+     "score": 94.73684210526315,
+     "score_status": "ok"
+    },
+    "Passing": {
+     "members": [],
+     "score": null,
+     "score_status": "no_directional_metric"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "final_third_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 14.254385964912279,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "partial",
+   "key": {
+    "competition_id": 2,
+    "player_id": 3668,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 1
+   },
+   "player_name": "Theo Walcott",
+   "position_group": "AM-Winger",
+   "why": "partial AM-Winger: long_pass_completion_pct below min_attempts, so Passing keeps long_passes_attempted_p90 at 1/7 and its score is null (no_directional_metric)"
+  },
+  {
+   "cells": {
+    "aerial_win_pct": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "below_min_attempts",
+     "n_local": null,
+     "pct_local": null,
+     "value": 0.48,
+     "weight": null,
+     "z": null,
+     "z_median": null,
+     "z_scale": null,
+     "z_scale_method": null,
+     "z_status": "below_min_attempts"
+    },
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 1.1363636363636365,
+     "value": 0.9576949836973574,
+     "weight": 0.08333333333333333,
+     "z": -1.547370050617362,
+     "z_median": 4.105449642456979,
+     "z_scale": 2.034261072523503,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 17.045454545454543,
+     "value": 0.8840261387975608,
+     "weight": 0.08333333333333333,
+     "z": -0.7443367495961564,
+     "z_median": 2.0382438652793624,
+     "z_scale": 1.5506660488119501,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 12.5,
+     "value": 1.8417211224949182,
+     "weight": 0.027777777777777776,
+     "z": -1.0511886614242558,
+     "z_median": 2.6774524568934996,
+     "z_scale": 0.7950345785372617,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "blocks_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 3.4090909090909087,
+     "value": 0.5893507591983739,
+     "weight": 0.027777777777777776,
+     "z": -1.2329950687326885,
+     "z_median": 1.126159230741497,
+     "z_scale": 0.4353695202486672,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 39.77272727272727,
+     "value": 0.6630196040981705,
+     "weight": 0.041666666666666664,
+     "z": -0.16117587490608204,
+     "z_median": 0.7225977031714934,
+     "z_scale": 0.3696465063896153,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 92.04545454545455,
+     "value": 1.105032673496951,
+     "weight": 0.05555555555555555,
+     "z": 1.8861816218478404,
+     "z_median": 0.47790550827045264,
+     "z_scale": 0.3324850364155913,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 14.772727272727273,
+     "value": 0.14733768979959347,
+     "weight": 0.027777777777777776,
+     "z": -1.0924337541277112,
+     "z_median": 0.589767185180966,
+     "z_scale": 0.4049943474463993,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 7.954545454545454,
+     "value": 0.5893507591983739,
+     "weight": 0.041666666666666664,
+     "z": -1.0899206762418074,
+     "z_median": 1.4348640993105837,
+     "z_scale": 0.7757567670223976,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 48.86363636363637,
+     "value": 0.9576949836973574,
+     "weight": 0.05555555555555555,
+     "z": -0.02880983919200657,
+     "z_median": 0.9686636046548138,
+     "z_scale": 0.3807248240559333,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_committed_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 1.1363636363636365,
+     "value": 0.36834422449898363,
+     "weight": 0.027777777777777776,
+     "z": -2.1289487791306168,
+     "z_median": 1.8201009938650117,
+     "z_scale": 0.6819124929623114,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 3.4090909090909087,
+     "value": 0.8103572938977639,
+     "weight": 0.041666666666666664,
+     "z": -1.6038242436889791,
+     "z_median": 2.0842352098053665,
+     "z_scale": 0.7942752586016144,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 87.5,
+     "value": 3.6834422449898363,
+     "weight": 0.08333333333333333,
+     "z": 2.3674546598465565,
+     "z_median": 1.8400291078248971,
+     "z_scale": 0.7786477048242257,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_on_target_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 48.86363636363637,
+     "value": 0.8103572938977639,
+     "weight": 0.08333333333333333,
+     "z": -0.10958338778354605,
+     "z_median": 0.8376422479291328,
+     "z_scale": 0.24898804995209062,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 53.40909090909091,
+     "value": 2.283734191893698,
+     "weight": 0.08333333333333333,
+     "z": 0.031121886136908004,
+     "z_median": 2.260443803221328,
+     "z_scale": 0.7483604486538369,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 10.227272727272728,
+     "value": 0.6331360946745562,
+     "weight": 0.08333333333333333,
+     "z": -0.9049395602348369,
+     "z_median": 0.7072689630988347,
+     "z_scale": 0.08192024272321631,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 3.4090909090909087,
+     "value": 8.692923698176013,
+     "weight": 0.027777777777777776,
+     "z": -1.7313972694862976,
+     "z_median": 15.756898680121711,
+     "z_scale": 4.079927297125498,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 3.4090909090909087,
+     "value": 1.326039208196341,
+     "weight": 0.041666666666666664,
+     "z": -0.992460043480405,
+     "z_median": 3.6694222111691133,
+     "z_scale": 2.3611862445916594,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 78.4090909090909,
+     "value": 2.0627276571943085,
+     "weight": 0.05555555555555555,
+     "z": 0.945582380853821,
+     "z_median": 1.5095353463560173,
+     "z_scale": 0.5850281498887299,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 7.954545454545454,
+     "value": 0.29467537959918694,
+     "weight": 0.027777777777777776,
+     "z": -0.9998402115501746,
+     "z_median": 0.7676521376180327,
+     "z_scale": 0.4730523463199506,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 17.045454545454543,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "box_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 21.59090909090909,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Goal threat": {
+     "members": [
+      "np_shots_on_target_p90",
+      "np_shots_p90"
+     ],
+     "score": 51.13636363636364,
+     "score_status": "ok"
+    },
+    "Passing": {
+     "members": [
+      "pass_completion_pct"
+     ],
+     "score": 10.227272727272728,
+     "score_status": "ok"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "final_third_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 73.10606060606061,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "partial",
+   "key": {
+    "competition_id": 12,
+    "player_id": 19846,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 230
+   },
+   "player_name": "Antonio Di Natale",
+   "position_group": "ST",
+   "why": "partial ST: aerial_win_pct below min_attempts; Aerial keeps aerials_won/lost and its score uses aerials_won_p90 only"
+  },
+  {
+   "cells": {
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 37.3134328358209,
+     "value": 1.2000000000000002,
+     "weight": 0.07142857142857142,
+     "z": -0.46481728114643023,
+     "z_median": 1.4992252066115703,
+     "z_scale": 0.6437480247583695,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 5.970149253731343,
+     "value": 0.5599999999999999,
+     "weight": 0.07142857142857142,
+     "z": -1.3218207811679543,
+     "z_median": 1.4548857787042158,
+     "z_scale": 0.677009918026481,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 38.80597014925373,
+     "value": 5.12,
+     "weight": 0.017857142857142856,
+     "z": -0.22692385454349312,
+     "z_median": 5.362261817773031,
+     "z_scale": 1.0675907927810993,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "blocks_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 4.477611940298507,
+     "value": 1.04,
+     "weight": 0.017857142857142856,
+     "z": -1.8083753180463538,
+     "z_median": 1.899323443609956,
+     "z_scale": 0.47519087162631196,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 91.04477611940298,
+     "value": 0.48,
+     "weight": 0.02857142857142857,
+     "z": 2.6160751553793222,
+     "z_median": 0.13934333164745105,
+     "z_scale": 0.13021669796147536,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 85.07462686567165,
+     "value": 0.96,
+     "weight": 0.07142857142857142,
+     "z": 1.0112428304017367,
+     "z_median": 0.5921879050106673,
+     "z_scale": 0.363722820999593,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 26.865671641791046,
+     "value": 1.28,
+     "weight": 0.017857142857142856,
+     "z": -0.5419821929541881,
+     "z_median": 1.7657900473651877,
+     "z_scale": 0.8963210483305488,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "lower_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 55.223880597014926,
+     "value": 1.6,
+     "weight": 0.017857142857142856,
+     "z": 0.10050695279948868,
+     "z_median": 1.549038544286247,
+     "z_scale": 0.5070440829643007,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 71.64179104477611,
+     "value": 1.6,
+     "weight": 0.02857142857142857,
+     "z": 0.5629974894303647,
+     "z_median": 1.2143407864302234,
+     "z_scale": 0.6850105387858532,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 44.776119402985074,
+     "value": 1.2000000000000002,
+     "weight": 0.02857142857142857,
+     "z": -0.1007843820998149,
+     "z_median": 1.2658227848101267,
+     "z_scale": 0.653105009315202,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_committed_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 20.8955223880597,
+     "value": 1.2000000000000002,
+     "weight": 0.017857142857142856,
+     "z": -0.7472709630376463,
+     "z_median": 1.5734863745201628,
+     "z_scale": 0.4998004646158679,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 0.0,
+     "value": 0.32,
+     "weight": 0.02857142857142857,
+     "z": -1.4439288104959742,
+     "z_median": 1.0228700177456982,
+     "z_scale": 0.4867760880152185,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "interceptions_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 83.5820895522388,
+     "value": 2.08,
+     "weight": 0.017857142857142856,
+     "z": 1.5776196978794765,
+     "z_median": 1.3084969813830472,
+     "z_scale": 0.4890297830674605,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 22.388059701492537,
+     "value": 0.6162162162162163,
+     "weight": 0.047619047619047616,
+     "z": -0.7614270082153335,
+     "z_median": 0.6917293233082706,
+     "z_scale": 0.09917313974591652,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 98.50746268656717,
+     "value": 14.879999999999999,
+     "weight": 0.047619047619047616,
+     "z": 2.5749314354142183,
+     "z_median": 7.860597127647911,
+     "z_scale": 2.726054284712597,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 89.55223880597015,
+     "value": 1.76,
+     "weight": 0.07142857142857142,
+     "z": 1.7791241762744257,
+     "z_median": 0.8277361277556367,
+     "z_scale": 0.524001575986995,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_xg_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 64.17910447761194,
+     "value": 0.06801015216,
+     "weight": 0.07142857142857142,
+     "z": 0.4973383141027574,
+     "z_median": 0.049499991978468875,
+     "z_scale": 0.03721844799937665,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_key_passes_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 86.56716417910447,
+     "value": 1.04,
+     "weight": 0.07142857142857142,
+     "z": 0.9227793083543998,
+     "z_median": 0.6934828248537097,
+     "z_scale": 0.3755146783300087,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_xg_assisted_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 92.53731343283582,
+     "value": 0.114158272584,
+     "weight": 0.07142857142857142,
+     "z": 2.362931735804856,
+     "z_median": 0.044974278068194866,
+     "z_scale": 0.02927887990477214,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 5.970149253731343,
+     "value": 13.040000000000001,
+     "weight": 0.017857142857142856,
+     "z": -1.481271681085174,
+     "z_median": 18.965247688390583,
+     "z_scale": 4.000108666122455,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 70.1492537313433,
+     "value": 7.6000000000000005,
+     "weight": 0.02857142857142857,
+     "z": 0.4257338380871447,
+     "z_median": 6.5146445456092135,
+     "z_scale": 2.549375589376155,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 76.11940298507463,
+     "value": 6.32,
+     "weight": 0.07142857142857142,
+     "z": 0.6859880317629066,
+     "z_median": 5.2952139646498475,
+     "z_scale": 1.493883257287414,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 23.88059701492537,
+     "value": 1.76,
+     "weight": 0.017857142857142856,
+     "z": -0.9775258047953335,
+     "z_median": 2.63441091644785,
+     "z_scale": 0.8945144078635624,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "team_pass_share": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 64.17910447761194,
+     "value": 0.12684124386252046,
+     "weight": 0.047619047619047616,
+     "z": 0.49315761780285167,
+     "z_median": 0.11962114125350795,
+     "z_scale": 0.014640557802148511,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 5.970149253731343,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "box_entries_carry_p90",
+      "final_third_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 68.65671641791046,
+     "score_status": "ok"
+    },
+    "Creation": {
+     "members": [
+      "op_key_passes_p90",
+      "op_xg_assisted_p90"
+     ],
+     "score": 89.55223880597015,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Goal threat": {
+     "members": [
+      "np_shots_p90",
+      "np_xg_p90"
+     ],
+     "score": 76.86567164179104,
+     "score_status": "ok"
+    },
+    "Passing": {
+     "members": [
+      "long_pass_completion_pct"
+     ],
+     "score": 22.388059701492537,
+     "score_status": "ok"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 80.59701492537314,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "complete",
+   "key": {
+    "competition_id": 2,
+    "player_id": 3057,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 37
+   },
+   "player_name": "Jonjo Shelvey",
+   "position_group": "DM-CM",
+   "why": "D3 outsider (Swansea/Newcastle): scored against a local population without him, so fouls_won_p90 local is exactly 0"
+  },
+  {
+   "cells": {
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 50.0,
+     "value": 1.7418405175546996,
+     "weight": 0.1,
+     "z": 0.0,
+     "z_median": 1.7418405175546996,
+     "z_scale": 0.4407358964196458,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 38.13559322033898,
+     "value": 3.1647524896416366,
+     "weight": 0.1,
+     "z": -0.32315906216845713,
+     "z_median": 3.406311060510485,
+     "z_scale": 0.7474912485756885,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 14.40677966101695,
+     "value": 2.1098349930944247,
+     "weight": 0.04,
+     "z": -1.3390227936739596,
+     "z_median": 3.1178906122771264,
+     "z_scale": 0.752829319967614,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 8.47457627118644,
+     "value": 0.0,
+     "weight": 0.06666666666666667,
+     "z": -1.1562572748367983,
+     "z_median": 0.10983311468407725,
+     "z_scale": 0.09499020423424347,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 29.66101694915254,
+     "value": 5.98604346877953,
+     "weight": 0.04,
+     "z": -0.386358467576675,
+     "z_median": 6.4679730662983435,
+     "z_scale": 1.247363880858057,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "lower_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 4.23728813559322,
+     "value": 0.1717307552518718,
+     "weight": 0.04,
+     "z": -1.252509217186886,
+     "z_median": 0.5011717209215991,
+     "z_scale": 0.26302478348993397,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 39.83050847457627,
+     "value": 0.2698626153957985,
+     "weight": 0.05,
+     "z": -0.11487719502488503,
+     "z_median": 0.2967766755516474,
+     "z_scale": 0.2342854919988141,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 9.322033898305085,
+     "value": 0.07359889510794505,
+     "weight": 0.05,
+     "z": -0.7250866321207765,
+     "z_median": 0.18777601335296093,
+     "z_scale": 0.15746686421602318,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 5.932203389830509,
+     "value": 0.8586537762593588,
+     "weight": 0.06666666666666667,
+     "z": -1.1452978340084319,
+     "z_median": 1.7389977881168484,
+     "z_scale": 0.76865945758089,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 43.22033898305085,
+     "value": 0.3925274405757069,
+     "weight": 0.05,
+     "z": -0.22847324831501928,
+     "z_median": 0.43861786636775674,
+     "z_scale": 0.20173226463914196,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 26.27118644067797,
+     "value": 0.5542168674698795,
+     "weight": 0.1,
+     "z": -0.8218697471058046,
+     "z_median": 0.6556016597510373,
+     "z_scale": 0.12335871059639564,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 0.847457627118644,
+     "value": 4.072472195972959,
+     "weight": 0.1,
+     "z": -2.3018562461369787,
+     "z_median": 8.905859530052384,
+     "z_scale": 2.099778099605878,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 29.66101694915254,
+     "value": 6.697499454822999,
+     "weight": 0.04,
+     "z": -0.5514774993197377,
+     "z_median": 8.043734080109633,
+     "z_scale": 2.4411415278905317,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 4.23728813559322,
+     "value": 2.2815657483462966,
+     "weight": 0.05,
+     "z": -1.0079453801203146,
+     "z_median": 5.2844960156577665,
+     "z_scale": 2.9792589226938286,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 5.932203389830509,
+     "value": 1.4229119720869376,
+     "weight": 0.06666666666666667,
+     "z": -0.9410847648634967,
+     "z_median": 2.7074388854814684,
+     "z_scale": 1.3649428418712632,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 59,
+     "pct_local": 31.35593220338983,
+     "value": 1.3002471469070291,
+     "weight": 0.04,
+     "z": -0.5100682267968429,
+     "z_median": 1.5383584140496698,
+     "z_scale": 0.4668223869538906,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 38.13559322033898,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "final_third_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 6.779661016949152,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Passing": {
+     "members": [
+      "long_pass_completion_pct"
+     ],
+     "score": 26.27118644067797,
+     "score_status": "ok"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "final_third_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 6.779661016949152,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "complete",
+   "key": {
+    "competition_id": 2,
+    "player_id": 3813,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 22
+   },
+   "player_name": "Wes Morgan",
+   "position_group": "CB",
+   "why": "plain CB"
+  },
+  {
+   "cells": {
+    "aerials_lost_p90": {
+     "direction": "style",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 0.6172839506172839,
+     "value": 0.34984598531118033,
+     "weight": 0.07142857142857142,
+     "z": -1.9343102623928983,
+     "z_median": 1.9173866729790507,
+     "z_scale": 0.8103874120632001,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "aerials_won_p90": {
+     "direction": "higher_better",
+     "family": "Aerial",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 0.6172839506172839,
+     "value": 0.22262926337984204,
+     "weight": 0.07142857142857142,
+     "z": -1.1404019116238013,
+     "z_median": 0.963534085253045,
+     "z_scale": 0.6496874604657928,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "ball_recoveries_p90": {
+     "direction": "higher_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 3.0864197530864197,
+     "value": 2.703355341040939,
+     "weight": 0.017857142857142856,
+     "z": -1.8573638311758496,
+     "z_median": 4.662713573982945,
+     "z_scale": 1.0549135285473854,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "blocks_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 0.6172839506172839,
+     "value": 0.34984598531118033,
+     "weight": 0.017857142857142856,
+     "z": -2.1363874620843277,
+     "z_median": 1.638035634459416,
+     "z_scale": 0.6029756642980093,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_carry_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 80.8641975308642,
+     "value": 1.590209024141729,
+     "weight": 0.03571428571428571,
+     "z": 0.888559591031466,
+     "z_median": 0.9719839908519156,
+     "z_scale": 0.695760914101619,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "box_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 99.38271604938271,
+     "value": 5.025060516287863,
+     "weight": 0.047619047619047616,
+     "z": 6.704693848056721,
+     "z_median": 1.1382061093456124,
+     "z_scale": 0.5797213854990279,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "clearances_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 0.6172839506172839,
+     "value": 0.0,
+     "weight": 0.017857142857142856,
+     "z": -1.376121214234604,
+     "z_median": 0.5400945165403945,
+     "z_scale": 0.3924759759196025,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "lower_better",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 0.6172839506172839,
+     "value": 0.1272167219313383,
+     "weight": 0.017857142857142856,
+     "z": -1.9623421646527037,
+     "z_median": 1.183608339616686,
+     "z_scale": 0.538332018092425,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbles_attempted_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 98.14814814814815,
+     "value": 7.6648074963631325,
+     "weight": 0.03571428571428571,
+     "z": 3.976840134929507,
+     "z_median": 3.4484960725461398,
+     "z_scale": 1.0602164735726123,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "final_third_entries_pass_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 98.14814814814815,
+     "value": 5.851969208841563,
+     "weight": 0.047619047619047616,
+     "z": 3.1863577738276834,
+     "z_median": 2.039593066697321,
+     "z_scale": 1.1964683230045885,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_committed_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 1.8518518518518516,
+     "value": 0.4452585267596841,
+     "weight": 0.017857142857142856,
+     "z": -1.4979651912125624,
+     "z_median": 1.4380258213415655,
+     "z_scale": 0.6627439011304816,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "fouls_won_p90": {
+     "direction": "style",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 66.0493827160494,
+     "value": 2.544334438626766,
+     "weight": 0.03571428571428571,
+     "z": 0.5986722987965275,
+     "z_median": 2.00503579592263,
+     "z_scale": 0.9008244473449892,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "interceptions_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 1.8518518518518516,
+     "value": 0.22262926337984204,
+     "weight": 0.017857142857142856,
+     "z": -2.3684151214480336,
+     "z_median": 1.1207612235774953,
+     "z_scale": 0.37921222173608704,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_pass_completion_pct": {
+     "direction": "higher_better",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 77,
+     "pct_local": 88.96103896103897,
+     "value": 0.6834532374100719,
+     "weight": 0.07142857142857142,
+     "z": 1.0414535412786203,
+     "z_median": 0.5254237288135594,
+     "z_scale": 0.15173937418513697,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "long_passes_attempted_p90": {
+     "direction": "style",
+     "family": "Passing",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 94.44444444444444,
+     "value": 8.936974715676516,
+     "weight": 0.07142857142857142,
+     "z": 2.388161597385703,
+     "z_median": 4.7674731339967495,
+     "z_scale": 1.7459042915035898,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_on_target_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 98.14814814814815,
+     "value": 2.2262926337984204,
+     "weight": 0.07142857142857142,
+     "z": 5.272776328163023,
+     "z_median": 0.6062817526033627,
+     "z_scale": 0.3072405845365057,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "np_shots_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 98.14814814814815,
+     "value": 4.802431252908021,
+     "weight": 0.07142857142857142,
+     "z": 4.6506581982453445,
+     "z_median": 1.725415014596314,
+     "z_scale": 0.6616302697696941,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "op_key_passes_p90": {
+     "direction": "higher_better",
+     "family": "Creation",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 95.67901234567901,
+     "value": 2.0672717313842477,
+     "weight": 0.14285714285714285,
+     "z": 1.9744598163791687,
+     "z_median": 1.1553626555001988,
+     "z_scale": 0.46185243595199554,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "pressures_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 1.8518518518518516,
+     "value": 6.074598472221404,
+     "weight": 0.017857142857142856,
+     "z": -2.200387151046603,
+     "z_median": 16.564273238384068,
+     "z_scale": 4.7671950643655165,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_carries_p90": {
+     "direction": "higher_better",
+     "family": "Carrying",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 98.14814814814815,
+     "value": 17.206061641213505,
+     "weight": 0.03571428571428571,
+     "z": 2.4808907496097,
+     "z_median": 9.630040882249029,
+     "z_scale": 3.053750254885813,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "progressive_passes_p90": {
+     "direction": "higher_better",
+     "family": "Progression",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 99.38271604938271,
+     "value": 9.604862505816042,
+     "weight": 0.047619047619047616,
+     "z": 3.7308678372133937,
+     "z_median": 4.03484715368383,
+     "z_scale": 1.4929543460570525,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "tackles_attempted_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 81,
+     "pct_local": 1.8518518518518516,
+     "value": 0.34984598531118033,
+     "weight": 0.017857142857142856,
+     "z": -1.8424254336586805,
+     "z_median": 1.474453053005222,
+     "z_scale": 0.6103948887965587,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    }
+   },
+   "dimensions": {
+    "Aerial": {
+     "members": [
+      "aerials_won_p90"
+     ],
+     "score": 0.6172839506172839,
+     "score_status": "ok"
+    },
+    "Carrying": {
+     "members": [
+      "box_entries_carry_p90",
+      "progressive_carries_p90"
+     ],
+     "score": 89.50617283950618,
+     "score_status": "ok"
+    },
+    "Creation": {
+     "members": [
+      "op_key_passes_p90"
+     ],
+     "score": 95.67901234567901,
+     "score_status": "ok"
+    },
+    "Defending": {
+     "members": [],
+     "score": null,
+     "score_status": "pending_possession_adjustment"
+    },
+    "Goal threat": {
+     "members": [
+      "np_shots_on_target_p90",
+      "np_shots_p90"
+     ],
+     "score": 98.14814814814815,
+     "score_status": "ok"
+    },
+    "Passing": {
+     "members": [
+      "long_pass_completion_pct"
+     ],
+     "score": 88.96103896103897,
+     "score_status": "ok"
+    },
+    "Progression": {
+     "members": [
+      "box_entries_pass_p90",
+      "final_third_entries_pass_p90",
+      "progressive_passes_p90"
+     ],
+     "score": 98.97119341563786,
+     "score_status": "ok"
+    }
+   },
+   "dna_status": "complete",
+   "key": {
+    "competition_id": 11,
+    "player_id": 5503,
+    "season_id": 27,
+    "source": "statsbomb",
+    "team_id": 217
+   },
+   "player_name": "Lionel Andrés Messi Cuccittini",
+   "position_group": "AM-Winger",
+   "why": "face-validity AM-Winger"
+  }
+ ],
+ "season_counts": {
+  "dna_incomplete": 0,
+  "iqr_scale": 0,
+  "max_abs_z": {
+   "key": [
+    4926,
+    220,
+    11,
+    27,
+    "statsbomb"
+   ],
+   "metric": "box_entries_carry_p90",
+   "value": 13.658146580351891
+  },
+  "no_directional_metric": 30,
+  "pairs_checked": 156961,
+  "partial": 32,
+  "rows": 1233,
+  "scale_methods": [
+   "mad"
+  ],
+  "zero_spread": 0
+ },
+ "season_parquet_sha256": "9c3730cbf573e16b19d81792a8ffce7bf942d307ad4f6defb0e03065d182fc01"
+}

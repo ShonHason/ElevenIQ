@@ -1091,3 +1091,19 @@ The four open M4f items in §10.8 and plan 005 M4f were decided from the 2015/16
 - **Neighbours:** same group, primary scored rows, any pool league, excluding the same `player_id`; k = `config.DNA_NEIGHBOURS_K` (10).
 - **Rows:** primary only (`cohort_role = "primary"`); D5 second-group rows never enter.
 
+
+### 12.7 Spike (M4f2, 2026-10-06)
+`spikes/m4f_dna_reference.py` re-implements §12 without eleveniq. Row status and the D3-deduped local populations come from the M4d spike (a sibling-spike import, proven equal to the M4d output by its `--check-output`). Medians, quantiles, z, weights, dimension scores and distances are plain Python. The DNA lists, families and directions are written out, and a fast test (M4f2 code chunk) asserts they equal the registry.
+- **Output (proposed; the spike's `--check-output` fixes it).** Two long files from one build, both carrying `registry_version`, `measurement_source`, `dna_percentile_basis`, `season_parquet_sha256`, `percentiles_parquet_sha256` and `polars_version`:
+  - `player_dna.parquet`: one row per (season key, DNA metric), sorted by (key, metric). Columns: `position_group`, `family`, `direction`, `value`, `pct_local`, `n_local`, `metric_status` (the local cell status), `z`, `z_median`, `z_scale`, `z_scale_method` (`mad` / `iqr`), `z_status` (`ok`, `zero_spread`, or the missing reason), `weight` (the row's own weights; null when missing), `dna_status`.
+  - `player_dna_dimensions.parquet`: one row per (season key, DNA family of the group), sorted by (key, family): `position_group`, `score`, `score_status` (`ok`, `no_directional_metric`, `pending_possession_adjustment`), `members` (list of the metrics used, in metric-name order; empty when null), `dna_status`.
+  - `pct_local` and `n_local` are copied from `player_season_percentiles.parquet`, never re-ranked; the check compares them exactly.
+- **Details decided by default:**
+  - the IQR fallback uses linear-interpolated quartiles (Hyndman–Fan type 7); it never triggers in 2015/16;
+  - D3 outsiders are DNA rows, scored against the population that excludes them (Shelvey `fouls_won_p90` local 0);
+  - a `dna_incomplete` row keeps its vector, weights and dimension scores; only similarity refuses it;
+  - dimension scores exist only for the group's DNA families.
+- **Fixture** `tests/fixtures/m4f_dna/reference.json`: 8 hand-picked rows, each claim asserted by the spike. Kanté, Busquets (Defending withheld, his low defensive percentiles stay in the vector), Isco, Walcott (partial AM-Winger: `long_passes_attempted_p90` weighs 1/7, Passing `no_directional_metric`), Di Natale (partial ST: Aerial score from `aerials_won_p90` only), Shelvey, Morgan, Messi.
+- **Season counts (asserted):** 1,233 primary scored rows; 32 `partial`, 0 `dna_incomplete`; 30 `no_directional_metric` Passing scores; 0 `zero_spread`, and every scale is MAD; the largest |z| is Isco's DM-CM `box_entries_carry_p90`, 13.658; row weights sum to 1 within 1e-12; d(A, B) = d(B, A) exactly, and pair weights sum to 1, over all 156,961 same-group pairs.
+- **Isco is a DM-CM (user, 2026-10-06).** Real Madrid's 4-3-3 left-centre-mid maps to DM-CM, and he is the |z| 13.7 outlier: the DM-CM group mixes holding 6s and advanced 8s. M4f3 adds his top-10 neighbours to the face-validity lists; M4g evaluates whether DM-CM needs a role split. No change now.
+- **Self-check:** the spike's own result written in the output schema (percentiles copied from the M4d output) passes `--check-output`: 25,121 vector cells, 7,963 dimension scores. A 1e-6 error planted in one z fails it.
