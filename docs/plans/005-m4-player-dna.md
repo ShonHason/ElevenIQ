@@ -519,7 +519,29 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
     - Either way the decision is recorded in ADR 004.
 - **Mixed-role z extremes** (stats-reviewer C1, user 2026-10-06; ADR 004 §12.8): report the main-group minute share next to every row with |z| > 5 (34.4% of them are below 0.70, against 10.0% of the other rows).
 - **Teammates among neighbours** (stats-reviewer, M4f3 review, user 2026-10-07): under family weights, CB and FB-WB top-10 neighbours are teammates 1.96× and 2.04× as often as a uniform draw (47 vs 24.0, 47 vs 23.1), AM-Winger 1.51×, DM-CM 0.96×, ST 0.75×; same-league neighbours run at 0.80–0.95×, so local percentiles remove league effects but not team style. Re-run this count after the possession / team-style work (same pass criteria applied to all groups at once); report only.
-- **DM-CM role split** (user, 2026-10-06): DM-CM mixes holding 6s and advanced 8s; Isco (Real Madrid's 4-3-3 left-centre-mid, mapped to DM-CM) is the |z| 13.7 outlier on `box_entries_carry_p90` (ADR 004 §12.7). Evaluate whether DM-CM needs a role split, using the M4f3 neighbours; no change before then.
+- **DM-CM role split** (user, 2026-10-06): DM-CM mixes holding 6s and advanced 8s; Isco (Real Madrid's 4-3-3 left-centre-mid, mapped to DM-CM) is the |z| 13.7 outlier on `box_entries_carry_p90` (ADR 004 §12.7). Evaluate whether DM-CM needs a role split, using the M4f3 neighbours and the DM-CM style map (below); no change before then.
+- **Style map per group (diagnostic; user, 2026-10-07).** A 2D map of each group's DNA vectors, for reading the main axes of style and for the DM-CM role split. Report only: it changes no rule, weight or neighbour.
+  - **Method:** PCA in scikit-learn (no new dependency, deterministic: `svd_solver="full"`) on the M4f vectors: local percentiles, primary scored rows, one fit per group.
+    - **Family weights:** each metric's percentile / 100 is multiplied by √(its family weight), so Euclidean distance on the map's input equals the M4f weighted squared distance (ADR 004 §12.6). Multiplying by the weight itself would square it.
+    - **No standardisation**, which would undo the weights.
+    - **Fixed sign:** each component's sign is set so that its largest absolute loading is positive. Otherwise a re-run could mirror the map.
+    - **Partial rows** (32 in 2015/16) are left out of the fit and the plot, because PCA needs every metric and §12.2 forbids imputation. The page lists them by name.
+  - **Page:** a static, self-contained HTML/SVG per group, like the comparison page (no server, no external script).
+    - Each point is a player-season; hovering shows name and team (SVG `<title>`).
+    - The face-validity players are labelled: Kanté, Busquets, Özil, Payet, Messi, Neymar, Stones, Morgan and Isco.
+    - **Axes are made readable:**
+      - the variance explained by PC1 and PC2 (and their sum, shown prominently);
+      - the top-loading metrics per axis with their signs, so an axis can be read as, say, "distributor vs ball-winner";
+      - the axis names are the user's reading of those loadings, never generated.
+    - **Stated on the page:** a 2D projection distorts distances, and the neighbour list (M4f) is authoritative. Two points close on the map need not be neighbours, and the reverse.
+  - **DM-CM role split.** The 6 / 8 label comes from the data, not from the map: each row's share of DM-CM minutes in the StatsBomb lineup positions "Defensive Midfield" (Center / Left / Right Defensive Midfield) against "Center Midfield" (Center / Left / Right Center Midfield).
+    - Rows with a share ≥ 0.7 either way are labelled 6 or 8; the rest are mixed.
+    - The points are coloured by that label. The report gives each label's mean and spread on PC1 and PC2, and their overlap.
+    - The question "do 6s and 8s form separate regions?" is answered from those figures and the M4f3 neighbours together, never from the picture alone.
+    - The share needs per-position minutes, which the season parquet does not store (it stores group minutes only). The diagnostic spike reads them from the raw lineups. A new pipeline column waits until a split is decided.
+  - **Later options, not M4g:**
+    - UMAP: a new dependency, non-deterministic without a fixed seed, and its distances cannot be read;
+    - the style map as a product feature, to consider in M5.
 Analyses in `spikes/m4_validation.py`, written up in `docs/reviews/m4-validation.md`:
 - threshold sensitivity (from D1);
 - split-half reliability per metric;
