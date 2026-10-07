@@ -466,9 +466,15 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - The D17 drops are applied through the registry, not in this code.
 
 ### M4g — Football validation (brief §20)
+- **Detailed specs, order and user decisions (M4g0, 2026-10-07):** "M4g — detailed plan" below; it supersedes the items here where they differ. Added there:
+  - minute-bucket reliability (report only);
+  - `dribbled_past_p90` → `style`, and the defensive duel success candidate;
+  - the Defending restore rule;
+  - the mover PASS rule, f̂ ≤ 0.5;
+  - the xPass leakage decision (start-based features).
 - **Multi-split reliability averaging** (stats-reviewer, user 2026-10-04): r_full averaged over many random match splits instead of one odd/even split, applied to all metrics at once (never to single boundary cells). Then re-derive the registry. It addresses the cells decided by < 0.001 at the 0.6 cut-off, e.g. CB `interceptions` 0.599849 and ST `np_xg` 0.599369 (ADR 004 §10.11).
 - **"Majority of leagues above the trigger" possession rule** (stats-reviewer M4c2b review, user 2026-10-04): evaluate a trigger that fires when most pool leagues' within-league |ρ| ≥ 0.4 (with the sign test), next to the current mean rule. Apply it to all metrics at once, never to single cells, then re-derive the registry and report every status change. It addresses ST `np_shots_on_target` (3 of 4 leagues above 0.4, mean 0.395) and ST `np_shots` (2 of 4, mean 0.372), where Serie A masks the others (ADR 004 §10.10).
-- **Mover stability check** (user, 2026-10-06): for players with two stints in a season, measure per DNA metric how much the value changes with the team, e.g. Koné `long_pass_completion_pct` 0.595 at Lorient → 0.319 at Sunderland. Applied to all DNA metrics at once; report only.
+- **Mover stability check** (user, 2026-10-06): for players with two stints in a season, measure per DNA metric how much the value changes with the team, e.g. Koné `long_pass_completion_pct` 0.595 at Lorient → 0.319 at Sunderland. Applied to all DNA metrics at once; report only. **Superseded (M4g0, 2026-10-07):** M4g3 defines a PASS rule (f̂ ≤ 0.5) that gates the Defending and Passing candidates; for current DNA metrics it stays a report.
   - **Then decide whether to restore the Passing dimension score** in CB, FB-WB, DM-CM and AM-Winger (user, 2026-10-07; ADR 004 §12.9). It is withheld (`pending_mover_stability`) because it rests on `long_pass_completion_pct` alone. The candidate replacements are pre-registered below.
 - **Passing pre-registration (user, 2026-10-07; revises the bullet above).** Cohorts are per source (CLAUDE.md), so the passing metric need not be the same in every source. It must, however, pass the same rules in every source. **The stats-reviewer reviews both specs before any code.**
   - **StatsBomb: xPass model and three derived metrics (user, 2026-10-07: the best StatsBomb Passing score the data supports).**
@@ -483,10 +489,10 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
       - `long_pass_completion_pct`'s role is decided with the outcome. If the new members pass, the Passing score no longer rests on it: it may stay in the vector, move to `style`, or move to display.
     - **Open spec items for the stats-reviewer, decided by default until then:**
       - Every pass gets an out-of-fold prediction (cross-fitting by match), so no pass is scored by a model that saw it. Calibration and AUC are reported on these held-out predictions.
-      - Calibration is also reported within each subset a metric uses (`under_pressure` passes, each position group, long passes). A model miscalibrated on pressured passes would shift every player's execution under pressure.
+      - Calibration is also reported within each subset a metric uses (`under_pressure` passes, each position group, long passes). **Superseded (M4g0):** the criterion subsets are height, body part, start third and `under_pressure`; position group and league are report only; long passes is not a subset (its length depends on the outcome). A model miscalibrated on pressured passes would shift every player's execution under pressure.
       - Open-play passes only (the `op_` convention: type ∉ `RESTART_TYPES`).
       - Completed means a null outcome. "Pass Offside" counts as incomplete. "Injury Clearance" and "Unknown" are dropped.
-      - The model is a logistic regression with spline terms (scikit-learn, no new dependency). A more flexible model only if calibration fails, and only with the reason recorded.
+      - The model is a logistic regression with spline terms (scikit-learn). A more flexible model only if calibration fails, and only with the reason recorded.
       - `min_attempts` uses the variance-components form, because these are continuous per-pass values (R1, as for `np_xg_per_shot`), not the beta-binomial.
     - **Known risk: the end location may leak the outcome.** The stats-reviewer decides the mitigation before any code (user, 2026-10-07). For an incomplete pass, the end location is where the ball was stopped (intercepted, blocked or out of play), not where it was aimed. Distance and end location may therefore partly encode the outcome. Ambition is the most exposed: a failed pass looks shorter and easier. Options include start location and direction only for the distance feature, or a sensitivity run without end-location features.
     - **Other rules to check:**
@@ -521,7 +527,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - **Teammates among neighbours** (stats-reviewer, M4f3 review, user 2026-10-07): under family weights, CB and FB-WB top-10 neighbours are teammates 1.96× and 2.04× as often as a uniform draw (47 vs 24.0, 47 vs 23.1), AM-Winger 1.51×, DM-CM 0.96×, ST 0.75×; same-league neighbours run at 0.80–0.95×, so local percentiles remove league effects but not team style. Re-run this count after the possession / team-style work (same pass criteria applied to all groups at once); report only.
 - **DM-CM role split** (user, 2026-10-06): DM-CM mixes holding 6s and advanced 8s; Isco (Real Madrid's 4-3-3 left-centre-mid, mapped to DM-CM) is the |z| 13.7 outlier on `box_entries_carry_p90` (ADR 004 §12.7). Evaluate whether DM-CM needs a role split, using the M4f3 neighbours and the DM-CM style map (below); no change before then.
 - **Style map per group (diagnostic; user, 2026-10-07).** A 2D map of each group's DNA vectors, for reading the main axes of style and for the DM-CM role split. Report only: it changes no rule, weight or neighbour.
-  - **Method:** PCA in scikit-learn (no new dependency, deterministic: `svd_solver="full"`) on the M4f vectors: local percentiles, primary scored rows, one fit per group.
+  - **Method:** PCA in scikit-learn (deterministic: `svd_solver="full"`) on the M4f vectors: local percentiles, primary scored rows, one fit per group.
     - **Family weights:** each metric's percentile / 100 is multiplied by √(its family weight), so Euclidean distance on the map's input equals the M4f weighted squared distance (ADR 004 §12.6). Multiplying by the weight itself would square it.
     - **No standardisation**, which would undo the weights.
     - **Fixed sign:** each component's sign is set so that its largest absolute loading is positive. Otherwise a re-run could mirror the map.
@@ -872,6 +878,289 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - `tests/test_registry.py`: schema; an independent re-check of every DNA and signature cell; derive == REGISTRY; rule-breaking fixtures; threshold edges.
   - `tests/test_registry_spec.py` (qa-tester, from the ADR text).
   - The plan's six rule-breaking fixtures were mutation-checked: each goes red when its guard is disabled. A tampered override fails the import.
+
+---
+
+## M4g — detailed plan (M4g0, 2026-10-07)
+
+**Goal:** turn the M4g items above into specs the stats-reviewer can review **before any code**, with every rule and threshold fixed before the data that it judges is computed. Report-only items stay report-only.
+
+### User decisions (2026-10-07)
+- **Order:** groups and registry come first, because every later measurement is per group and per DNA metric list. M4g1 → M4g6 below.
+- **A. Mover sample:**
+  - 450 nominal minutes per stint, same-group movers only, pooled across groups (never per group);
+  - the non-mover baseline is a within-team date split, with its halves trimmed to the movers' minutes;
+  - the threshold comes from the stats-reviewer in M4g0, and the user fixes it before any metric is computed.
+  - Counts (2015/16 outfield, both stints ≥ the floor):
+
+    | Floor | Movers | Same group | Cross-league |
+    |---|---|---|---|
+    | 900 | 6 | 5 | 3 |
+    | 600 | 22 | 19 | 8 |
+    | **450** | **29** | **24** | 12 |
+    | 300 | 42 | 36 | 19 |
+
+    The 24 same-group movers at 450, by group: AM-Winger 7, DM-CM 6, CB 5, ST 4, FB-WB 2 (corrected after the M4g0 review: the earlier 34 counted every stint group of the 29 movers). No player appears in two seasons.
+- **B. β out-of-sample: leave-one-league-out.** β̂ is fitted on 3 pool leagues and the criteria are tested on the 4th, rotating. This replaces "fitted on one season, tested on another": only 2015/16 is configured, and StatsBomb Open Data has no second full-league season.
+- **C. Majority-of-leagues trigger, fixed before the re-derive:**
+  - It fires when ≥ 3 of the 4 pool leagues have within-league |ρ| ≥ 0.4, and those qualifying leagues all share one sign. It is adopted as an OR with the mean rule. The §10.2 no-sign rule (|ρ| < 0.05) applies; the 4th league's sign is not tested (stats-reviewer, M4g0).
+  - It can only remove DNA cells. Per-league ρ has an SE of 0.16–0.18 for ST, so the rate of false triggers goes up; accepted.
+  - **Known beforehand (§10.10):** it flips ST `np_shots_on_target` (3 of 4 leagues ≥ 0.4) out of ST DNA, and not ST `np_shots` (2 of 4).
+  - **Multi-split r_full is adopted unconditionally.** It estimates the same quantity better and is not a new rule.
+- **D. Defending:**
+  - `dribbled_past_p90` → `style`. It rises with how often a player engages: within-group ρ with `tackles_attempted_p90` is 0.48 (CB), 0.55 (FB-WB), 0.48 (DM-CM) and 0.54 (AM-Winger). Local percentiles: Mascherano 88th dribbled past / 86th tackles attempted, Wes Morgan 4th / 31st. As `lower_better`, Defending would score Morgan 55 and Mascherano 32 (also stats-reviewer, ADR 004 §12.6).
+  - **New candidate: defensive duel success** = `tackles_won / (tackles_attempted + dribbled_past)`, `higher_better`, under the same rules (reliability, possession criteria, mover stability).
+    - **Denominator (user, 2026-10-07, after the M4g0 review):** `tackles_attempted + dribbled_past`, not `tackles_won + dribbled_past`, so a lost tackle counts as a failure.
+      - Lost tackles are 39.2% of attempts and are never linked to a Dribbled Past, so the two terms are disjoint.
+      - ρ with lost tackles per 90 is −0.10 to −0.27, against +0.04 to +0.16 for the other form.
+      - Denominators are 30–45% larger (medians 27–86).
+    - It covers all tackles, not only stopping dribblers: 33% of won tackles are against a dribble.
+    - **Known prior:** `tackle_success_pct` failed (no row meets `min_attempts`, r_full ≤ 0.36). The larger denominator may or may not rescue it.
+  - **Restore rule (amended by the user, 2026-10-07, after the M4g0 review):** a directional Defending member enters the score only if it passes all 4 possession criteria (M4g4) **and** the M4g3 mover rule. Untestable or inconclusive is not a pass.
+    - **Why:** Defending was withheld for team style (Barcelona's interception deficit), and the possession criteria do not test team style.
+    - Defending is restored in a group when ≥ 1 member passes. Otherwise it stays withheld, with a status saying which test failed (`possession_criteria_failed` / `mover_stability_failed`).
+    - These are new `score_status` values for Defending. They replace `pending_possession_adjustment` once M4g4 runs.
+    - `pending_mover_stability` stays Passing's code (§12.9) until M4g5. A Passing that fails then gets the same two failure codes.
+- **#9 minute-bucket reliability:** added, report only (M4g2).
+
+### M4g1 — Style map + DM-CM role split (spike, report only)
+- **Files:** `spikes/m4g_style_map.py` → `data/processed/reports/style_map_<group>.html`, written up in `docs/reviews/m4-validation.md`.
+- **Method** as in the M4g item list (the style map section). **Input:** `player_dna.parquet`, primary scored, complete rows.
+- **6 / 8 label:**
+  - **Source:** per-player-match position minutes from the raw lineups (`positions[]` from/to, the same clock as the pipeline's stint intervals, ADR 002 §31).
+  - **Definitions:**
+    - 6 = Center / Left / Right Defensive Midfield;
+    - 8 = Center / Left / Right Center Midfield;
+    - share = 6-minutes / (6-minutes + 8-minutes) for the row's team-season;
+    - ≥ 0.7 → 6, ≤ 0.3 → 8, otherwise mixed.
+  - **The slot label records formation more than role** (stats-reviewer, M4g0). A double pivot is coded Left / Right Defensive Midfield; a 4-4-2 or 4-3-3 is coded Left / Right Center Midfield.
+    - Examples: Kanté and Drinkwater are both 0.42, Yaya Touré 0.71 counts as a 6, Mousa Dembélé 0.78 as a 6, and Kroos 0.66.
+    - 37 of 100 teams have a DM-slot share ≥ 0.7.
+  - **So a second label is reported:**
+    - Center Defensive Midfield (a single pivot);
+    - Left / Right Defensive Midfield (a double pivot);
+    - Left / Right / Center Center Midfield.
+
+    Each label is assigned by ≥ 0.7 of the row's DM-CM minutes, mixed otherwise. A within-team contrast is reported too: the 6-share difference between teammates in the same season.
+  - **Check:** the 6 + 8 minutes reconcile with `minutes_dm_cm`, where those positions are DM-CM's only lineup positions; any gap is reported.
+- **Figures reported (the question is answered from these, never the picture):**
+  - counts per label; each label's mean and SD on PC1 and PC2; Cohen's d of 6 vs 8 on each;
+  - the overlap coefficient of the two histograms on 20 equal-width bins over the pooled range of each PC;
+  - **neighbour label purity:** for 6s and 8s, the share of their top-10 M4f neighbours (full vector, not the map) with the same label;
+    - b is the label's base rate over all rows, mixed included;
+    - the normalised lift = (purity − b) / (1 − b);
+  - Isco's, Busquets', Kanté's and Schneiderlin's labels and neighbour labels.
+- **Pre-registered reading (stats-reviewer, M4g0):** "6s and 8s form separate regions" requires both:
+  - a normalised lift ≥ 0.4 for both labels;
+  - |d| ≥ 1.0 on PC1 or PC2.
+
+  The earlier "purity ≥ 2× the base rate" could not pass: b(6) ≈ 0.48, so 2× needs a purity of 0.95 or more. The reading is applied to the 6 / 8 label and reported for the pivot label too.
+
+  The user decides the split; a split is its own chunk (ADR entry, `POSITION_GROUP_MAP`, cohorts, measurements, registry), before M4g2.
+
+### M4g2 — Reliability and trigger rules (measurements + registry; re-derive)
+- **Multi-split r_full:**
+  - **Split:** for each player-stint, its matches are assigned at random to two halves of equal size (odd count: the extra match goes at random).
+  - **Per split:** the method is the current one (half per-90s demeaned within league × group, pooled Pearson per group, Spearman-Brown).
+  - **Splits and seed:** K = 200 splits with `numpy.random.default_rng(20261007)`. K is raised if the Monte Carlo SE of any cell's mean r_full exceeds 0.002 (reported).
+  - **Stored:** the mean r_full over splits, the SD and the MC SE. The odd/even r_full is kept next to it for the before/after.
+  - Applies to every metric × group, ratios' split-half cross-checks and `team_pass_share` included.
+  - For ratios, the rows with attempts in both halves change per split; the n range is reported.
+  - **Limit (stats-reviewer, M4g0):** it removes split-assignment noise only. Sampling error over players (SE ≈ 0.04) remains, so cells near 0.6 stay fragile.
+- **Majority trigger (C):**
+  - the per-league ρ and sign are already measured; the rule goes into `analytics/registry.py`;
+  - a league with |ρ| < 0.05 has no sign (§10.2);
+  - both proxies are evaluated as for the mean rule.
+- **Minute-bucket reliability (#9, report only):**
+  - multi-split r_full per nominal-minutes bucket: 900–1350, 1350–2000 and ≥ 2000, per metric × group, with the n of each bucket;
+  - also pooled over groups per metric;
+  - **No status change follows from it.** A gate or note change needs a new ADR entry.
+  - Buckets select on minutes, which go with role and stability, so the spread between players also differs by bucket. ST buckets of about 50 rows have an SE ≈ 0.1.
+- **Defending registry changes (D):**
+  - `dribbled_past_p90` direction → `style`;
+  - add `defensive_duel_success_pct` as a ratio (`RatioSpec("tackles_won", ("tackles_attempted", "dribbled_past"))`), with a beta-binomial `min_attempts`, measured in `spikes/m4_decision_measurements.py`;
+  - it runs through every registry rule like any ratio (coverage, `no_signal`, D19, D12, D17, D9), and its Defending-score membership waits for M4g3 (mover rule) and M4g4 (possession criteria).
+  - A stored season column only if the registry admits it (the ratio is computable from the existing counts, so the pipeline does not change otherwise).
+- **Then:**
+  - `--write-json`, then re-derive and list every status change as metric × group: old → new, with the rule;
+  - new `REGISTRY_VERSION`;
+  - rebuild percentiles and DNA; reference checks pass;
+  - re-run `spikes/m4f_weighting_checks.py` and report its neighbour-list changes.
+- **Fixed before the run:** C and the multi-split adoption. The outcome cannot reopen them.
+
+### M4g3 — Mover stability (report + the fixed threshold)
+- **Population (A):**
+  - outfield player-seasons with exactly two stints of ≥ 450 nominal minutes, in the same `position_group`;
+  - any league pair;
+  - pooled across groups.
+  - A third, smaller stint is ignored and listed.
+- **Values per stint:** the stint's per-90 or ratio, on two scales:
+  - (a) the local percentile against the stint league × group's reference population (Hazen, as M4d), because stints below 900 have no stored percentile;
+  - (b) the group's between-player SD units (SD over the pooled primary scored rows, league-demeaned).
+  - A ratio stint below `min_attempts` is excluded for that metric (n reported). The same applies to the baseline halves; otherwise the baseline is noisier and pushes S down.
+  - **All 24 movers are pooled for every metric, whether or not the metric is DNA in their group.**
+  - **Sizes after `min_attempts` on both stints:**
+    - `long_pass_completion_pct` 15;
+    - `pass_completion_pct` 24;
+    - `aerial_win_pct` 4, so untestable.
+- **Statistic per metric:** the mover change = mean |Δ| over movers, on both scales.
+- **Baseline per metric:**
+  - **Pool:** non-movers are single-stint rows of the same group with ≥ 900 nominal minutes.
+  - **Matching:** each mover's (m1, m2) is matched by drawing a non-mover with ≥ m1 + m2 minutes. Minutes are nominal-equivalent, the gate's clock. That non-mover's matches are taken in date order: the first ≈ m1 minutes, then the next ≈ m2 minutes (nearest whole match).
+    - These are regular starters (up to about 2,860 minutes).
+    - Many second stints are at struggling clubs (Sunderland, Carpi, Palermo, Frosinone). Selection like this tends to make team effects look smaller.
+  - **Draws:** R = 200 draws per mover, from `default_rng(20261008)`.
+  - **Result:** the baseline change = the mean |Δ| over all draws.
+- **Ratio S = mover change / baseline change**, with a paired bootstrap CI over movers (B = 2000, seed fixed): each resample recomputes the movers' |Δ| and their matched baselines.
+  - A root-mean-square version is reported next to it. mean |Δ| turns into the decision quantity only if the two |Δ| distributions have the same shape; the RMS version is exact.
+- **R_m:** the Pearson correlation of the matched non-mover halves (league × group demeaned, scale b). It is a baseline-only quantity.
+- **Threshold (stats-reviewer proposal, fixed by the user 2026-10-07 before any mover change was computed):**
+  - **Decision quantity:** the team share of the stable between-player variance, f̂ = (Ŝ² − 1) · (1 − R_m) / R_m, on scale (b) with the RMS form of S. Scale (a) is reported only.
+    - f = 0: the value follows the player;
+    - f = 1: a mover simply takes on his new team's level.
+  - **PASS iff f̂ ≤ 0.5** (point estimate), i.e. S ≤ S*_m = √(1 + 0.5 · R_m / (1 − R_m)): at least half of the stable differences between players travel with the player.
+  - The paired bootstrap CI is reported. When it contains 0.5 the result is labelled "inconclusive at n".
+  - Fewer than 12 eligible movers → `untestable`, which is not a pass (the §11.3 precedent).
+  - **Why not a fixed S:** with value = player + team + noise, S² ≈ 1 + σ²_team / σ²_noise. A fixed S would fail reliable ratios on small team effects and pass noisy per-90s with large ones.
+  - **Power (n = 24, R_m 0.7):**
+    - a pure-player metric is wrongly failed 0.6% of the time;
+    - a fully team-driven metric is wrongly passed 8% of the time;
+    - f = 0.25 fails 16% of the time; f = 0.75 passes 21%.
+
+    0.33 was considered, but at this n it cannot be told apart from 0.5.
+  - Applied to every current DNA metric and, later, to each M4g4 / M4g5 candidate.
+- **Koné illustration** (prediction recorded in the M4g item list): `long_pass_completion_pct` 0.595 → 0.319, on both scales.
+
+### M4g4 — Possession and Defending (pipeline column, spike first)
+- **Exposure:**
+  - `opponent_open_play_passes_while_on`: the open-play Pass events of the *opponent* whose instant lies in the player's credited time;
+  - the D12b crediting rules mirrored onto the opponent: half-open pieces, closed at the period end, the event's own period, the 1e-9 tolerance, a pass after the whistle clamped to it, and the team key `team.id`;
+  - stored per match and season, with the minutes it is credited over.
+  - **Check:** each opponent open-play pass is credited to 7–11 players of the defending team.
+  - Spike first, an independent recount (`spikes/m4g_opponent_exposure.py`); the proxy agreement (median ratio 0.999) is re-checked.
+- **E** = opponent open-play passes per 90 on. **E_ref** = the median E of the group's primary scored rows (single source).
+- **Candidates**, evaluated for every Defending DNA metric (style and directional) × group:
+  - `adj = p90 × (E_ref / E)^β`, with β = 0, β = 1, and β̂.
+  - **β̂:** the team-level log-log OLS slope of the team's minutes-weighted mean per-90 (group players) on log E, both league-demeaned. Fitted leave-one-league-out (B): it is fitted on 3 leagues and judged on the 4th, and the reported β̂ CI comes from a team bootstrap (B = 2000, seed fixed) on all 4 leagues.
+  - **Team share:** the player's count / the team's count of that action while he is on (the same crediting machinery, one `team_<action>_while_on` column per action).
+- **Criteria (all four, per candidate, every metric × group at once):**
+  - (1) the within-league mean |ρ(possession, adjusted)| < 0.1 for both proxies, with the D12 sign test;
+  - (2) the gap in mean local percentile between the top and bottom possession quintiles ≤ 10 pts, reported with the team count;
+  - (3) multi-split r_full ≥ 0.6;
+  - (4) the D9 league means reported before and after.
+  - A candidate that flips the sign of ρ fails.
+  - For β̂, criteria (1) and (2) are judged on the held-out leagues only.
+- **Ratios:** `adj` and team share are not defined for a ratio (`defensive_duel_success_pct`), so only β = 0 applies.
+- **β̂ in the pipeline:** the all-4-league fit. Leave-one-league-out serves the criteria only.
+- **Selection rule (stats-reviewer, M4g0):** a fixed order, per metric × group. The first candidate that passes is chosen, in the order of least change to the metric: β = 0 → β̂ → team share → β = 1.
+  - Choosing the smallest criterion (1) would pick on noise: the SE of a mean within-league ρ is ≈ 0.065 at about 60 rows per league.
+- **Recorded limits (stats-reviewer, M4g0):**
+  - E_ref is a constant per group, so it changes no local percentile or ρ; it only scales the displayed value.
+  - Criterion (1) is close to circular for E-based adjustments (E ≈ 1 / possession); leave-one-league-out helps.
+  - Criterion (2)'s quintiles hold about 4 teams per league, so the gap's SE is ≥ 6 pts against a 10-pt bar. Some cells will fail when β = 0 is in fact fine.
+  - Team share depends on how many teammates share the role: a lone 6 gets a larger share than one of a double pivot.
+- **Restore (D):**
+  - The score's members are the directional Defending members whose selected candidate passes all 4 criteria **and** whose metric (as adjusted by that candidate) passes the M4g3 mover rule. Untestable or inconclusive is not a pass.
+  - An adjusted member enters the score and the vector adjusted, so weights stay as §12.6.
+  - The vector change re-runs the M4f3 checks.
+- **Then:** re-run the teammates-among-neighbours count (same pass criteria, all groups); report only.
+
+### M4g5 — xPass (spike, then pipeline)
+- **Passes:**
+  - open play only (`pass.type.name` ∉ `RESTART_TYPES`), periods 1–4;
+  - completed = null outcome;
+  - "Pass Offside" is incomplete;
+  - "Injury Clearance" and "Unknown" are dropped;
+  - every configured competition-season of the source.
+- **Features (the stats-reviewer's leakage decision, M4g0: option ii):**
+  - start x and y;
+  - direction as sin and cos of `pass.angle`;
+  - height (ground / low / high);
+  - body part (foot / head / other);
+  - `under_pressure`;
+  - through ball (`pass.technique` = Through Ball, decided at the kick: blocked passes carry it 0.60% of the time, others 0.49%).
+
+  **Excluded:** end x and y, `length`, and the cross and switch flags. All four come from the end location. The switch flag is set exactly when |Δy| ≥ 40; 98.1% of crosses end at x ≥ 102.
+- **Model:**
+  - logistic regression on spline terms (`SplineTransformer` + `LogisticRegression`, scikit-learn);
+  - cross-fitted with 5 folds by match, stratified by league so every league appears in every fold (matches assigned in id order within each league), so every pass gets an out-of-fold xP;
+  - a more flexible model only if calibration fails, and only with the reason recorded.
+- **Model acceptance (stats-reviewer, M4g0):**
+  - on out-of-fold predictions, the mean (observed − xP) is within ±0.01 overall and in every criterion subset:
+    - height (3);
+    - body part;
+    - start third;
+    - `under_pressure`;
+  - the maximum decile calibration gap is ≤ 0.03;
+  - each league and each position group: report only. A constant offset there is removed by local, within-group percentiles, and the residual mean of a group is the skill signal itself.
+  - **"Long passes" is not a subset:** recorded length depends on the outcome, so a leak-free model fails it by construction (start-only: −0.0247).
+  - AUC, Brier and the calibration curves are reported. One player's execution SD is about 2.6–3.2 per 100 passes, so ±0.01 is tight enough.
+- **Metrics (stored as counts):**
+  - `op_passes_xp_n` (passes), `op_passes_xp_completed` and `op_passes_xp_sum`, the same three for `under_pressure`;
+  - execution = 100 · (completed − Σ xP) / n;
+  - execution under pressure, the same on pressured passes only, with its own `min_attempts`;
+  - ambition = 1 − Σ xP / n (`style`).
+  - `min_attempts` by variance components (R1, as `np_xg_per_shot`).
+- **End-location leakage: decided by the stats-reviewer (M4g0), option (ii) above.** Measured on 1,346,205 open-play passes, using diagnostic gradient-boosted models, not the final model:
+  - **What the end location is:** for a failed pass, where the ball was stopped. 83–86% sit within 2 units of the opponent's first linked event.
+  - **What leaks:** `length` and `angle` are computed from it (|length − distance| ≤ 8e-6), so an "intended length" (option i) does not exist.
+  - **Blocked passes:** median length 3.0–4.2; 14.8% of incompletes.
+  - **Passes out of play:** median length 34.3; 78.7% end on a touchline or goal line.
+  - **Mean xP, full model vs start-only:**
+
+    | Passes | Full | Start-only |
+    |---|---|---|
+    | Blocked | 0.263 | 0.530 |
+    | Out | 0.144 | 0.520 |
+    | Intercepted | 0.680 | 0.690 |
+
+    The full model excuses exactly the failures the passer is responsible for.
+  - **AUC:** 0.912 full vs 0.874 start-only.
+  - **Effect on players:** execution ρ between the two models is 0.956 (0.915–0.965 by group). The difference correlates 0.546 with a player's out-of-play share and 0.435 with his blocked share.
+  - **Sensitivity run (iii), report only, never selectable:**
+    - the full model, adding end x/y, length, cross and switch;
+    - per group, Spearman ρ of execution and of ambition between the two models;
+    - per group, ρ of the execution difference with the blocked share and the out share.
+  - **Known cost:** without length, execution partly rewards safe choices from the same spot. ρ(execution, `pass_completion_pct`) is 0.63–0.77 start-only vs 0.51–0.72 full. ρ(execution, ambition) is reported per group.
+  - **Predictions recorded before results (user, 2026-10-07: ambition stays a candidate and the rules decide):**
+    - execution may trigger D12, because `pass_completion_pct`'s possession ρ is 0.57–0.69;
+    - ambition ≈ 1 − completion (exactly, completion = execution / 100 + 1 − ambition). Its ρ with `pass_completion_pct` is −0.89 to −0.94 within groups, so it is expected to fail D17 against ST's DNA `pass_completion_pct` (0.85), and to trigger D12.
+- **Pipeline:**
+  - a new stage `pipeline/build_xpass.py` (raw events → `data/interim/pass_xp.parquet`: one row per pass with its fold and xP);
+  - `build_player_season` joins the per-stint sums;
+  - the fit is deterministic (fixed folds, `lbfgs`, `OMP_NUM_THREADS=1`, xP rounded to 1e-9), and two builds are byte-identical.
+  - The model needs every match before it can predict any, so it cannot sit inside the per-match build.
+- **Evaluation:** the pre-registered list in the M4g item list (D19 multi-split, `min_attempts`, the zero-heavy rule not applicable to execution, D17 between the two execution metrics, D12 and the possession criteria, D9, mover stability with the Koné illustration).
+- **Then the user decides:** whether to restore Passing, and the role of `long_pass_completion_pct`.
+
+### M4g6 — Validation write-up (closes M4)
+`spikes/m4_validation.py` → `docs/reviews/m4-validation.md`:
+- threshold sensitivity;
+- reliability per metric (multi-split) and the minute buckets;
+- correlation and dominance per dimension;
+- the outlier audit (the 243 D20 rows above P99 traced to events);
+- multi-position players and club changers;
+- mixed-role |z| > 5 with the main-group minute share;
+- about 20 players' neighbours on both D10 bases;
+- the teammate count after M4g4;
+- the M4g1–M4g5 outcomes.
+
+The stats-reviewer signs it off; any failure goes back to its decision.
+
+### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
+- Folded in above: the leakage decision; the M4g1 lift and pivot label; the M4g3 baseline `min_attempts`, pooling, paired bootstrap and RMS; the M4g4 fixed order, ratios and β̂ fit; the M4g5 subsets and stratified folds; the majority-trigger wording.
+- Recorded in ADR 004: `long_pass_completion_pct` has the same length-truncation bias. A long ball that is intercepted or blocked early is recorded short and drops out of the denominator, which inflates the rate (the Koné example's metric).
+- **New dependencies (stats-reviewer condition):** numpy and scikit-learn join `pyproject.toml`, needed for the PCA, the xP model and the seeded RNG. Today the project declares polars only. scikit-learn is in the brief's stack; added in the first chunk that uses it (M4g1).
+- **User decisions on the review (2026-10-07):**
+  - mover threshold f̂ ≤ 0.5;
+  - duel-success denominator `tackles_attempted + dribbled_past`;
+  - the Defending restore needs the mover rule as well;
+  - ambition kept, with its prediction recorded.
+
+### Process
+- M4g0 (this section) is reviewed by the stats-reviewer before any code: the leakage mitigation and the mover threshold were decided, and every earlier proposal (M4g1 reading, M4g4 selection, M4g5 acceptance, the duel-success terms) was confirmed or changed. The outcome is in the review subsection above.
+- The user then fixes the mover threshold (done 2026-10-07: f̂ ≤ 0.5), followed by a docs commit.
+- Each later chunk's end-of-chunk stats review covers its output only (CLAUDE.md).
 
 ---
 

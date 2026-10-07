@@ -1160,3 +1160,58 @@ The four open M4f items in §10.8 and plan 005 M4f were decided from the 2015/16
     - for StatsBomb, an xPass model with execution, execution under pressure (the Passing score) and ambition (`style`);
     - for aggregated sources (Sportmonks), "accuracy vs context";
     - all under the same rules, reviewed by the stats-reviewer before code.
+
+---
+
+## 13. M4g pre-registration (plan 005 M4g0, user decisions 2026-10-07)
+Fixed before any M4g measurement. The stats-reviewer reviewed the specs before any code (APPROVE WITH CONDITIONS; plan 005 "M4g — detailed plan" holds the full spec and the review figures). Outcomes go into later subsections.
+
+### 13.1 Rules fixed before results
+- **Multi-split r_full** replaces the odd/even split for every metric × group, adopted unconditionally. It removes split-assignment noise only; sampling error over players (SE ≈ 0.04) remains.
+- **Majority-of-leagues trigger:**
+  - It fires when ≥ 3 of the 4 pool leagues have |ρ| ≥ 0.4 with one shared sign among them. It is an OR with the mean rule, and §10.2's no-sign rule applies.
+  - **Known beforehand:** it removes ST `np_shots_on_target` from DNA, and not ST `np_shots`.
+- **Minute-bucket reliability** (900–1350, 1350–2000, ≥ 2000): report only.
+- **Possession candidates:**
+  - β is judged leave-one-league-out (fit on 3 pool leagues, criteria on the 4th). The pipeline uses the all-4-league fit.
+  - Candidates are taken in a fixed order, the first that passes: β = 0 → β̂ → team share → β = 1. Ratios take β = 0 only.
+- **Mover stability:**
+  - **Sample:** two stints of ≥ 450 nominal minutes in the same group (24 movers in 2015/16), pooled across groups.
+  - **Baseline:** a within-team date split of non-movers, trimmed to the movers' minutes, with `min_attempts` applied to both.
+  - **PASS iff f̂ = (Ŝ² − 1)(1 − R_m) / R_m ≤ 0.5** (SD-unit scale, RMS form of S; R_m = the correlation of the matched non-mover halves): at least half of the stable differences between players travel with the player.
+  - **Labels:** a paired bootstrap CI containing 0.5 → "inconclusive at n"; fewer than 12 movers → `untestable`, not a pass.
+
+### 13.2 Defending
+- **`dribbled_past_p90` → `style`.** It rises with engagement: ρ with `tackles_attempted_p90` is 0.48–0.55 by group. As `lower_better` it would score Wes Morgan 55 and Mascherano 32 on Defending.
+- **New candidate:** `defensive_duel_success_pct = tackles_won / (tackles_attempted + dribbled_past)`, `higher_better`.
+  - The denominator terms are disjoint: lost tackles are 39.2% of attempts and are never linked to a Dribbled Past.
+  - It covers all tackles, not only stopping dribblers.
+  - The rules decide it, like any ratio.
+- **Restore rule:**
+  - A directional Defending member enters the score only if it passes all 4 possession criteria and the mover rule.
+  - Defending is restored in a group when ≥ 1 member passes. Otherwise it stays withheld with a status naming the failed test.
+
+### 13.3 Passing (xPass, StatsBomb)
+- **End-location leakage (stats-reviewer decision):** the end location of a failed pass is where the ball was stopped, and length, angle, cross and switch derive from it.
+  - The scoring model uses start x and y, direction, height, body part, `under_pressure` and through ball.
+  - End location, length and the cross and switch flags are excluded.
+  - A full-model run is a report-only sensitivity check.
+  - **Cost:** without length, execution partly rewards safe choices from the same spot.
+- **Model acceptance:**
+  - out-of-fold mean residual within ±0.01 overall and per height, body part, start third and `under_pressure`;
+  - maximum decile gap ≤ 0.03;
+  - per league and per group: report only.
+- **Predictions recorded before results:**
+  - ambition ≈ 1 − completion (ρ −0.89 to −0.94 with `pass_completion_pct`), expected to fail D17 in ST and to trigger D12;
+  - execution may trigger D12.
+- **`long_pass_completion_pct` has the same length-truncation bias (recorded).** A long ball intercepted or blocked early is recorded short and leaves the denominator, which inflates the rate.
+
+### 13.4 DM-CM role split (reading pre-registered)
+- **Labels:** the 6 / 8 label (lineup slot share ≥ 0.7) plus a pivot label (single / double pivot / centre midfield), because the slot share records formation more than role.
+- **"Separate regions" requires both:**
+  - a normalised neighbour-label lift ≥ 0.4 for both labels;
+  - |Cohen's d| ≥ 1.0 on PC1 or PC2.
+- The user decides any split; a split is its own chunk.
+
+### 13.5 Dependencies
+numpy and scikit-learn are added to `pyproject.toml` with the first chunk that uses them (M4g1). xP builds pin `OMP_NUM_THREADS=1` and round xP to 1e-9, so two builds are byte-identical.
