@@ -72,6 +72,15 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
 - Typed Python, meaningful naming, configuration over hard-coded values.
 
 
+### Design (frontend)
+- Use the `apple-design` skill (.claude/skills/apple-design/, MIT, Emil Kowalski) selectively
+  for the frontend: typography, materials, instant feedback, reduced-motion support and subtle
+  transitions.
+- Data must stay readable: no springy or animated data values. Numbers, percentiles, bars and
+  radar vertices render at their final value with no count-up, spring or overshoot.
+- When using apple-design during a task, skip its 'Initial Response' greeting and apply the
+  guidance directly.
+
 ### Out of Scope (MVP)
 Transfer prediction, market-value prediction, tactical team-fit, live match analytics,
 future-potential prediction. Do not add these without explicit re-scoping.
