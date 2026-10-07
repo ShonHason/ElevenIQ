@@ -14,6 +14,10 @@ Page (self-contained HTML, inline SVG and JS, no network):
   behind a "Details" toggle, open once a card is pinned by a click;
 - an explainer panel: how to read the map, what each axis end means (its three strongest
   metrics), how much of the variance is shown, and what the colours mean.
+- compare mode (M4g1b; facts, renderer and check in m4g_compare): click A, then B, of this
+  group; both ringed (B dashed) with a line between them; Esc or "Clear" resets. The panel
+  is rendered by m4g_compare.JS from facts computed in Python. A search that finds nobody here
+  names the group page where the player is, or says he is not plotted.
 
 Every number in a card names its source (data-id: season parquet; data-cfg: league label;
 data-dna: player_dna.parquet pct_local; data-pca: the projection of those cells with the model
@@ -22,9 +26,11 @@ each one from the parquets after the page is written; a mismatch, or a digit out
 span other than the fixed STATIC_TEXT, fails the run.
 
 Wording rules (fixed here):
-- percentile p (local, Hazen): p ≥ 90 → "Very high …, top X%" with X = ⌈100 − p⌉;
-  50 ≤ p < 90 → "High …, above average"; 10 < p < 50 → "Low …, below average";
-  p ≤ 10 → "Very low …, bottom X%" with X = max(1, ⌈p⌉); X is at least 1;
+- percentile p (local, Hazen), one function (pct_words) for the cards and the compare panel
+  (user, 2026-10-07): p ≥ 90 → "Very high …, top X%"; 60 < p < 90 → "High …, top X%";
+  40 ≤ p ≤ 60 → "Average …, around average"; 10 < p < 40 → "Low …, bottom Y%"; p ≤ 10 →
+  "Very low …, bottom Y%"; X = ⌈100 − p⌉, Y = ⌈p⌉, both at least 1 (so at most 40 outside
+  the middle band: "top 49%" cannot appear);
 - axis names read as the map does: PC1 left → right, PC2 bottom → top (axis_title);
 - position on an axis: z = score / SD of the plotted scores; |z| < 0.5 "near the middle",
   < 1.5 "slight", otherwise "strong";
@@ -103,6 +109,16 @@ g[data-i]{cursor:pointer}g.dim{opacity:.1}g.hit .mk,g.hit .cmix{stroke:var(--fg)
 svg.key{width:14px;height:14px;flex:none;background:none;border:0}
 .tip{position:fixed;z-index:10;max-width:380px;background:var(--card);color:var(--fg);border:1px solid var(--line);
 border-radius:8px;padding:10px 12px;font-size:12.5px;box-shadow:0 4px 18px rgba(0,0,0,.18);pointer-events:none}
+.bar button[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+svg .cmpline{stroke:var(--fg);stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+g.selA .hitbox,g.selB .hitbox{stroke:var(--fg);stroke-width:2.5}g.selB .hitbox{stroke-dasharray:4 3}
+svg text.nm.sel{font-weight:700;font-size:12px}
+.cmp{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:12px 0}
+.cmp-h{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.cmp-p{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.cmp .tag{float:right;width:24px;height:24px;border:2px solid var(--fg);border-radius:50%;text-align:center;
+line-height:20px;font-weight:700;margin-left:8px}.cmp .tag.b{border-style:dashed}
+.cmp h3{font-size:14px;margin:14px 0 4px}.cmp ul{margin:4px 0;padding-left:18px}.cmp li{margin:3px 0}
 .tip.pinned{pointer-events:auto}.tip ul{margin:2px 0 6px;padding-left:16px}.tip li{margin:2px 0}
 .tip .ax{margin-top:8px;font-weight:600}.tip .x{position:absolute;top:4px;right:6px;border:0;background:none;
 color:var(--muted);font-size:16px;cursor:pointer}.tip details{margin-top:6px}.tip summary{cursor:pointer;color:var(--muted)}
@@ -113,15 +129,25 @@ JS = r"""
 const svg=document.querySelector('svg.map'),tip=document.getElementById('tip');
 const W=D.W,H=D.H,G=[...svg.querySelectorAll('g[data-i]')];
 const ax=document.getElementById('axx'),ay=document.getElementById('axy'),NM=document.getElementById('names');
-let k=1,tx=0,ty=0,pinned=null,hits=null;const hidden=new Set();
+let k=1,tx=0,ty=0,pinned=null,hits=null,cmpOn=false,A=null,B=null;const hidden=new Set();
+const line=document.getElementById('cmpline'),panel=document.getElementById('cmp'),
+cbtn=document.getElementById('cmpbtn'),cclr=document.getElementById('cmpclr'),cmsg=document.getElementById('cmpmsg');
+const gOf=i=>G.find(g=>+g.dataset.i===i);
 const norm=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 function sx(i){return D.xy[i][0]*k+tx}function sy(i){return D.xy[i][1]*k+ty}
 function apply(){for(const g of G){const i=+g.dataset.i;
 g.setAttribute('transform','translate('+sx(i).toFixed(1)+' '+sy(i).toFixed(1)+')');}
 const ox=D.o[0]*k+tx,oy=D.o[1]*k+ty;ax.setAttribute('y1',oy);ax.setAttribute('y2',oy);
-ay.setAttribute('x1',ox);ay.setAttribute('x2',ox);labels();if(pinned!==null)place(pinned);}
-function labels(){NM.textContent='';if(k<D.labelZoom)return;const occ=[];
-const order=G.map(g=>+g.dataset.i).filter(i=>!hidden.has(i)&&!D.face[i]&&(!hits||!hits.length||hits.includes(i)));
+ay.setAttribute('x1',ox);ay.setAttribute('x2',ox);drawLine();labels();if(pinned!==null)place(pinned);}
+function drawLine(){if(A===null||B===null){line.setAttribute('visibility','hidden');return}
+line.setAttribute('x1',sx(A));line.setAttribute('y1',sy(A));line.setAttribute('x2',sx(B));
+line.setAttribute('y2',sy(B));line.setAttribute('visibility','visible')}
+function selLabels(){for(const[i,t]of[[A,'A'],[B,'B']]){if(i===null)continue;
+const s=document.createElementNS('http://www.w3.org/2000/svg','text');s.setAttribute('class','nm sel');
+s.setAttribute('x',(sx(i)-14).toFixed(1));s.setAttribute('y',(sy(i)+4).toFixed(1));s.setAttribute('text-anchor','end');
+s.textContent=t+' · '+D.short[i];NM.appendChild(s)}}
+function labels(){NM.textContent='';selLabels();if(k<D.labelZoom)return;const occ=[];
+const order=G.map(g=>+g.dataset.i).filter(i=>!hidden.has(i)&&!D.face[i]&&i!==A&&i!==B&&(!hits||!hits.length||hits.includes(i)));
 for(const i of order){const x=sx(i),y=sy(i);if(x<0||x>W||y<0||y>H)continue;
 const w=D.short[i].length*6.2+6,r=[x+9,y-9,x+9+w,y+5];if(r[2]>W)continue;
 if(occ.some(o=>r[0]<o[2]&&r[2]>o[0]&&r[1]<o[3]&&r[3]>o[1]))continue;occ.push(r);
@@ -141,6 +167,27 @@ tip.style.left=L+'px';tip.style.top=T+'px'}
 function place(i){const r=G.find(g=>+g.dataset.i===i).getBoundingClientRect();at(r.right,r.bottom)}
 function pin(i){pinned=i;card(i,true);place(i)}
 function unpin(){pinned=null;tip.hidden=true}
+function say(t){cmsg.textContent=t}
+function mark(){for(const g of G)g.classList.remove('selA','selB');
+for(const[i,c]of[[A,'selA'],[B,'selB']])if(i!==null){const g=gOf(i);g.classList.add(c);g.classList.remove('dim');
+g.parentNode.appendChild(g)}apply()}
+function inView(i){const x=sx(i),y=sy(i);return x>=0&&x<=W&&y>=0&&y<=H}
+function choose(i){unpin();
+if(A===null||B!==null){A=i;B=null;panel.hidden=true;panel.innerHTML='';
+say(D.names[i]+' is A. Click a second '+D.cmp.one+' (B).')}
+else if(i===A){say('That is A already. Click a different '+D.cmp.one+'.')}
+else{B=i;panel.innerHTML=cmpHTML(D,A,B);panel.hidden=false;
+say('A: '+D.names[A]+' · B: '+D.names[B]+'. Esc or Clear to start again.');
+if(!inView(A)||!inView(B)){const x0=Math.min(D.xy[A][0],D.xy[B][0]),x1=Math.max(D.xy[A][0],D.xy[B][0]),
+y0=Math.min(D.xy[A][1],D.xy[B][1]),y1=Math.max(D.xy[A][1],D.xy[B][1]);
+centreOn((x0+x1)/2,(y0+y1)/2,Math.min(k,0.85*Math.min(W/(x1-x0+60),H/(y1-y0+60))))}
+panel.scrollIntoView({block:'nearest',behavior:'smooth'})}
+mark()}
+function clearCmp(){A=null;B=null;panel.hidden=true;panel.innerHTML='';mark();
+say(cmpOn?'Click a player (A), then a second '+D.cmp.one+' (B).':'')}
+cbtn.addEventListener('click',()=>{cmpOn=!cmpOn;cbtn.setAttribute('aria-pressed',String(cmpOn));
+cclr.hidden=!cmpOn;unpin();clearCmp()});
+cclr.addEventListener('click',clearCmp);
 function pick(e){const el=document.elementFromPoint(e.clientX,e.clientY);const g=el&&el.closest('g[data-i]');
 return g&&!hidden.has(+g.dataset.i)?+g.dataset.i:null}
 svg.addEventListener('wheel',e=>{e.preventDefault();const p=pt(e);zoomAt(p.x,p.y,Math.exp(-e.deltaY*0.0015))},{passive:false});
@@ -158,27 +205,33 @@ if(moved){if(k>1){tx=drag.tx+dx;ty=drag.ty+dy;apply()}if(pinned===null)tip.hidde
 if(pinned!==null||e.pointerType!=='mouse')return;const i=pick(e);
 if(i===null){tip.hidden=true;return}card(i,false);at(e.clientX,e.clientY)});
 svg.addEventListener('pointerup',e=>{P.delete(e.pointerId);if(P.size<2)pinch=null;
-if(P.size===0){drag=null;if(!moved){const i=pick(e);if(i===null)unpin();else pin(i)}}});
+if(P.size===0){drag=null;if(!moved){const i=pick(e);if(cmpOn){if(i!==null)choose(i)}
+else if(i===null)unpin();else pin(i)}}});
 svg.addEventListener('pointerleave',()=>{if(pinned===null)tip.hidden=true});
 tip.addEventListener('click',e=>{if(e.target.closest('.x'))unpin()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')unpin()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){unpin();if(cmpOn)clearCmp()}});
 document.getElementById('reset').addEventListener('click',()=>{unpin();k=1;tx=0;ty=0;apply()});
 const q=document.getElementById('q'),cnt=document.getElementById('cnt');
 function search(){const v=norm(q.value.trim());unpin();hits=[];
 for(const g of G){const i=+g.dataset.i,h=!!v&&!hidden.has(i)&&norm(D.names[i]).includes(v);
-g.classList.toggle('hit',h);g.classList.toggle('dim',!!v&&!h);if(h)hits.push(i)}
+g.classList.toggle('hit',h);g.classList.toggle('dim',!!v&&!h&&i!==A&&i!==B);if(h)hits.push(i)}
 for(const i of hits){const g=G.find(x=>+x.dataset.i===i);g.parentNode.appendChild(g)}
 cnt.textContent=v?(hits.length===1?'1 match':hits.length+' matches'):'';
-if(!hits.length){if(!v){k=1;tx=0;ty=0;apply()}return}
+if(!hits.length){if(!v){k=1;tx=0;ty=0;apply()}else cnt.textContent=elsewhere(v);return}
 const xs=hits.map(i=>D.xy[i][0]),ys=hits.map(i=>D.xy[i][1]);
 const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
 const nk=hits.length===1?Math.max(k,4):Math.min(40,0.85*Math.min(W/(x1-x0+60),H/(y1-y0+60)));
-centreOn((x0+x1)/2,(y0+y1)/2,nk);if(hits.length===1)pin(hits[0])}
+centreOn((x0+x1)/2,(y0+y1)/2,nk);if(hits.length===1){if(cmpOn)choose(hits[0]);else pin(hits[0])}}
+function elsewhere(v){const u=D.unplotted.filter(x=>norm(x).includes(v)),o=D.others.filter(x=>norm(x[0]).includes(v));
+if(u.length)return 'No match on the map. '+u[0]+' is in this group but not plotted (a metric below its minimum).';
+if(o.length)return 'No match here. '+o[0][0]+' is in '+o[0][1]+' (open '+o[0][2]+'). Compare works within one position group.';
+return 'No match'}
 q.addEventListener('input',search);
 for(const c of document.querySelectorAll('input[data-role]'))c.addEventListener('change',()=>{
 const role=c.dataset.role;for(const g of G){const i=+g.dataset.i;if(D.role[i]!==role)continue;
 if(c.checked)hidden.delete(i);else hidden.add(i);g.style.display=c.checked?'':'none'}
-if(pinned!==null&&hidden.has(pinned))unpin();labels()});
+if(pinned!==null&&hidden.has(pinned))unpin();if((A!==null&&hidden.has(A))||(B!==null&&hidden.has(B)))clearCmp();
+labels()});
 apply()})();
 """
 
@@ -197,17 +250,18 @@ def span(attr: str, ref_: str, text: str) -> str:
 
 # ── Wording (also used by the check) ─────────────────────────────────────────
 
+MID_LO, MID_HI = 40.0, 60.0          # the neutral band, both edges inside it
+
+
 def pct_words(p: float) -> tuple[str, str]:
-    """(adjective, phrase) for a local percentile."""
+    """(adjective, phrase) for a local percentile; the only percentile wording on the page."""
     if not 0 <= p <= 100:
         cm.fail(f"percentile out of range: {p}")
-    if p >= 90:
-        return "Very high", f"top {max(1, math.ceil(100 - p - 1e-9))}%"
-    if p >= 50:
-        return "High", "above average"
-    if p > 10:
-        return "Low", "below average"
-    return "Very low", f"bottom {max(1, math.ceil(p - 1e-9))}%"
+    if MID_LO <= p <= MID_HI:
+        return "Average", "around average"
+    if p > MID_HI:
+        return ("Very high" if p >= 90 else "High"), f"top {max(1, math.ceil(100 - p - 1e-9))}%"
+    return ("Very low" if p <= 10 else "Low"), f"bottom {max(1, math.ceil(p - 1e-9))}%"
 
 
 def lc(label: str) -> str:
@@ -475,7 +529,8 @@ def svg_map(ctx: dict, order: list[int]) -> tuple[str, list[list[float]], tuple[
     out = [f'<svg class="map" viewBox="0 0 {W} {H}" role="img" '
            f'aria-label="Style map, {esc(sm["group"])}: each dot is a player">',
            f'<line id="axx" class="axis" x1="0" y1="{oy:.1f}" x2="{W}" y2="{oy:.1f}"/>',
-           f'<line id="axy" class="axis" x1="{ox:.1f}" y1="0" x2="{ox:.1f}" y2="{H}"/>']
+           f'<line id="axy" class="axis" x1="{ox:.1f}" y1="0" x2="{ox:.1f}" y2="{H}"/>',
+           '<line id="cmpline" class="cmpline" x1="0" y1="0" x2="0" y2="0" visibility="hidden"/>']
     xy = []
     for di, i in enumerate(order):
         r = sm["rows"][i]
@@ -564,7 +619,9 @@ def explainer(ctx: dict, counts: dict[str, int]) -> str:
             + "".join(f"<p class=\"muted\">{n}</p>" for n in role_note)
             + "<p class=\"muted\">Ringed: well-known reference players. Scroll or pinch to zoom, "
               "drag to pan, hover a dot for its card, click a dot to pin the card and open its "
-              "details.</p></details>")
+              "details. <b>Compare mode:</b> click two players to see their real DNA distance, "
+              "how they rank in each other's similarity lists, and where they differ most.</p>"
+              "</details>")
 
 
 def page(ctx: dict, figs_html: str) -> str:
@@ -587,7 +644,8 @@ def page(ctx: dict, figs_html: str) -> str:
             "face": [bool(ctx["face"].get((sm["rows"][i]["name"], sm["rows"][i]["key"][1])))
                      for i in order],
             "role": toggles, "model": sm["model"],
-            "tips": [tooltip(ctx, i) for i in order]}
+            "tips": [tooltip(ctx, i) for i in order], "cmp": ctx["cmp"],
+            "unplotted": [r["name"] for r in sm["partial"]], "others": ctx["others"]}
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     chips = "".join(
         f'<label class="chip"><input type="checkbox" data-role="{esc(t)}" checked>'
@@ -620,8 +678,12 @@ def page(ctx: dict, figs_html: str) -> str:
             + '<div class="bar"><label>Find a player <input id="q" type="search" '
               'placeholder="name, accents optional" autocomplete="off"></label>'
               '<span id="cnt" class="muted"></span><button id="reset" type="button">Reset view'
-              f'</button><span class="muted">Show:</span>{chips}</div>'
-            + svg + '<div id="tip" class="tip" hidden></div>'
+              '</button><button id="cmpbtn" type="button" aria-pressed="false">Compare mode</button>'
+              '<button id="cmpclr" type="button" hidden>Clear</button>'
+              f'<span class="muted">Show:</span>{chips}</div>'
+              '<p id="cmpmsg" class="muted" aria-live="polite"></p>'
+            + svg + '<section id="cmp" class="cmp" hidden aria-live="polite"></section>'
+              '<div id="tip" class="tip" hidden></div>'
             + '<h2>Top loadings per axis</h2><p class="muted">Component coefficients on the '
               'weighted input (sign: the largest absolute loading is positive). A positive '
               'coefficient means the metric rises toward the right / top end.</p>'
@@ -630,5 +692,6 @@ def page(ctx: dict, figs_html: str) -> str:
             + "</tbody></table></div>" + figs_html
             + f'<h2>Not plotted</h2><p>Players with a metric below its minimum (PCA needs every '
               f'metric and ADR 004 §12.2 forbids imputation): {partial}.</p>'
-            + f'<script type="application/json" id="pts">{blob}</script><script>{JS}</script>'
+            + f'<script type="application/json" id="pts">{blob}</script>'
+              f'<script id="cmpjs">{ctx["cmp_js"]}</script><script>{JS}</script>'
             + "</main></body></html>\n")

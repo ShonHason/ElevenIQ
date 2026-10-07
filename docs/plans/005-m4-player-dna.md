@@ -983,6 +983,46 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
     - every number re-derived from the parquets by the spike;
     - a player search box.
 
+### M4g1b — Compare mode on the style maps (display only; user, 2026-10-07; before M4g2)
+- **Scope:** page only. No change to the PCA, percentiles, DNA, the review's figures or `src/`.
+  - **Files:** `spikes/m4g_compare.py` (facts, renderer, check), wired into `m4g_style_map.py` / `m4g_style_page.py`.
+- **Interaction:**
+  - a "Compare mode" toggle: click A, then B;
+  - both are ringed (B dashed), labelled, and joined by a line;
+  - Esc or "Clear" resets;
+  - a page holds one position group, so B is always in A's group. A search that matches nobody on the page names the group page where the player is ("compare works within one position group"), or says he is in this group but not plotted.
+- **Panel:**
+  - both headers (name · team · league · minutes · role; the hover card's header);
+  - **the M4f pair distance** (`m4f_dna_reference.pair_distance`, 4 decimals). Withheld families (Defending everywhere, Passing outside ST) have no dimension score, but their metrics stay in the vector and count in the distance, as in M4f;
+  - **ranks both ways:** "B is A's #k most similar of N", and A's rank in B's list.
+    - The candidates are the M4f3 neighbour candidates: every other primary row of the group, partial rows included, the player's own rows left out.
+    - Rank = 1 + the number strictly closer, so rows at the same distance within 1e-12 share a rank. Exact ties occur (three CB rows): percentiles are discrete, and ordering ties by the key would rank on float noise.
+    - Two rows of one player are not ranked against each other.
+  - **Decisions (user, 2026-10-07):** the distance stays the M4f distance, withheld families' metrics included; tied distances share a rank.
+  - **the map warning:** the map shows about X% of the style differences (PC1 + PC2), so map distance can mislead;
+  - **metrics:** the 5 with the largest and the 3 with the smallest gap in local percentile points (ties by metric name), as "Label — A: top 3% · B: bottom 20%". The order is by percentile gap, not by each metric's share of the distance (user, 2026-10-07).
+    - **One wording function for the cards and the panel** (`m4g_style_page.pct_words`; user, 2026-10-07). It has a neutral band:
+
+      | Percentile p | Wording |
+      |---|---|
+      | ≥ 90 | very high, top ⌈100 − p⌉% |
+      | 60 < p < 90 | high, top ⌈100 − p⌉% |
+      | 40–60 (both edges included) | around average |
+      | 10 < p < 40 | low, bottom ⌈p⌉% |
+      | ≤ 10 | very low, bottom ⌈p⌉% |
+
+      X is at least 1 and at most 40 outside the band, so "top 49%" cannot appear. The band edges are tested.
+    - **Withheld families are tagged:** a metric from a family whose score is withheld in the group reads "(team-influenced: possession adjustment pending)" for Defending, or "(team-influenced: depends on the team's passing style)" for Passing (user, 2026-10-07). The internal xPass note stays in the footnote only.
+    - When a Defending metric is listed, one sentence follows the lists: "Defending volume depends heavily on how much the team has the ball."
+  - **withheld families for the group, in words** (the comparison page's reason text).
+- **No math in JS:** distances, ranks, N, the 8 picked metrics per pair, every percentile phrase (a table of distinct phrases with an index per cell), the tags and the Defending flags are computed in Python and written into the page; the JS indexes and formats.
+- **Check (fails the run):**
+  - every fact is re-derived from `player_dna.parquet` with separate code (numpy for complete pairs; `pair_distance` only for partial rows) and compared with the page's data;
+  - the page's own renderer runs in node for every ordered pair (297,714 panels over the five pages), each compared (sha1) with a Python rendering;
+  - a digit outside a traced number span fails.
+- **Page size:** +0.36 to +1.07 MB per page (DM-CM 1.39 → 2.46 MB). Mostly ranks (n²), metric picks and distances (n²/2).
+- **Verified:** Busquets vs Kanté (distance 0.1430; #100 / #133 of 293) and Carrick vs Busquets (0.1136; #46 / #44), printed on each run.
+
 ### M4g2 — Reliability and trigger rules (measurements + registry; re-derive)
 - **Multi-split r_full:**
   - **Split:** for each player-stint, its matches are assigned at random to two halves of equal size (odd count: the extra match goes at random).
@@ -1089,6 +1129,11 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - An adjusted member enters the score and the vector adjusted, so weights stay as §12.6.
   - The vector change re-runs the M4f3 checks.
 - **Then:** re-run the teammates-among-neighbours count (same pass criteria, all groups); report only.
+- **Compare-mode re-check (user, 2026-10-07; M4g1b pairs):** after the possession adjustment, re-run Busquets vs Kanté and Carrick vs Busquets on the DM-CM compare panel. Report only.
+  - **Before (M4g1b, unadjusted):** Busquets–Kanté distance 0.1430, Kanté #100 for Busquets and Busquets #133 for Kanté (of 293). Carrick–Busquets 0.1136, #46 / #44.
+  - **Expectation, written before the adjustment:**
+    - Busquets–Kanté: the rank improves, because their largest gaps are Defending volumes (interceptions, ball recoveries) that track how much the team has the ball;
+    - the long-pass difference remains (Passing is not adjusted by M4g4).
 
 ### M4g5 — xPass (spike, then pipeline)
 - **Passes:**
@@ -1194,6 +1239,18 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   - `spikes/m4g_fine_roles.py` `check_proposal`: guard the LW / RW divide (no wide rows should `fail`, not raise ZeroDivisionError), as `pool_facts` does, with a test;
   - drop the hand-written "four legend ends" count from this plan's M4g1 outcome; the review's list is computed by `legend_changes`;
   - a direct test for `legend_changes` (`spikes/m4g_style_map.py`).
+- **M4g1b compare-mode follow-ups** (code-reviewer, M4g1b; user 2026-10-07):
+  - **Page size and run time grow with n²:**
+    - compare mode adds 0.36–1.07 MB per page: ranks n², picks and distances n²/2;
+    - the style-map run takes about 2 minutes: pure-Python pair distances, plus a node render of every ordered pair in the check;
+    - revisit before larger pools (more leagues or seasons). Options: vectorised distances, and checking a sample of pairs plus the hand-computed tests;
+  - `dist_code` rejects d ≥ 0.99995 (it would print as 1.0000). This cannot occur (weights sum to 1; Hazen percentiles lie inside (0, 100)) and is documented in the function. Switch to an integer round with a range check if the format ever changes;
+  - ranks share a rank within 1e-12. The tolerance is not transitive for chains of near-ties. Harmless for display, and the check uses the same rule;
+  - `SHOW_PAIRS` (`spikes/m4g_style_map.py`) fails the whole run if a pair is not unique among the plotted rows. A warning would do, since the pairs are display only;
+  - `others` (the cross-group search list) holds every row, so a player at two clubs is listed twice. Dedupe by name to shrink each page.
+- **History mode: one player across seasons** (user, 2026-10-07; record only, not built). Show a player's path over seasons on the style map. Prerequisites:
+  - full-league, multi-season data from one source (StatsBomb Open Data has one full-league season here, 2015/16);
+  - an ADR on aligning maps across seasons. Each season's PCA has its own axes, so positions are not comparable without a fixed projection or an alignment rule.
 - **M5: DM-CM 6-share context column** (user, 2026-10-07; plan 005 M4g1 outcome).
   - Show each DM-CM row's lineup-slot share (Defensive Midfield slots against Center Midfield slots) next to it as context, never as a cohort.
   - Today it is computed only in `spikes/m4g_style_map.py` from the raw lineups; the pipeline would need per-position minutes.

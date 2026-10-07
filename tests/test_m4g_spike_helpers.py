@@ -4,8 +4,9 @@ their written rules:
 - fine role: the role with ≥ 0.7 of a row's minutes, else "mixed" with its two largest roles
   (ties by the fixed role order); GK minutes dropped; the rest must equal minutes_played;
 - registry labels: read from registry.py as source text; unsupported forms fail;
-- percentile wording: ≥ 90 "top X%" (X = ⌈100 − p⌉, at least 1); ≥ 50 above average;
-  > 10 below average; ≤ 10 "bottom X%" (X = max(1, ⌈p⌉));
+- percentile wording (one function for the cards and the compare panel): 40 ≤ p ≤ 60 "around
+  average"; above 60 "top X%" (X = ⌈100 − p⌉), below 40 "bottom Y%" (Y = ⌈p⌉), both at least 1,
+  so at most 40; the adjective is "Very high" from 90 and "Very low" up to 10;
 - the M4g1 reading: Cohen's d with the pooled SD; the overlap coefficient on shared bins;
   lift = (purity − b) / (1 − b); the pre-registered reading (lift ≥ 0.4 for both labels and
   |d| ≥ 1 on PC1 or PC2); the within-team contrast.
@@ -119,14 +120,32 @@ def test_registry_fstring_over_a_module_constant(tmp_path):
 # ── Percentile wording ───────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("p, want", [
-    (99.9, ("Very high", "top 1%")), (96.3, ("Very high", "top 4%")),
-    (90.0, ("Very high", "top 10%")), (89.99, ("High", "above average")),
-    (50.0, ("High", "above average")), (49.99, ("Low", "below average")),
-    (10.01, ("Low", "below average")), (10.0, ("Very low", "bottom 10%")),
+    (100.0, ("Very high", "top 1%")), (99.9, ("Very high", "top 1%")),
+    (96.3, ("Very high", "top 4%")), (90.0, ("Very high", "top 10%")),
+    (89.99, ("High", "top 11%")),
+    # The neutral band: both edges inside, just outside them reads at most 40%.
+    (60.01, ("High", "top 40%")), (60.0, ("Average", "around average")),
+    (50.0, ("Average", "around average")), (40.0, ("Average", "around average")),
+    (39.99, ("Low", "bottom 40%")),
+    (10.01, ("Low", "bottom 11%")), (10.0, ("Very low", "bottom 10%")),
     (3.2, ("Very low", "bottom 4%")), (0.4, ("Very low", "bottom 1%")),
+    (0.0, ("Very low", "bottom 1%")),
 ])
 def test_pct_words(p, want):
     assert page.pct_words(p) == want
+
+
+def test_pct_words_never_reads_top_or_bottom_above_40():
+    for tenth in range(1001):
+        phrase = page.pct_words(tenth / 10)[1]
+        if phrase != "around average":
+            assert 1 <= int(phrase.split()[1].rstrip("%")) <= 40, (tenth, phrase)
+
+
+@pytest.mark.parametrize("p", [-0.01, 100.01])
+def test_pct_words_rejects_out_of_range(p):
+    with pytest.raises(SystemExit):
+        page.pct_words(p)
 
 
 def test_axis_title_reads_like_the_map():

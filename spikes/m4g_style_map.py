@@ -41,6 +41,8 @@ Figures (the question is answered from these, never from the picture):
 Page (display only; m4g_style_page): zoom / pan, search, fine-role colours and toggles
 (m4g_common), an explainer, plain-language hover cards with registry display names; every
 number in a card is re-derived from the parquets after writing (m4g_style_page.check_page).
+Compare mode (M4g1b, m4g_compare): two players of the group, their M4f distance, ranks both ways
+and the metrics where they differ most and least; every panel is checked against the parquet.
 Axis names are the user's reading of the loadings (AXIS_NAMES), each checked against them in
 the review; an axis whose proposed name the loadings do not support stays unnamed.
 
@@ -52,6 +54,7 @@ Usage: .venv/bin/python spikes/m4g_style_map.py [--out-dir DIR] [--review PATH]
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 from collections import Counter, defaultdict
@@ -64,6 +67,7 @@ from sklearn.decomposition import PCA
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import m4f_weighting_checks as wc  # noqa: E402  (sibling spike: load() and its guards)
 import m4g_common as cm  # noqa: E402  (sibling spike: position minutes, fine roles, labels)
+import m4g_compare as cmp_mod  # noqa: E402  (sibling spike: compare mode facts and check)
 import m4g_style_page as page_mod  # noqa: E402  (sibling spike: the page and its check)
 import review_sections  # noqa: E402
 
@@ -472,6 +476,15 @@ def review(maps: dict[str, dict], lab: dict[tuple, dict], f68: dict, fpv: dict, 
           "three largest pushes as sentences (push = loading × (weighted value − group mean); "
           "all pushes sum to the score). Every number in a card names its source and is "
           "re-derived from the parquets after the page is written; a mismatch fails the run.",
+          "",
+          "**Compare mode (M4g1b, display only; user, 2026-10-07):** click two players of the "
+          "group: their M4f pair distance (withheld families' metrics included, as in M4f), "
+          "each one's rank in the other's neighbour order (partial rows counted, own rows left "
+          "out, equal distances within 1e-12 share a rank), the 5 metrics with the largest and "
+          "the 3 with the smallest local-percentile gap, and the group's withheld family scores "
+          "in words. Facts are computed in Python (`spikes/m4g_compare.py`); the check "
+          "re-derives them from `player_dna.parquet` and runs the page's own renderer in node "
+          "for every ordered pair against the Python rendering.",
           "", "### DM-CM: 6 / 8 label", ""]
     L += label_table(f68)
     d = f68["pairs"][("6", "8")]
@@ -526,6 +539,24 @@ def label_table(fig: dict) -> list[str]:
     return L
 
 
+# Compare-mode panels printed on each run (user, 2026-10-07): (A, B) by FACE short label or
+# player_name, DM-CM.
+SHOW_PAIRS = (("Busquets", "Kanté"), ("Michael Carrick", "Busquets"))
+
+
+def show_pairs(path: Path, sm: dict, order: list[int]) -> None:
+    data = json.loads(path.read_text().split('<script type="application/json" id="pts">', 1)[1]
+                      .split("</script>", 1)[0])
+    names = [FACE.get((sm["rows"][i]["name"], sm["rows"][i]["key"][1])) or sm["rows"][i]["name"]
+             for i in order]
+    for a, b in SHOW_PAIRS:
+        if names.count(a) != 1 or names.count(b) != 1:
+            fail(f"compare pair {a} / {b}: not exactly one plotted DM-CM row each")
+        i, j = names.index(a), names.index(b)
+        heads, rest = cmp_mod.render(data, i, j)
+        print(f"\n── Compare panel: {a} (A) vs {b} (B) ──\n{cmp_mod.as_text(heads + rest)}\n")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
@@ -556,19 +587,28 @@ def main() -> None:
     readpv = {p: reading(fpv, *p) for p in fpv["pairs"]}
     wt = within_team(maps["DM-CM"], lab)
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    page_of = {g: f"style_map_{g.lower().replace('-', '_')}.html" for g in maps}
     for g, sm in maps.items():
         is_dm = g == "DM-CM"
+        order = sorted(range(len(sm["rows"])), key=lambda i: sm["rows"][i]["key"])
+        cmp_data = cmp_mod.build(g, [sm["rows"][i] for i in order], by_group[g], labels, sm["evr"])
+        others = [[r["name"], g2, page_of[g2]] for g2 in maps if g2 != g for r in by_group[g2]]
         ctx = {"sm": sm, "names": AXIS_NAMES[g], "labels": labels, "ident": ident,
                "roles": roles, "lab": lab if is_dm else None, "face": FACE,
                "leagues": wc.LEAGUES, "meta": meta, "facts": facts,
-               "notes": {a: AXIS_NOTES[(g, a)] for a in (0, 1) if (g, a) in AXIS_NOTES}}
-        path = args.out_dir / f"style_map_{g.lower().replace('-', '_')}.html"
+               "notes": {a: AXIS_NOTES[(g, a)] for a in (0, 1) if (g, a) in AXIS_NOTES},
+               "cmp": cmp_data, "cmp_js": cmp_mod.JS, "others": others}
+        path = args.out_dir / page_of[g]
         path.write_text(page_mod.page(ctx, dmcm_figs_html(f68) if is_dm else ""))
         n = page_mod.check_page(path, g, metric_weights(g), wc.DNA_PARQUET, SEASON_PARQUET, KEY,
                                 wc.LEAGUES, labels, AXIS_NAMES[g], roles,
                                 lab if is_dm else None)
-        print(f"{g}: PC1 {sm['evr'][0]:.3f} PC2 {sm['evr'][1]:.3f}, {n} card values traced "
-              f"→ {path}")
+        n_cmp = cmp_mod.check_page(path, g, wc.DNA_PARQUET, KEY, metric_weights(g), labels,
+                                   sm["evr"])
+        print(f"{g}: PC1 {sm['evr'][0]:.3f} PC2 {sm['evr'][1]:.3f}, {n} card values traced, "
+              f"{n_cmp} compare panels checked → {path} ({path.stat().st_size:,} bytes)")
+        if is_dm:
+            show_pairs(path, sm, order)
     body = review(maps, lab, f68, fpv, read68, readpv, wt, nbrs, dm_all, meta, labels)
     review_sections.write_section(args.review, "m4g_style_map", body)
     print(f"6 / 8 separate regions: {read68} → {args.review} (section m4g_style_map)")

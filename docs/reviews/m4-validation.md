@@ -50,6 +50,8 @@ Names read as the map does: PC1 left → right, PC2 bottom → top (user, 2026-1
 
 **Page (display only; user, 2026-10-07):** zoom, pan and pinch with a reset; name labels when zoomed in; search that zooms to the player; points coloured by fine role (FB-WB, DM-CM, AM-Winger; mixed rows only in CB and ST) with a toggle per role; an explainer panel; hover cards in plain words with registry display names (read from `registry.py` as source text, not imported). Each card says where the player leans on each axis (|z| < 0.5 near the middle, < 1.5 slight, else strong) and gives the three largest pushes as sentences (push = loading × (weighted value − group mean); all pushes sum to the score). Every number in a card names its source and is re-derived from the parquets after the page is written; a mismatch fails the run.
 
+**Compare mode (M4g1b, display only; user, 2026-10-07):** click two players of the group: their M4f pair distance (withheld families' metrics included, as in M4f), each one's rank in the other's neighbour order (partial rows counted, own rows left out, equal distances within 1e-12 share a rank), the 5 metrics with the largest and the 3 with the smallest local-percentile gap, and the group's withheld family scores in words. Facts are computed in Python (`spikes/m4g_compare.py`); the check re-derives them from `player_dna.parquet` and runs the page's own renderer in node for every ordered pair against the Python rendering.
+
 ### DM-CM: 6 / 8 label
 
 | Label | Rows | Plotted | PC1 mean ± SD | PC2 mean ± SD | b | Purity | Lift |
