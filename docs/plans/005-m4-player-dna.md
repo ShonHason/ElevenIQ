@@ -957,6 +957,31 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   The earlier "purity ≥ 2× the base rate" could not pass: b(6) ≈ 0.48, so 2× needs a purity of 0.95 or more. The reading is applied to the 6 / 8 label and reported for the pivot label too.
 
   The user decides the split; a split is its own chunk (ADR entry, `POSITION_GROUP_MAP`, cohorts, measurements, registry), before M4g2.
+- **Outcome (2026-10-07; `docs/reviews/m4-validation.md`):**
+  - **Reading: no separate regions.**
+    - |d(6, 8)| is 1.28 on PC1 and 1.10 on PC2, so the d bar is met.
+    - The lifts fail: 6s 0.30 (purity 0.63, b 0.47) and 8s 0.23 (purity 0.40, b 0.21).
+    - Overlap is 0.51 on PC1 and 0.57 on PC2.
+    - Within a team, the more-6 teammate sits on the 6 side in 128 of 153 pairs on PC1 and 133 of 153 on PC2.
+    - The pivot label separates no better.
+  - **Decision (user): DM-CM is not split.** The rule says so, the roles form a continuum, and the DNA neighbours already separate Isco from Busquets.
+  - **M5 backlog:** a 6-share context column.
+  - **Axis names are the user's** (each checked against the loadings, see the review). They read as the map does (user, 2026-10-07): PC1 left → right and PC2 bottom → top, on the pages, in the legend and in the review:
+    - AM-Winger: PC1 "Physical ↔ Creator", PC2 "Distributor ↔ Shooter";
+    - CB: PC1 "Stopper ↔ Ball-player", PC2 "Fewer aerial duels ↔ More aerial duels". This axis is aerial volume, not dominance: aerials lost loads above aerials won;
+    - FB-WB: PC1 "Conservative ↔ Attacking", PC2 "Distributor ↔ Box presence";
+    - DM-CM: PC1 "Holder ↔ Creator", PC2 "Deep playmaker ↔ Box-arriving";
+    - ST: PC1 "Technical forward ↔ Aerial target", PC2 "Safe passer ↔ Link-up focal point".
+    - The first proposals for CB PC2 ("Ground ↔ Aerial") and ST PC2 ("Runner ↔ …") were flagged: no loading supported the negative-end name.
+    - Every loading quoted in the review's verdicts and in the legend is checked on each run; a mismatch fails it.
+    - **Display rule, not pre-registered** (chosen after seeing the loadings): an axis end is named or described only by loadings ≥ 0.15 (unrounded), below the 1/√k = 0.20–0.25 of an even spread over 16–24 metrics. Against the earlier 0.10 it changes four legend ends (CB PC2 −, FB-WB PC1 −, FB-WB PC2 −, AM-Winger PC1 −); the review lists them.
+  - **Readability pass (user, 2026-10-07, display only):** zoom / pan / pinch, search-to-zoom, plain-language cards with registry display names, an explainer panel, fine-role colours and toggles (`docs/reviews/m4g-fine-roles.md`: no fine-role cohorts or maps).
+  - **Section ownership:** each spike writes only its own marked section of the review (`spikes/review_sections.py`, tested).
+  - **Hover on every map:**
+    - name, team, league and minutes, PC1 and PC2;
+    - the top 3 pushes per axis (loading × centred weighted value; all pushes sum to the score), each with its local percentile;
+    - every number re-derived from the parquets by the spike;
+    - a player search box.
 
 ### M4g2 — Reliability and trigger rules (measurements + registry; re-derive)
 - **Multi-split r_full:**
@@ -1150,7 +1175,7 @@ The stats-reviewer signs it off; any failure goes back to its decision.
 ### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
 - Folded in above: the leakage decision; the M4g1 lift and pivot label; the M4g3 baseline `min_attempts`, pooling, paired bootstrap and RMS; the M4g4 fixed order, ratios and β̂ fit; the M4g5 subsets and stratified folds; the majority-trigger wording.
 - Recorded in ADR 004: `long_pass_completion_pct` has the same length-truncation bias. A long ball that is intercepted or blocked early is recorded short and drops out of the denominator, which inflates the rate (the Koné example's metric).
-- **New dependencies (stats-reviewer condition):** numpy and scikit-learn join `pyproject.toml`, needed for the PCA, the xP model and the seeded RNG. Today the project declares polars only. scikit-learn is in the brief's stack; added in the first chunk that uses it (M4g1).
+- **New dependencies (stats-reviewer condition):** numpy and scikit-learn join `pyproject.toml`, needed for the PCA, the xP model and the seeded RNG. Today the project declares polars only. scikit-learn is in the brief's stack. Since M4g1 both are in the `dev` extra (spikes only); they move to runtime dependencies when `src/` first imports them (M4g5).
 - **User decisions on the review (2026-10-07):**
   - mover threshold f̂ ≤ 0.5;
   - duel-success denominator `tackles_attempted + dribbled_past`;
@@ -1165,6 +1190,13 @@ The stats-reviewer signs it off; any failure goes back to its decision.
 ---
 
 ## Backlog
+- **M4g1 spike follow-ups** (code-reviewer, M4g1 fix delta; user 2026-10-07):
+  - `spikes/m4g_fine_roles.py` `check_proposal`: guard the LW / RW divide (no wide rows should `fail`, not raise ZeroDivisionError), as `pool_facts` does, with a test;
+  - drop the hand-written "four legend ends" count from this plan's M4g1 outcome; the review's list is computed by `legend_changes`;
+  - a direct test for `legend_changes` (`spikes/m4g_style_map.py`).
+- **M5: DM-CM 6-share context column** (user, 2026-10-07; plan 005 M4g1 outcome).
+  - Show each DM-CM row's lineup-slot share (Defensive Midfield slots against Center Midfield slots) next to it as context, never as a cohort.
+  - Today it is computed only in `spikes/m4g_style_map.py` from the raw lineups; the pipeline would need per-position minutes.
 - **For M5 (similarity) before Gem Finder (M6) uses z** (stats-reviewer, user 2026-10-06; ADR 004 §12.8): (C1) mixed-role rows dominate |z| > 5, so handle the main-group minute share first; (C2) z is heavy-tailed and not comparable across metrics, so M5 decides the cap (§12.6).
 - **Carry `player_nickname` through the pipeline** (user, 2026-10-06): bundle with the next pipeline chunk, at the latest before M9. It is only in the raw lineups; adding it changes the season parquet sha256, so it needs a `--write-json` re-run, a new `REGISTRY_VERSION`, a percentiles rebuild and the before/after check. The comparison page keeps `player_name` until then.
 - **M9: human-readable registry reason codes** (user, 2026-10-06): the comparison page shows rule codes as they are stored (`d17_dropped`, `d12b_not_preregistered`, `team_style_biased`, `unreliable`, `low_coverage`, `zero_heavy`, `no_signal`, `possession_untestable`, `allow_listed`); fixed-display cells already show their ADR reason text. The M9 frontend needs a fixed code → text table, with unknown codes raising.

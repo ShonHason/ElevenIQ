@@ -1212,6 +1212,11 @@ Fixed before any M4g measurement. The stats-reviewer reviewed the specs before a
   - a normalised neighbour-label lift ≥ 0.4 for both labels;
   - |Cohen's d| ≥ 1.0 on PC1 or PC2.
 - The user decides any split; a split is its own chunk.
+- **Outcome (M4g1, user decision 2026-10-07): no split.**
+  - The reading found no separate regions: lifts 0.30 (6) and 0.23 (8) are below 0.4, while |d| is 1.28 and 1.10.
+  - The more-6 teammate sits on the 6 side in 84–87% of within-team pairs: a real role gradient, but a continuum.
+  - DM-CM stays one group.
+  - A 6-share context column goes to M5.
 
 ### 13.5 Dependencies
-numpy and scikit-learn are added to `pyproject.toml` with the first chunk that uses them (M4g1). xP builds pin `OMP_NUM_THREADS=1` and round xP to 1e-9, so two builds are byte-identical.
+numpy and scikit-learn are in the `dev` extra of `pyproject.toml` since M4g1, where only spikes use them (code-reviewer, M4g1). They become runtime dependencies when `src/` first imports them (M4g5, the xPass stage). xP builds pin `OMP_NUM_THREADS=1` and round xP to 1e-9, so two builds are byte-identical.
