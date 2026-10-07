@@ -19,7 +19,7 @@ player_id; k = 10 (config.DNA_NEIGHBOURS_K, written out). Ties broken by the sea
 Checks, per group:
 1. top-10 overlap, family vs equal metric weights, with the top-10-in-top-20 agreement, the
    rank 10 → 11 distance gap and a pure-noise overlap as references;
-2. with / without np_shots_on_target_p90 (AM-Winger, ST), under both weightings;
+2. with / without np_shots_on_target_p90 (the groups where it is DNA), under both weightings;
 3. each family's share of the squared distance (all pairs, and a row with its top-10
    neighbours: mean, P10, P90), next to the nominal weight and a pure-noise baseline;
 4. whether the 32 partial rows are over-represented among the top-10 neighbours, with a
@@ -38,6 +38,7 @@ Usage: .venv/bin/python spikes/m4f_weighting_checks.py [--out PATH]
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import random
 import sys
@@ -57,7 +58,11 @@ KEY = ref.KEY
 
 K = 10                                   # config.DNA_NEIGHBOURS_K
 SOT = "np_shots_on_target_p90"
-SOT_GROUPS = ("AM-Winger", "ST")
+GROUPS_ALL = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
+# The groups where np_shots_on_target_p90 is DNA (AM-Winger and ST at M4f; AM-Winger and DM-CM
+# since M4g2, ADR 004 §13.6).
+SOT_GROUPS = tuple(g for g in GROUPS_ALL if SOT in ref.DNA[g])
+MEASUREMENTS = ROOT / "src" / "eleveniq" / "analytics" / "measurements" / "statsbomb_27.json"
 Z_REPORT = 5.0                           # stats-reviewer C1: |z| > 5
 SHARE_MIXED = 0.70                       # C1: main-group minute share below this
 GROUPS = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
@@ -437,11 +442,14 @@ def main() -> None:
                 "In top-20", "Gap 10→11", "Noise"], body)
 
     # Check 2
-    w("## 2. With vs without `np_shots_on_target_p90` (AM-Winger, ST)")
+    w(f"## 2. With vs without `np_shots_on_target_p90` ({', '.join(SOT_GROUPS)})")
     w("")
-    w("Without it, `np_shots_p90` carries the whole Goal threat family weight. "
-      "`np_shots_on_target_p90` correlates 0.79–0.80 with `np_shots_p90` in these groups "
-      "(ADR 004 §10.9).")
+    rho = {p["group"]: p["rho"] for p in json.loads(MEASUREMENTS.read_text())["collinear_pairs"]
+           if {p["a"], p["b"]} == {SOT, "np_shots_p90"}}
+    w("Without it, the other Goal threat members carry the family weight. "
+      "`np_shots_on_target_p90` correlates "
+      + ", ".join(f"{rho[g]:.2f} ({g})" for g in SOT_GROUPS)
+      + " with `np_shots_p90` (Spearman, the committed measurements; ADR 004 §10.9, §13.6).")
     w("")
     body = []
     for g in SOT_GROUPS:

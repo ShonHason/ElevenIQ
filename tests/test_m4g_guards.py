@@ -81,9 +81,16 @@ def test_no_end_claim_uses_the_threshold_on_the_claimed_side(monkeypatch, neg, f
                                        "clearances_p90": 0.5}))
 
 
-def test_cb_note_needs_aerials_lost_above_won(monkeypatch):
+def test_a_dominant_claim_passes_at_half_the_axis(monkeypatch):
+    # "Almost entirely" (M4g2 legend notes): the squared loading carries ≥ 50% of the axis.
+    _check(monkeypatch, (("CB", 1, "dominant", "aerials_won_p90", 0.71),),
+           _maps({"aerials_won_p90": 0.71, "clearances_p90": 0.70}))
+
+
+def test_a_dominant_claim_fails_below_half_the_axis(monkeypatch):
     with pytest.raises(SystemExit):
-        _check(monkeypatch, (), _maps({**CB, "aerials_won_p90": 0.7}))
+        _check(monkeypatch, (("CB", 1, "dominant", "aerials_won_p90", 0.70),),
+               _maps({"aerials_won_p90": 0.70, "clearances_p90": 0.71}))
 
 
 # ── pool_facts ───────────────────────────────────────────────────────────────

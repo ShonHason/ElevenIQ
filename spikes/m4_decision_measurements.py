@@ -30,7 +30,10 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+import numpy as np
 import polars as pl
+
+import m4g2_multisplit as ms  # sibling spike: the multi-split engine (plan 005 M4g2)
 
 # Written out instead of imported from eleveniq (see the module docstring).
 LONG_PASS_THRESHOLD_UNITS = 30.0  # ADR 002 §19
@@ -77,6 +80,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw" / "statsbomb"
 SEASON_PARQUET = ROOT / "data" / "processed" / "player_season_stats.parquet"
 MATCH_PARQUET = ROOT / "data" / "interim" / "player_match_stats.parquet"
+BUCKETS_JSON = ROOT / "data" / "processed" / "reports" / "m4g2_reliability_cells.json"  # every population, report
 
 LEAGUES = {11: "La Liga", 2: "Premier League", 12: "Serie A", 7: "Ligue 1", 9: "Bundesliga"}
 POOL_LEAGUES = (11, 2, 12, 7)
@@ -122,8 +126,30 @@ RATIOS = {
     "dribble_success_pct": ("dribbles_completed", ["dribbles_attempted"], []),
     "tackle_success_pct": ("tackles_won", ["tackles_attempted"], []),
     "aerial_win_pct": ("aerials_won", ["aerials_won", "aerials_lost"], []),
+    # ADR 004 §13.2 (M4g2): a lost tackle and a Dribbled Past are both failures.
+    "defensive_duel_success_pct": ("tackles_won", ["tackles_attempted", "dribbled_past"], []),
 }
 RATIOS_ALL = {**RATIOS, "np_xg_per_shot": ("np_xg", ["np_shots"], [])}   # variance-components M (M4c2)
+# Multi-split r_full (plan 005 M4g2). The K target applies to cells whose status depends on r:
+# not fixed display, not D17-dropped (written out from the registry; tests/test_registry.py keeps
+# them equal). Minute buckets partition the gated rows on nominal minutes (report only).
+FIXED_DISPLAY_COLUMNS = frozenset({
+    "assists_p90", "carries_p90", "cross_completion_pct", "crosses_attempted_p90", "dispossessed_p90",
+    "dribble_success_pct", "goals_p90", "key_passes_p90", "miscontrols_p90", "op_assists_p90",
+    "passes_attempted_p90", "passes_completed_p90", "restart_assists_p90", "restart_xg_assisted_p90",
+    "shots_on_target_p90", "shots_p90", "switches_p90", "tackle_success_pct", "xg_assisted_direct_p90",
+    "xg_assisted_p90", "xg_p90", "xg_per_shot"})
+D17_DROPPED = frozenset({   # a literal, so tests read it with ast.literal_eval
+    ("tackles_won_p90", "CB"), ("tackles_won_p90", "FB-WB"), ("tackles_won_p90", "DM-CM"),
+    ("tackles_won_p90", "AM-Winger"), ("tackles_won_p90", "ST"),
+    ("dribbles_completed_p90", "CB"), ("dribbles_completed_p90", "FB-WB"),
+    ("dribbles_completed_p90", "DM-CM"), ("dribbles_completed_p90", "AM-Winger"),
+    ("dribbles_completed_p90", "ST"),
+    ("final_third_entries_carry_p90", "FB-WB"), ("final_third_entries_carry_p90", "AM-Winger"),
+    ("final_third_entries_carry_p90", "ST"),
+    ("final_third_entries_pass_p90", "DM-CM")})
+TEAM_PASS_SHARE_GROUPS = ("DM-CM", "CB")
+MINUTE_BUCKETS = {"900-1350": (None, 1350.0), "1350-2000": (1350.0, 2000.0), ">=2000": (2000.0, None)}
 SIGNATURE_COUNT_QUANTILE = 0.9  # --write-json: each cell's P90 of the season count (inverse ECDF), for the trait minimum
 
 
@@ -731,25 +757,100 @@ def split_half(df: pl.DataFrame, value_expr: pl.Expr) -> dict[str, float | None]
     return out
 
 
-bins = {"450-900": (450, 900), "900-1800": (900, 1800), "≥1800": (1800, 1e9), "gated(≥900)": None}
+# Odd/even r_full at the gate: the comparator for the multi-split before/after (plan 005 M4g2).
 rel_rows = []
 for m in P90:
-    c = COUNT_OF[m]
-    for bname, rng in bins.items():
-        sub = (halves.filter("gate") if rng is None else
-               halves.filter((pl.col("minutes_nominal_equiv") >= rng[0]) & (pl.col("minutes_nominal_equiv") < rng[1])))
-        r = split_half(sub, pl.col(c) / pl.col("minutes_played") * 90)
-        for grp, val in r.items():
-            rel_rows.append({"metric": m, "bin": bname, "group": grp, "r_full": val})
+    r = split_half(halves.filter("gate"), pl.col(COUNT_OF[m]) / pl.col("minutes_played") * 90)
+    for grp, val in r.items():
+        rel_rows.append({"metric": m, "group": grp, "r_full_odd_even": val})
 rel = pl.DataFrame(rel_rows)
-rel_g = rel.filter(pl.col("bin") == "gated(≥900)").pivot(on="group", index="metric", values="r_full").sort("metric")
-print(f"r_full at the gate (target ≥ {RELIABILITY_DNA}):")
-show(rel_g, rows=40)
-print("r_full by minutes bin, mean over groups:")
-show(rel.group_by("metric", "bin").agg(pl.col("r_full").mean()).pivot(on="bin", index="metric", values="r_full")
-     .sort("metric"), rows=40)
-below = rel.filter((pl.col("bin") == "gated(≥900)") & (pl.col("r_full") < RELIABILITY_DNA))
-print(f"metric × group cells below {RELIABILITY_DNA} at the gate: {below.height}")
+
+# ── Multi-split r_full (plan 005 M4g2, ADR 004 §13.1) ─────────────────────────
+section("D19 — multi-split r_full (plan 005 M4g2: random equal halves per stint, Spearman-Brown per "
+        "split, mean over K splits)")
+ms_rows = (played.join(season_info.filter(pl.col("in_percentile_pool") & pl.col("is_outfield")), on=KEY)
+           .sort([*KEY, "match_date", "match_id"]))
+ms_stints = (base.select(*KEY, "position_group", "gate", "minutes_nominal_equiv").sort(KEY)
+             .join(ms_rows.group_by(KEY, maintain_order=True).len("n_matches"), on=KEY, how="left"))
+if ms_stints["n_matches"].null_count() or ms_stints["n_matches"].min() < 1:
+    sys.exit("FAIL: a pool outfield stint has no played match (the split spec needs n ≥ 1)")
+ms_cols = sorted({"minutes_played", *count_cols, *ratio_cols, "np_xg", "np_shots",
+                  "open_play_passes_attempted", "team_open_play_passes_while_on"})
+starts = np.concatenate([[0], np.cumsum(ms_stints["n_matches"].to_numpy())[:-1]])
+nom = ms_stints["minutes_nominal_equiv"].to_numpy()
+gate_mask = ms_stints["gate"].to_numpy()
+populations = {"gate": gate_mask}
+for bname, (lo, hi) in MINUTE_BUCKETS.items():
+    populations[bname] = gate_mask & ((nom >= lo) if lo is not None else True) & ((nom < hi) if hi is not None else True)
+ms_data = ms.Data(columns=ms_cols, values=ms_rows.select(ms_cols).cast(pl.Float64).to_numpy(),
+                  starts=starts.astype(np.int64), n=ms_stints["n_matches"].to_numpy().astype(np.int64),
+                  league=ms_stints["competition_id"].to_numpy(),
+                  group=ms_stints["position_group"].to_numpy().astype(str), populations=populations)
+ms_measures = ([ms.Measure(m, "per90", COUNT_OF[m], ("minutes_played",)) for m in P90]
+               + [ms.Measure(r, "ratio", num, tuple(pos), tuple(neg)) for r, (num, pos, neg) in RATIOS_ALL.items()]
+               + [ms.Measure("team_pass_share", "share", "open_play_passes_attempted",
+                             ("team_open_play_passes_while_on",))])
+
+
+def ms_judged(grp: str, name: str) -> bool:
+    if name == "team_pass_share":
+        return grp in TEAM_PASS_SHARE_GROUPS
+    return name not in FIXED_DISPLAY_COLUMNS and (name, grp) not in D17_DROPPED
+
+
+ms_res = ms.run(ms_data, ms_measures, [*OUTFIELD, ms.ALL_GROUPS], ms_judged)
+print(f"K = {ms_res.k} (start {ms.K_START}, cap {ms.K_CAP}, MC SE target {ms.MC_SE_TARGET}; "
+      f"reached cap: {ms_res.reached_cap}); seed {ms.SEED}")
+# r undefined in some splits fails only for judged gated cells (plan 005 M4g2 amendment, 2026-10-07):
+# report-only buckets and non-judged cells (CB restart_assists_p90, fixed display) keep the statistics
+# over their defined splits, with n_undefined.
+ms_summary = {cell: ms_res.summary(cell, allow_partial=not (cell[0] == "gate" and cell[1] != ms.ALL_GROUPS
+                                                            and ms_judged(cell[1], cell[2])))
+              for cell in ms_res.r_full}
+odd_even_of = {(r["metric"], r["group"]): r["r_full_odd_even"] for r in rel.iter_rows(named=True)}
+
+
+def ms_fields(prefix: str, name: str, grp: str, odd_even: float | None) -> dict:
+    """The stored multi-split fields of a gated cell: <prefix> is the mean r_full (what the registry
+    reads), with the odd/even comparator, SD, MC SE, mean r_k and the n range (plan 005 M4g2)."""
+    sm = ms_summary[("gate", grp, name)]
+    return {prefix: sm["r_full"], f"{prefix}_odd_even": odd_even, f"{prefix}_sd": sm["sd"],
+            f"{prefix}_mc_se": sm["mc_se"], f"{prefix}_r_k_mean": sm["r_k_mean"],
+            f"{prefix}_n_undefined": sm["n_undefined"],
+            f"{prefix}_n_min": sm["n_min"], f"{prefix}_n_median": sm["n_median"], f"{prefix}_n_max": sm["n_max"],
+            f"{prefix}_share_present_every_split": sm["share_present_every_split"]}
+
+cmp_rows = []
+for m in P90:
+    for grp in OUTFIELD:
+        sm = ms_summary[("gate", grp, m)]
+        oe = odd_even_of.get((m, grp))
+        z = ((oe - sm["r_full"]) / sm["sd"] if oe is not None and sm["r_full"] is not None and sm["sd"]
+             else None)
+        cmp_rows.append({"metric": m, "group": grp, "odd_even": oe, "multi_split": sm["r_full"],
+                         "sd": sm["sd"], "mc_se": sm["mc_se"], "z_odd_even": z,
+                         "judged": ms_judged(grp, m)})
+cmp = pl.DataFrame(cmp_rows)
+print(f"per-90 r_full at the gate, odd/even vs multi-split (z = (odd/even − mean) / SD; target ≥ {RELIABILITY_DNA}):")
+show(cmp.sort("group", "metric"), rows=400)
+ms_over = [(c, v["mc_se"]) for c, v in ms_summary.items()
+        if c[0] == "gate" and c[1] != ms.ALL_GROUPS and ms_judged(c[1], c[2])
+        and v["mc_se"] is not None and v["mc_se"] > ms.MC_SE_TARGET]
+print(f"judged gated cells above the MC SE target at K = {ms_res.k}: {len(ms_over)}")
+for c, v in sorted(ms_over):
+    print(f"  {c[1]:10s} {c[2]:32s} MC SE {v:.4f}  r_full {ms_summary[c]['r_full']:.4f}")
+print("minute buckets (report only; no status change follows): multi-split r_full per bucket, n = stints with "
+      "both halves (median over splits)")
+bucket_rows = []
+for nm in [m.name for m in ms_measures]:
+    for grp in [*OUTFIELD, ms.ALL_GROUPS]:
+        row = {"metric": nm, "group": grp}
+        for bname in MINUTE_BUCKETS:
+            sm = ms_summary[(bname, grp, nm)]
+            row[bname] = sm["r_full"]
+            row[f"n_{bname}"] = sm["n_median"]
+        bucket_rows.append(row)
+show(pl.DataFrame(bucket_rows).filter(pl.col("metric").is_in(P90)).sort("metric", "group"), rows=400)
 
 # ── np_xg_per_shot: per-shot xG for the variance-components M (M4c2) ────────────
 # Stats-reviewer conditions (M4c2): raw scale, pooled within-row variance (MSW) in the same
@@ -876,7 +977,8 @@ for name, (num, pos, neg) in RATIOS_ALL.items():
         ref_local = {str(c): ref_l.filter(pl.col("competition_id") == c).height for c in POOL_LEAGUES}
         cell = {"n_gated": g_sub.height, "n_estimate_rows": rows_r.filter(pl.col("position_group") == grp).height,
                 "p_bar": pbar, "M": M, "no_signal": M is None, "min_attempts": min_att,
-                "coverage": meeting.height / g_sub.height, "split_half_r_full": sh.get(grp),
+                "coverage": meeting.height / g_sub.height,
+                **ms_fields("split_half_r_full", name, grp, sh.get(grp)),
                 "ref_n_global": ref_global.height, "ref_n_local": ref_local}
         if meeting.height:
             cell["league_mean_global_pct"] = league_mean_global_pct(meeting, "_v", ref_global)
@@ -923,8 +1025,7 @@ st = []
 for r in heavy.iter_rows(named=True):
     sub = gated.filter(pl.col("position_group") == r["group"])
     cnt = sub[COUNT_OF[r["metric"]]]
-    relv = rel.filter((pl.col("metric") == r["metric"]) & (pl.col("group") == r["group"])
-                      & (pl.col("bin") == "gated(≥900)"))["r_full"]
+    relv = pl.Series([ms_summary[("gate", r["group"], r["metric"])]["r_full"]])
     st.append({"metric": r["metric"], "group": r["group"], "n_gated": sub.height, "zero_share": r["zero_share"],
                **{f"count≥{t}": int((cnt >= t).sum()) for t in TRAIT_COUNTS},
                "r_full": relv.item() if relv.len() else None,
@@ -970,11 +1071,12 @@ else:
         for proxy in ("poss_dur_loo", "poss_pass_loo"):
             per[proxy + "_detail"] = possession_rho(sub, "team_pass_share", proxy)
             per[proxy] = per[proxy + "_detail"]["rho_within_mean"]
-        r_full = rel_tps.get(grp)
+        r_full = ms_summary[("gate", grp, "team_pass_share")]["r_full"]
         # D9 as for the per-90s: gated rows of the group scored against its deduped global
         # population (plan 005 M4c3: the registry needs global_ok for the DM-CM DNA cell).
         tps_means = league_mean_global_pct(sub, "team_pass_share", gpop.filter(pl.col("position_group") == grp))
-        d12b_json[grp] = {"n_gated": sub.height, "split_half_r_full": r_full,
+        d12b_json[grp] = {"n_gated": sub.height,
+                          **ms_fields("split_half_r_full", "team_pass_share", grp, rel_tps.get(grp)),
                           "league_mean_global_pct": tps_means,
                           "possession": {proxy: per[proxy + "_detail"] for proxy in ("poss_dur_loo", "poss_pass_loo")}}
         d12b.append({"group": grp, "n": sub.height,
@@ -1025,8 +1127,6 @@ if ARGS.write_json:
     for cell in d12b_json.values():
         cell["possession"] = {k: strip_sign(v) for k, v in cell["possession"].items()}
     zero_of = {(r["metric"], r["group"]): r["zero_share"] for r in zero.iter_rows(named=True)}
-    rfull_of = {(r["metric"], r["group"]): r["r_full"]
-                for r in rel.filter(pl.col("bin") == "gated(≥900)").iter_rows(named=True)}
     d9_ok = {(r["metric"], r["group"]): r["global_ok"] for r in d9.iter_rows(named=True)}
     metrics_json: dict[str, dict] = {}
     for m in P90:
@@ -1039,7 +1139,7 @@ if ARGS.write_json:
             metrics_json[m]["groups"][grp] = {
                 "n_gated": sub.height,
                 "zero_share": zero_of[(m, grp)],
-                "r_full": rfull_of.get((m, grp)),
+                **ms_fields("r_full", m, grp, odd_even_of.get((m, grp))),
                 "count_p90": count_p90,
                 "holders_at_count": {count_key(t): int((cnt >= t).sum()) for t in sorted({*TRAIT_COUNTS, count_p90})},
                 "global_ok": d9_ok[(m, grp)],
@@ -1069,7 +1169,10 @@ if ARGS.write_json:
             "reference": "gated rows, one row per (player_id, season_id, source) per population (D3: most minutes, "
                          "then lowest competition_id, then lowest team_id); for a ratio, only rows meeting "
                          "min_attempts (ADR 004 D19 clarification, M4c2)",
-            "r_full": "split-half, odd/even matches by date, demeaned within league × group, Spearman-Brown",
+            "r_full": "multi-split split-half (plan 005 M4g2): per split, each stint's matches go at random to "
+                      "two equal halves; half values demeaned within league × group, pooled Pearson, "
+                      "Spearman-Brown; r_full = the mean over K splits of the corrected values. *_odd_even = "
+                      "the earlier odd/even-by-date value, kept for the before/after",
             "possession": "Spearman ρ with leave-one-out team possession (duration, pass share) within each pool league",
             "ratio_M": f"pool outfield rows with denominator ≥ {RATIO_MIN_N}; beta-binomial (np_xg_per_shot: "
                        "variance components); min_attempts = ⌈1.5·M⌉; null when no signal",
@@ -1080,9 +1183,22 @@ if ARGS.write_json:
         "ratios": ratio_json,
         "team_pass_share": d12b_json,
         "collinear_pairs": pairs,
+        "reliability": {"seed": ms.SEED, "k": ms_res.k, "k_start": ms.K_START, "k_cap": ms.K_CAP,
+                        "mc_se_target": ms.MC_SE_TARGET, "reached_cap": ms_res.reached_cap,
+                        "judged_cells_above_target": sorted([c[1], c[2]] for c, _ in ms_over)},
     }
     ARGS.write_json.parent.mkdir(parents=True, exist_ok=True)
     with ARGS.write_json.open("w") as f:
         json.dump(round_floats(out), f, indent=1, sort_keys=True, allow_nan=False, ensure_ascii=False)
         f.write("\n")
     print(f"\nwrote {ARGS.write_json}")
+    # Minute buckets are report only (plan 005 M4g2 #9): a separate file, never read by the registry.
+    buckets_out = {"generated_by": "spikes/m4_decision_measurements.py --write-json", "k": ms_res.k,
+                   "seed": ms.SEED, "buckets": {b: {"lo": lo, "hi": hi} for b, (lo, hi) in MINUTE_BUCKETS.items()},
+                   "cells": [{"population": p_, "group": g_, "measure": n_, **ms_summary[(p_, g_, n_)]}
+                             for (p_, g_, n_) in sorted(ms_summary)]}
+    BUCKETS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    with BUCKETS_JSON.open("w") as f:
+        json.dump(round_floats(buckets_out), f, indent=1, sort_keys=True, allow_nan=False, ensure_ascii=False)
+        f.write("\n")
+    print(f"wrote {BUCKETS_JSON}")

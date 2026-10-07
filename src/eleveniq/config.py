@@ -188,6 +188,9 @@ RATIO_MIN_COVERAGE: float = 0.90
 # and the sign test passes. Leagues with |rho| below POSSESSION_SIGN_NEUTRAL have no sign.
 POSSESSION_RHO_TRIGGER: float = 0.4
 POSSESSION_SIGN_NEUTRAL: float = 0.05
+# ADR 004 §13.1 (M4g2): the majority-of-leagues trigger fires when at least this many pool
+# leagues have |rho| >= POSSESSION_RHO_TRIGGER, all of one sign (an OR with the mean rule).
+POSSESSION_MAJORITY_LEAGUES: int = 3
 # D12: an allow-list entry admits a triggered cell when the larger proxy |mean rho| is
 # <= this (inclusive). No entry may declare a looser bound.
 POSSESSION_ALLOW_MAX_RHO: float = 0.55

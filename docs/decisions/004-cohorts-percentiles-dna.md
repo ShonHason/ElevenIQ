@@ -1220,3 +1220,229 @@ Fixed before any M4g measurement. The stats-reviewer reviewed the specs before a
 
 ### 13.5 Dependencies
 numpy and scikit-learn are in the `dev` extra of `pyproject.toml` since M4g1, where only spikes use them (code-reviewer, M4g1). They become runtime dependencies when `src/` first imports them (M4g5, the xPass stage). xP builds pin `OMP_NUM_THREADS=1` and round xP to 1e-9, so two builds are byte-identical.
+
+### 13.6 M4g2 outcome: reliability and trigger rules (plan 005 M4g2, 2026-10-07)
+Implemented as §13.1 and plan 005 M4g2 fix them, with the user's O1–O4 decisions and the stats-reviewer's pre-code conditions. **This section supersedes the §10.6 DNA lists and the §10.10 status and note rows for 2015/16.** §10's tables stay as the M4c2 record; their r values are the odd/even ones, stored next to the new values as `*_odd_even`.
+
+**Method as run.**
+- **Multi-split r_full:** K = 3200, which is the cap; seed 20261007.
+  - Only ST `defensive_duel_success_pct` (r 0.090) keeps an MC SE above 0.002 (0.0021). It is not within ±0.02 of 0.6, so it gets no boundary row.
+  - Every stored cell also carries the odd/even value, SD, MC SE, mean r_k, its n range and `n_undefined`.
+- **Undefined r (amendment, user 2026-10-07):** "undefined in some splits fails" applies to judged gated cells only.
+  - The one gated cell with a partly undefined r is CB `restart_assists_p90` (fixed display; 376 of 3200 splits).
+  - 13 report-only minute-bucket cells, mostly zero-heavy restart columns, are also partly undefined. All of these keep statistics over their defined splits.
+- **Independent check:** `spikes/m4g2_reliability_reference.py --check-output` agrees on 13,760 values within 2e-9.
+  - It reproduces the K rule on prefixes of the stream, and every committed odd/even value exactly.
+  - Its own copy of the §10.3 rules reproduces every pre-M4g2 status.
+- **Pre-registration:** `spikes/expected_m4g2_flips.json` was written before the registry code changed. `spikes/m4g2_before_after.py` (the STOP rule) passed: 22 expected changes and nothing else, plus 12 cells whose status is unchanged that gained the `majority_triggered` reason.
+- **Registry:** `REGISTRY_VERSION` aaecf86fa483… → 930d0019ee11….
+
+**Status and note changes (metric × group: old → new, rule).** \* = lower-reliability note.
+
+| Group | Metric | Change | Rule (odd/even → multi-split r) |
+|---|---|---|---|
+| CB | `aerials_lost_p90` | dna\* → display | r 0.612 → 0.557 |
+| FB-WB | `aerials_lost_p90` | dna\* → display | r 0.607 → 0.535 |
+| FB-WB | `interceptions_p90` | dna\* → display | r 0.623 → 0.585 |
+| FB-WB | `np_xg_p90` | dna\* → display | r 0.644 → 0.596 |
+| FB-WB | `fouls_committed_p90` | display → dna\* | r 0.598 → 0.621 |
+| FB-WB | `op_key_passes_p90` | dna → dna\* | r 0.714 → 0.684 |
+| DM-CM | `np_shots_on_target_p90` | display → dna\* | r 0.593 → 0.622 |
+| DM-CM | `dribbled_past_p90` | dna → dna\* | r 0.736 → 0.691 |
+| DM-CM | `op_xg_assisted_p90` | dna → dna\* | r 0.715 → 0.675 |
+| DM-CM | `op_key_passes_p90` | dna\* → dna | r 0.693 → 0.730 |
+| AM-Winger | `op_key_passes_p90` | dna → dna\* | r 0.726 → 0.667 |
+| AM-Winger | `op_xg_assisted_p90` | display (team_style_biased) → display (unreliable) | r 0.623 → 0.555, so the possession step is no longer reached |
+| ST | `np_shots_on_target_p90` | dna\* → display (team_style_biased) | **majority trigger**, as pre-registered |
+| ST | `dribbled_past_p90` | display → dna\* (style, §13.2) | r 0.598 → 0.622 |
+| ST | `blocks_p90` | dna → dna\* | r 0.715 → 0.611 |
+| ST | `tackles_attempted_p90` | dna\* → dna | r 0.612 → 0.728 |
+| ST | `np_xg_p90` | display (unreliable) → display (team_style_biased) | r 0.599 → 0.664; the mean rule (0.436 / 0.442) blocks it |
+| all 5 | `defensive_duel_success_pct` | new → display | r 0.09–0.38; coverage 0–15% (`min_attempts` 93–562) |
+
+The 5 new cells are counted in the 22. `dribbled_past_p90` → `style` (§13.2) changes no status.
+- **`defensive_duel_success_pct` collinear pairs:** it adds 18 pairs at |ρ| ≥ 0.85, all in DM-CM, where only 3 rows meet `min_attempts`, so ρ is ±1 or ±0.866 with most metrics: noise.
+  - One more pair is listed at the 0.7 report floor: AM-Winger vs `tackles_won_p90`, 0.734.
+  - The ratio is display everywhere, so no D17 choice is needed.
+
+**DNA lists (supersede §10.6).** \* = lower-reliability note; (AL) = team_style_biased, admitted by the allow-list.
+- **CB (15):** aerials_won, ball_recoveries, box_entries_pass, clearances\*, dribbled_past\*, dribbles_attempted\*, final_third_entries_carry, final_third_entries_pass, fouls_won\*, long_passes_attempted, pressures, progressive_carries (AL), progressive_passes (AL), tackles_attempted, long_pass_completion_pct (AL).
+- **FB-WB (17):** aerials_won, ball_recoveries, box_entries_carry, box_entries_pass, clearances, dribbled_past\*, dribbles_attempted, fouls_committed\*, fouls_won, long_passes_attempted, np_shots, op_key_passes\*, pressures, progressive_carries (AL), progressive_passes (AL), tackles_attempted, long_pass_completion_pct\* (AL).
+- **DM-CM (25):** aerials_lost, aerials_won, ball_recoveries, blocks\*, box_entries_carry, box_entries_pass, clearances, dribbled_past\*, dribbles_attempted, final_third_entries_carry, fouls_committed, fouls_won, interceptions\*, long_passes_attempted, np_shots, np_shots_on_target\*, np_xg, op_key_passes, op_xg_assisted\*, pressures, progressive_carries (AL), progressive_passes (AL), tackles_attempted, long_pass_completion_pct (AL), team_pass_share.
+- **AM-Winger (22, unchanged):** aerials_lost, aerials_won, ball_recoveries, blocks\*, box_entries_carry, box_entries_pass, clearances, dribbled_past, dribbles_attempted, final_third_entries_pass, fouls_committed, fouls_won, interceptions\*, long_passes_attempted, np_shots, np_shots_on_target, op_key_passes\*, pressures, progressive_carries, progressive_passes, tackles_attempted, long_pass_completion_pct.
+- **ST (20):** aerials_lost, aerials_won, ball_recoveries, blocks\*, box_entries_carry, box_entries_pass, clearances, dribbled_past\*, dribbles_attempted, final_third_entries_pass, fouls_committed, fouls_won, long_passes_attempted, np_shots, pressures, progressive_carries, progressive_passes, tackles_attempted, pass_completion_pct, aerial_win_pct.
+- **Signature traits:** unchanged (`restart_key_passes` in every group).
+- **DM-CM Goal threat now holds `np_shots`, `np_shots_on_target` and `np_xg`.** `np_shots` ~ `np_shots_on_target` is ρ 0.840 in DM-CM, just under the 0.85 D17 rule. It is handled by the family weights (§10.8, §10.9 pattern), and it is reported here because a new source could cross 0.85.
+- **ST Goal threat now holds `np_shots` alone.** It is possession-sensitive (2 of 4 leagues ≥ 0.4, §10.10), and its majority V is 0.382.
+
+**Majority-triggered, admitted by the allow-list (O1; reason `majority_triggered`, `allow_listed`).** All 8 also fire the mean rule.
+
+| Group | Metric | Duration: leagues ≥ 0.4 / max league \|ρ\| / fires | Pass share: leagues ≥ 0.4 / max league \|ρ\| / fires |
+|---|---|---|---|
+| CB | `long_pass_completion_pct` | 3 / 0.715 / yes | 3 / 0.750 / yes |
+| CB | `progressive_carries_p90` | 3 / 0.589 / yes | 4 / 0.620 / yes |
+| CB | `progressive_passes_p90` | 3 / 0.509 / yes | 4 / 0.558 / yes |
+| FB-WB | `progressive_carries_p90` | 2 / 0.508 / no | 3 / 0.503 / yes |
+| FB-WB | `progressive_passes_p90` | 4 / 0.646 / yes | 4 / 0.642 / yes |
+| DM-CM | `long_pass_completion_pct` | 3 / 0.574 / yes | 3 / 0.607 / yes |
+| DM-CM | `progressive_carries_p90` | 4 / 0.632 / yes | 4 / 0.637 / yes |
+| DM-CM | `progressive_passes_p90` | 3 / 0.544 / yes | 3 / 0.541 / yes |
+
+- `derive()` returns this set as `majority_admitted`; a test asserts it on statsbomb_27.
+- M4g4 re-examines the 8 and states, before its run, what it decides for them.
+
+**Boundary report (supersedes §10.10's status and note rows).** The value is printed to 6 decimals. Majority rows show V, the 3rd-largest same-sign |ρ| (O3); none has an opposite-sign league within ±0.02 of 0.4, so there are no `majority_sign` rows. The 33 status and note rows are below; the 51 D9 rows are recomputed by `derive()` and not listed.
+
+| Rule | Group | Metric | Value | Threshold | Per league (La Liga / PL / Serie A / Ligue 1) | Outcome |
+|---|---|---|---|---|---|---|
+| r_full | FB-WB | `interceptions_p90` | 0.585339 | 0.6 | — | display |
+| r_full | FB-WB | `np_xg_p90` | 0.595898 | 0.6 | — | display |
+| r_full | DM-CM | `blocks_p90` | 0.617896 | 0.6 | — | dna\* |
+| r_full | ST | `blocks_p90` | 0.611414 | 0.6 | — | dna\* |
+| ρ trigger (duration) | FB-WB | `final_third_entries_pass_p90` | 0.409583 | 0.4 | 0.346 / 0.600 / 0.313 / 0.380 | display (tsb) |
+| ρ trigger (pass share) | FB-WB | `final_third_entries_pass_p90` | 0.401950 | 0.4 | 0.386 / 0.581 / 0.302 / 0.339 | display (tsb) |
+| ρ trigger (duration) | FB-WB | `progressive_carries_p90` | 0.407480 | 0.4 | 0.324 / 0.385 / 0.508 / 0.413 | dna (AL) |
+| ρ trigger (duration) | FB-WB | `long_pass_completion_pct` | 0.417085 | 0.4 | 0.587 / 0.430 / 0.296 / 0.355 | dna\* (AL) |
+| ρ trigger (pass share) | FB-WB | `long_pass_completion_pct` | 0.416738 | 0.4 | 0.568 / 0.433 / 0.295 / 0.370 | dna\* (AL) |
+| ρ trigger (duration) | AM-Winger | `pass_completion_pct` | 0.383490 | 0.4 | 0.321 / 0.295 / 0.654 / 0.264 | display (tsb) |
+| ρ trigger (pass share) | AM-Winger | `pass_completion_pct` | 0.410877 | 0.4 | 0.323 / 0.412 / 0.646 / 0.263 | display (tsb) |
+| ρ trigger (pass share) | AM-Winger | `np_xg_p90` | 0.410867 | 0.4 | 0.323 / 0.435 / 0.401 / 0.484 | display (tsb) |
+| ρ trigger (pass share) | AM-Winger | `np_shots_on_target_p90` | 0.389822 | 0.4 | 0.412 / 0.306 / 0.364 / 0.477 | dna |
+| ρ trigger (pass share) | ST | `np_shots_on_target_p90` | 0.395111 | 0.4 | 0.449 / 0.467 / 0.126 / 0.538 | display (tsb, majority) |
+| majority V (duration) | FB-WB | `progressive_carries_p90` | 0.385216 | 0.4 | 0.324 / 0.385 / 0.508 / 0.413 | dna (AL) |
+| majority V (duration) | ST | `np_shots_on_target_p90` | 0.407722 | 0.4 | 0.447 / 0.408 / 0.139 / 0.512 | display (tsb, majority) |
+| majority V (pass share) | CB | `long_pass_completion_pct` | 0.417317 | 0.4 | 0.364 / 0.750 / 0.504 / 0.417 | dna (AL) |
+| majority V (pass share) | FB-WB | `progressive_carries_p90` | 0.419963 | 0.4 | 0.376 / 0.460 / 0.503 / 0.420 | dna (AL) |
+| majority V (pass share) | DM-CM | `progressive_passes_p90` | 0.412802 | 0.4 | 0.413 / 0.541 / 0.396 / 0.541 | dna (AL) |
+| majority V (pass share) | AM-Winger | `np_xg_p90` | 0.401357 | 0.4 | 0.323 / 0.435 / 0.401 / 0.484 | display (tsb) |
+| majority V (pass share) | ST | `np_shots_p90` | 0.381793 | 0.4 | 0.585 / 0.523 / −0.002 / 0.382 | dna |
+| Allow-list bound | CB | `progressive_carries_p90` | 0.548655 | 0.55 | 0.459 / 0.620 / 0.561 / 0.556 | dna (AL) |
+| Lower-reliability note | CB | `box_entries_pass_p90` | 0.707266 | 0.7 | — | dna, no note |
+| Lower-reliability note | CB | `dribbles_attempted_p90` | 0.696195 | 0.7 | — | dna, note |
+| Lower-reliability note | CB | `fouls_won_p90` | 0.688642 | 0.7 | — | dna, note |
+| Lower-reliability note | CB | `tackles_attempted_p90` | 0.714502 | 0.7 | — | dna, no note |
+| Lower-reliability note | FB-WB | `box_entries_pass_p90` | 0.705739 | 0.7 | — | dna, no note |
+| Lower-reliability note | FB-WB | `op_key_passes_p90` | 0.683752 | 0.7 | — | dna, note |
+| Lower-reliability note | DM-CM | `dribbled_past_p90` | 0.690658 | 0.7 | — | dna, note |
+| Lower-reliability note | DM-CM | `np_xg_p90` | 0.702235 | 0.7 | — | dna, no note |
+| Lower-reliability note | AM-Winger | `long_pass_completion_pct` | 0.704960 | 0.7 | — | dna, no note |
+| Lower-reliability note | AM-Winger | `np_shots_on_target_p90` | 0.710162 | 0.7 | — | dna, no note |
+| Lower-reliability note | ST | `box_entries_pass_p90` | 0.719059 | 0.7 | — | dna, no note |
+
+The AM-Winger `op_xg_assisted_p90` ρ row has left (r is now below 0.6, so the possession step is no longer reached).
+
+**Odd/even vs multi-split: hypotheses, not findings (user, 2026-10-07; for the stats-reviewer).**
+- Over 215 per-90 gated cells, z = (odd/even − mean) / SD has mean +0.27 and SD 1.05; 13 cells have |z| > 2 and 2 have |z| > 3 (ST `tackles_attempted` −3.29). The mean multi-split − odd/even shift is −0.008. On average the odd/even split was slightly optimistic.
+- Candidate causes:
+  - temporal balance: alternating dates spread both halves over the whole season, so form, injuries and coach changes are shared, while random halves can cluster in time;
+  - home/away alternation, though on its own it would more likely lower r than raise it.
+- No change is described as "improved reliability": both methods estimate the same quantity, and the new one has less split noise.
+- **Minute buckets** (report only, no status change): `data/processed/reports/m4g2_reliability_cells.json`, summarised in `docs/reviews/m4g2-reliability.md`.
+
+**Rebuild (percentiles, DNA, maps; 2026-10-07).**
+- **Percentiles:** every pre-M4g2 cell is identical. The only differences are `registry_status` on the 8 cells whose status changed, and the version and sha stamps; `defensive_duel_success_pct` adds its own rows. Both reference checks pass (`m4d_percentiles_reference`, `m4f_dna_reference --check-output`).
+- **DNA:**
+  - AM-Winger, whose list is unchanged, is identical: vectors, dimension scores and neighbours. Only the `dribbled_past` direction column and the stamps differ.
+  - CB's dimension scores are unchanged. Only the Aerial family weight moved, onto `aerials_won` alone.
+  - FB-WB, DM-CM and ST change only where their lists changed.
+- **Neighbours (`docs/reviews/m4f-weighting.md`, top-10 overlap with M4f):**
+  - Kanté, Özil, Payet, Messi and Neymar 10/10; Busquets and Isco 9/10;
+  - Stones 8/10 (Ramos and Bonucci out);
+  - Morgan 7/10.
+  - The with / without `np_shots_on_target` check now covers DM-CM and AM-Winger, the groups where it is DNA.
+- **Compare re-checks (M4g1b pairs), before → after:**
+
+  | Pair | Distance | Ranks (of 293) |
+  |---|---|---|
+  | Busquets–Kanté | 0.1430 → 0.1431 | #100 / #133 → #107 / #140 |
+  | Carrick–Busquets | 0.1136 → 0.1134 | #46 / #44 → #47 / #42 |
+
+- **Golden pages:**
+  - Kane / Ben Arfa / Ighalo: ST Goal threat members go from 2 to 1. Scores: Kane 93 → 90, Ighalo 76 → 65.
+  - Walcott–Özil: dribbled past becomes an uncoloured style axis without "(lower better)".
+  - Both pages also show the new ratio row.
+- **DM-CM role split, re-read on the new vector:** still no separate regions.
+  - Lifts 0.30 (6) and 0.23 (8); d −1.28 / −1.11; overlap 0.50 / 0.56.
+  - The M4g1 decision stands.
+
+**Style-map axes (user decisions, 2026-10-07).**
+- **Pins.** PCA signs are arbitrary, and the solver's sign flipped CB PC1 and ST PC1. Each axis is now signed so that a named pin metric loads positive, which keeps every M4g1 name on its screen side. A test checks that a solver sign flip does not move an axis.
+
+  | Group | PC1 pin | PC2 pin |
+  |---|---|---|
+  | CB | progressive passes | aerials won |
+  | FB-WB | open-play key passes | aerials won |
+  | DM-CM | open-play key passes | np_xg |
+  | AM-Winger | open-play key passes | np shots |
+  | ST | aerials won | np shots |
+
+- **New names** (left → right / bottom → top):
+  - CB PC2 and FB-WB PC2: "Fewer ↔ More aerials won". The axes are almost entirely aerials won: +0.82 and +0.91, with nothing on the − end.
+  - Their legend note: "Almost entirely aerial duels won per 90 (a count, not a win rate). Aerials lost left the DNA in M4g2 (lower reliability), so the Aerial family's weight now sits on this one metric."
+  - ST PC2: "Safe passer ↔ Box striker" (shots +0.57, aerial win rate +0.39, aerials won +0.33, final-third passes +0.27 vs pass completion −0.37).
+- **Unchanged names:** the other names keep their support.
+- **ST PC1 legend note:** "Aerial target" mostly measures how often the striker contests aerial duels (won +0.30, lost +0.28). Aerial win rate is weaker (+0.20), so the note does not say "not heading ability". It is not headed shots or headed goals.
+- **ST cards and legend:** they say "Dribbled past while pressing".
+- **Quoted loadings:** every loading quoted in a note or verdict is checked on each run, including a "dominant" claim (squared loading ≥ 50%) behind "almost entirely".
+- **Benzema (ST hover), before → after:**
+  - PC1: −0.333 → −0.333, still "Technical forward" (strong).
+  - Top pushes were shots on target / shots / aerials lost; now shots (−0.078) / aerials lost / long passes.
+  - PC2: "Link-up focal point" (slight, +0.075) → "Box striker" (slight, +0.086). Top pushes were pass completion / shots / shots on target; now shots / pass completion / aerials won.
+  - Shots now carries what was split between shots and shots on target.
+
+**Minute buckets (report only; `docs/reviews/m4g2-reliability.md`).** The mean per-90 r_full rises with minutes in every group, from 900–1350 to ≥ 2000:
+
+| Group | 900–1350 | ≥ 2000 |
+|---|---|---|
+| CB | 0.35 | 0.65 |
+| FB-WB | 0.61 | 0.75 |
+| DM-CM | 0.69 | 0.84 |
+| AM-Winger | 0.66 | 0.85 |
+| ST | 0.64 | 0.82 |
+
+Buckets select on role and stability as well as minutes. No status change follows.
+
+**Flagged for the stats-reviewer (user, 2026-10-07).**
+- Single-metric axes (CB PC2, FB-WB PC2). With equal family weights, a family that drops to one metric puts its whole weight on that metric.
+- ST Goal threat now has one member (`np_shots`); see the golden scores above.
+- DM-CM `np_shots` ~ `np_shots_on_target` ρ 0.84, both in Goal threat.
+- The odd/even optimism hypotheses (temporal balance vs home/away).
+
+**Stats-reviewer outcome (`/finish-chunk`, 2026-10-07): APPROVE WITH CONDITIONS, output only.** It reproduced every figure above. Its conditions are recorded here.
+
+- **Open decision for M4 sign-off: family weighting when a family has one member** (user, 2026-10-07; plan 005, before M4g6). The options are to accept it, cap a single-member family's weight, or merge families. Nothing changes until then. The evidence, from complete rows (one family = 1 / number of families, split equally among its members, §10.8):
+
+  | Group | Single-member families after M4g2 | Largest single metric weight | Effective metrics (1 / Σw²), before → after |
+  |---|---|---|---|
+  | CB | Aerial (`aerials_won`) | 0.20 (was 0.10) | 14.0 → 10.9 |
+  | FB-WB | Aerial (`aerials_won`), Goal threat (`np_shots`), Creation (`op_key_passes`, already single in M4f) | 0.143 each, 43% of the vector on 3 metrics | 14.3 → 11.1 |
+  | ST | Goal threat (`np_shots`) | 0.167 (was 0.083) | 17.3 → 14.1 |
+  | DM-CM | none | 0.071 | 18.4 → 19.7 |
+  | AM-Winger | Creation (`op_key_passes`, unchanged since M4f) | 0.143 | 15.3 → 15.3 |
+
+  - Each metric's share of the mean pair distance equals its weight (stats-reviewer, measured).
+  - The neighbour lists now depend more on the weighting. The family-weight vs equal-weight top-10 overlap fell as follows (`docs/reviews/m4f-weighting.md` §1):
+
+    | Group | Mean overlap | Rows with ≥ 7 of 10 shared |
+    |---|---|---|
+    | FB-WB | 0.680 → 0.604 | 58.6% → 37.3% |
+    | ST | 0.783 → 0.706 | 88.6% → 65.8% |
+    | CB | 0.772 → 0.723 | 90.2% → 74.5% |
+
+  - The upweighted metric leads both map axes in CB (aerials won −0.47 on PC1, +0.82 on PC2) and in ST (np shots −0.40 on PC1, +0.57 on PC2), not only the single-metric PC2s. CB's PC1 + PC2 share rose from 44.8% to 49.8%.
+- **ST Goal threat is now shot volume only: the same root cause, under the same open decision.**
+  - With `np_shots` alone, the ST Goal threat score ranks shot volume. Example: Kane 90 (3.87 np shots, 0.448 np_xg per 90) vs Vardy 68 (3.02, 0.475), down from 93 and 75.
+  - `np_shots` stays in DNA on the mean rule (ρ 0.340 / 0.372), while `np_xg` is blocked (0.436 / 0.442). The SE of a 4-league mean ρ is about 0.075, so the two are statistically indistinguishable in possession sensitivity.
+  - `np_shots` is also possession-linked in La Liga (0.585) and the Premier League (0.523), with majority V 0.382.
+  - No label change now (user, 2026-10-07).
+- **Odd/even optimism, tested read-only by the stats-reviewer** (400 random splits, the engine's split functions). It settles the hypotheses above:
+  - **The optimism is real.** The odd/even split hits every cell at once, so the cell z values are correlated. Allowing for that, the cross-cell mean z over random splits has SD 0.111, and odd/even's +0.25–0.27 has P ≈ 0.007.
+  - **Temporal balance: confirmed.** A random split balanced in time (randomised within consecutive match pairs) gives mean z +0.175, and odd/even sits inside that distribution. A first-half vs second-half split gives −0.87, so within-season drift is substantial.
+  - **Home/away: rejected.** A home vs away split gives z −0.07. Odd/even halves are less home/away-balanced than random ones (mean |Δ home share| 0.29 vs 0.16), which pushes its r down, not up.
+  - **Consequence for the estimand:** random splits count within-season drift (form, injuries, coach changes) as error, but for a season aggregate that drift is part of the season's true value. So the multi-split r_full understates a season aggregate's reliability by about 0.004–0.008 on average. This is conservative.
+  - The adopted method stands, since it was fixed before the run. A time-stratified random split is the principled alternative, if a later ADR wants one.
+- **Other observations (recorded, no change):**
+  - **Fragile entries:** the three cells that entered DNA (FB-WB `fouls_committed` 0.621, DM-CM `np_shots_on_target` 0.622, ST `dribbled_past` 0.622) sit 0.021–0.022 above 0.6, just outside the boundary margin, against a player-sampling SE of about 0.04–0.05.
+  - **Near the gate:** 29 of 99 DNA metric × group cells fall below 0.6 in the 900–1350 minute bucket. Profiles near the gate are noisier than the pooled r suggests, which is a UI / M5 note.
+  - **`defensive_duel_success_pct` produces no percentile anywhere** (min_attempts 93–562).
+  - **Collinear-pair noise:** its 18 DM-CM pairs come from 3 rows. A minimum-n floor on the collinear-pair list would stop noise pairs from creating D17 conflicts on a new source.

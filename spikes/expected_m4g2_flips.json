@@ -1,0 +1,682 @@
+{
+ "description": "Expected M4g2 registry changes (plan 005 M4g2), written by spikes/m4g2_reliability_reference.py --write-expected BEFORE the registry code changes: ADR 004 §10.3 rules + the majority trigger (O1: the allow-list admits), applied to the new measurements; frozen cells (fixed display, D17, override, not pre-registered) keep their snapshot status.",
+ "snapshot_registry_version": "aaecf86fa4835884a1cfde4e2857e70678c76eddffcf2456ad7827dda748f195",
+ "measurements_k": 3200,
+ "changes": [
+  {
+   "column": "aerials_lost_p90",
+   "group": "CB",
+   "old": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "r 0.612087633 → 0.556823621"
+  },
+  {
+   "column": "defensive_duel_success_pct",
+   "group": "CB",
+   "old": {
+    "status": null,
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "new cell"
+  },
+  {
+   "column": "aerials_lost_p90",
+   "group": "FB-WB",
+   "old": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "r 0.60679264 → 0.534508566"
+  },
+  {
+   "column": "defensive_duel_success_pct",
+   "group": "FB-WB",
+   "old": {
+    "status": null,
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "new cell"
+  },
+  {
+   "column": "fouls_committed_p90",
+   "group": "FB-WB",
+   "old": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.597775824 → 0.62065877"
+  },
+  {
+   "column": "interceptions_p90",
+   "group": "FB-WB",
+   "old": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "r 0.622720963 → 0.585339491"
+  },
+  {
+   "column": "np_xg_p90",
+   "group": "FB-WB",
+   "old": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "r 0.644283868 → 0.595897973"
+  },
+  {
+   "column": "op_key_passes_p90",
+   "group": "FB-WB",
+   "old": {
+    "status": "dna",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.714213075 → 0.683751685"
+  },
+  {
+   "column": "defensive_duel_success_pct",
+   "group": "DM-CM",
+   "old": {
+    "status": null,
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "new cell"
+  },
+  {
+   "column": "dribbled_past_p90",
+   "group": "DM-CM",
+   "old": {
+    "status": "dna",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.735975284 → 0.690658201"
+  },
+  {
+   "column": "np_shots_on_target_p90",
+   "group": "DM-CM",
+   "old": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.592665387 → 0.621994832"
+  },
+  {
+   "column": "op_key_passes_p90",
+   "group": "DM-CM",
+   "old": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "r 0.69285635 → 0.730318975"
+  },
+  {
+   "column": "op_xg_assisted_p90",
+   "group": "DM-CM",
+   "old": {
+    "status": "dna",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.714909098 → 0.675457994"
+  },
+  {
+   "column": "defensive_duel_success_pct",
+   "group": "AM-Winger",
+   "old": {
+    "status": null,
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "new cell"
+  },
+  {
+   "column": "op_key_passes_p90",
+   "group": "AM-Winger",
+   "old": {
+    "status": "dna",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.726106736 → 0.666594144"
+  },
+  {
+   "column": "op_xg_assisted_p90",
+   "group": "AM-Winger",
+   "old": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": true
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "r 0.623182059 → 0.554706341"
+  },
+  {
+   "column": "blocks_p90",
+   "group": "ST",
+   "old": {
+    "status": "dna",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.715455832 → 0.611414071"
+  },
+  {
+   "column": "defensive_duel_success_pct",
+   "group": "ST",
+   "old": {
+    "status": null,
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "new cell"
+  },
+  {
+   "column": "dribbled_past_p90",
+   "group": "ST",
+   "old": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "why": "r 0.597872537 → 0.621679439"
+  },
+  {
+   "column": "np_shots_on_target_p90",
+   "group": "ST",
+   "old": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": true
+   },
+   "why": "majority trigger"
+  },
+  {
+   "column": "np_xg_p90",
+   "group": "ST",
+   "old": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "display",
+    "low_reliability": false,
+    "team_style_biased": true
+   },
+   "why": "r 0.599368989 → 0.663599802"
+  },
+  {
+   "column": "tackles_attempted_p90",
+   "group": "ST",
+   "old": {
+    "status": "dna",
+    "low_reliability": true,
+    "team_style_biased": false
+   },
+   "new": {
+    "status": "dna",
+    "low_reliability": false,
+    "team_style_biased": false
+   },
+   "why": "r 0.612457619 → 0.727895193"
+  }
+ ],
+ "by_group": {
+  "CB": {
+   "enter_dna": [],
+   "leave_dna": [
+    "aerials_lost_p90"
+   ]
+  },
+  "FB-WB": {
+   "enter_dna": [
+    "fouls_committed_p90"
+   ],
+   "leave_dna": [
+    "aerials_lost_p90",
+    "interceptions_p90",
+    "np_xg_p90"
+   ]
+  },
+  "DM-CM": {
+   "enter_dna": [
+    "np_shots_on_target_p90"
+   ],
+   "leave_dna": []
+  },
+  "AM-Winger": {
+   "enter_dna": [],
+   "leave_dna": []
+  },
+  "ST": {
+   "enter_dna": [
+    "dribbled_past_p90"
+   ],
+   "leave_dna": [
+    "np_shots_on_target_p90"
+   ]
+  }
+ },
+ "majority_admitted_by_allow_list": [
+  {
+   "column": "long_pass_completion_pct",
+   "group": "CB",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "majority:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.366472766,
+      0.714725153,
+      0.547674871,
+      0.421966357
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.714725153
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.364156027,
+      0.749669322,
+      0.503636599,
+      0.417316865
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.749669322
+    }
+   }
+  },
+  {
+   "column": "progressive_carries_p90",
+   "group": "CB",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "majority:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.397245096,
+      0.499532437,
+      0.588514646,
+      0.53751297
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.588514646
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.458890484,
+      0.619520748,
+      0.56065927,
+      0.555551121
+     ],
+     "leagues_at_0.4": 4,
+     "max_single_league": 0.619520748
+    }
+   }
+  },
+  {
+   "column": "progressive_passes_p90",
+   "group": "CB",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "majority:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.351363602,
+      0.445938048,
+      0.508899353,
+      0.498164259
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.508899353
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.42625469,
+      0.557977791,
+      0.500678426,
+      0.498004629
+     ],
+     "leagues_at_0.4": 4,
+     "max_single_league": 0.557977791
+    }
+   }
+  },
+  {
+   "column": "progressive_carries_p90",
+   "group": "FB-WB",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.323619664,
+      0.385216402,
+      0.508355368,
+      0.412728938
+     ],
+     "leagues_at_0.4": 2,
+     "max_single_league": 0.508355368
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.375555787,
+      0.460334061,
+      0.503384453,
+      0.41996337
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.503384453
+    }
+   }
+  },
+  {
+   "column": "progressive_passes_p90",
+   "group": "FB-WB",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "majority:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.456883415,
+      0.64637485,
+      0.454574299,
+      0.482371795
+     ],
+     "leagues_at_0.4": 4,
+     "max_single_league": 0.64637485
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.483602964,
+      0.641699222,
+      0.453093601,
+      0.466941392
+     ],
+     "leagues_at_0.4": 4,
+     "max_single_league": 0.641699222
+    }
+   }
+  },
+  {
+   "column": "long_pass_completion_pct",
+   "group": "DM-CM",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "majority:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.574019755,
+      0.549949616,
+      0.376414889,
+      0.524765996
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.574019755
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.568033523,
+      0.606598757,
+      0.360644319,
+      0.523827136
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.606598757
+    }
+   }
+  },
+  {
+   "column": "progressive_carries_p90",
+   "group": "DM-CM",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "majority:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.631614654,
+      0.510249265,
+      0.477007188,
+      0.484210526
+     ],
+     "leagues_at_0.4": 4,
+     "max_single_league": 0.631614654
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.637042062,
+      0.494713135,
+      0.481988458,
+      0.505547653
+     ],
+     "leagues_at_0.4": 4,
+     "max_single_league": 0.637042062
+    }
+   }
+  },
+  {
+   "column": "progressive_passes_p90",
+   "group": "DM-CM",
+   "triggered_by": [
+    "mean:poss_dur_loo",
+    "majority:poss_dur_loo",
+    "mean:poss_pass_loo",
+    "majority:poss_pass_loo"
+   ],
+   "per_proxy": {
+    "poss_dur_loo": {
+     "by_league": [
+      0.432197302,
+      0.501965874,
+      0.398015592,
+      0.543869132
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.543869132
+    },
+    "poss_pass_loo": {
+     "by_league": [
+      0.412802299,
+      0.54090163,
+      0.395504708,
+      0.540768137
+     ],
+     "leagues_at_0.4": 3,
+     "max_single_league": 0.54090163
+    }
+   }
+  }
+ ],
+ "boundary_majority": [
+  {
+   "rule": "majority_trigger:poss_dur_loo",
+   "column": "progressive_carries_p90",
+   "group": "FB-WB",
+   "value": 0.385216402
+  },
+  {
+   "rule": "majority_trigger:poss_dur_loo",
+   "column": "np_shots_on_target_p90",
+   "group": "ST",
+   "value": 0.407722008
+  },
+  {
+   "rule": "majority_trigger:poss_pass_loo",
+   "column": "long_pass_completion_pct",
+   "group": "CB",
+   "value": 0.417316865
+  },
+  {
+   "rule": "majority_trigger:poss_pass_loo",
+   "column": "progressive_carries_p90",
+   "group": "FB-WB",
+   "value": 0.41996337
+  },
+  {
+   "rule": "majority_trigger:poss_pass_loo",
+   "column": "progressive_passes_p90",
+   "group": "DM-CM",
+   "value": 0.412802299
+  },
+  {
+   "rule": "majority_trigger:poss_pass_loo",
+   "column": "np_xg_p90",
+   "group": "AM-Winger",
+   "value": 0.401357466
+  },
+  {
+   "rule": "majority_trigger:poss_pass_loo",
+   "column": "np_shots_p90",
+   "group": "ST",
+   "value": 0.381792717
+  }
+ ],
+ "direction_changes": [
+  {
+   "column": "dribbled_past_p90",
+   "old": "lower_better",
+   "new": "style"
+  }
+ ],
+ "d17_new_conflicts": []
+}

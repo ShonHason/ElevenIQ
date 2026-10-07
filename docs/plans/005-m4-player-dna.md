@@ -1026,9 +1026,28 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
 ### M4g2 — Reliability and trigger rules (measurements + registry; re-derive)
 - **Multi-split r_full:**
   - **Split:** for each player-stint, its matches are assigned at random to two halves of equal size (odd count: the extra match goes at random).
+  - **Split assignment (O4, user 2026-10-07; the reference spike reproduces it draw for draw):**
+    - A stint is one season key row (`player_id, team_id, competition_id, season_id, source`) of the pool outfield rows (`in_percentile_pool ∧ is_outfield`), as in the odd/even method. Its matches are its match rows with `minutes_played > 0`, ordered by (`match_date`, `match_id`); n is their count.
+    - Stints are visited in ascending key order. One generator, `numpy.random.default_rng(20261007)`, serves every draw, in this order: for split k = 0 … K−1, for each stint, `perm = rng.permutation(n)`, then, **only when n is odd**, `c = rng.integers(0, 2)`.
+    - Half 0 takes the matches at positions `perm[:h0]` of the ordered list and half 1 the rest, with h0 = ⌊n/2⌋ + c for odd n, n/2 for even n. So for an odd count the extra match goes to half 0 when c = 1 and to half 1 when c = 0.
+    - Every stint draws, n = 1 and below-gate stints included, so the stream does not depend on any later filter (gate, a ratio's attempts, a bucket). A stint with an empty half drops out of that split.
+    - **One assignment per split serves every metric, ratio, `team_pass_share` and minute bucket.**
   - **Per split:** the method is the current one (half per-90s demeaned within league × group, pooled Pearson per group, Spearman-Brown).
+    - **Spearman-Brown per split, then the mean (user, 2026-10-07):** r_k is the pooled Pearson of split k, r_full,k = 2·r_k / (1 + r_k), and the stored r_full = (1/K)·Σ r_full,k, the mean of the corrected values, not the correction of a mean r. SD and MC SE (= SD / √K) are over the r_full,k.
+    - A cell whose r_k is undefined (fewer than 3 rows, or zero variance) in every split stores null, as now. Undefined in some splits but not all fails the run.
+      - **Amendment (2026-10-07, found in the first run; user to confirm at the expected-flips checkpoint):** the fail applies to judged gated cells only. Partly-undefined cells at K = 3200: in the gated population only CB `restart_assists_p90` (fixed display; 376 of 3200 splits, zero variance in a half), plus 13 report-only bucket cells, mostly zero-heavy restart columns. Those store their statistics over the defined splits, with `n_undefined`. No judged gated cell is partly undefined.
+    - **Demeaning population (stats-reviewer condition):** exactly the rows that enter r_k: after dropping stints with an empty half and, for ratios, after the both-halves-have-attempts filter. This is what `split_half` does now.
+    - **Bias (stats-reviewer, measured):** Spearman-Brown is concave, so the mean of corrected values sits slightly below the correction of the mean: −0.0008 to −0.0019 on 4 cells near 0.6. It is systematic and conservative, and smaller than the MC SE. The mean r_k is stored too.
   - **Splits and seed:** K = 200 splits with `numpy.random.default_rng(20261007)`. K is raised if the Monte Carlo SE of any cell's mean r_full exceeds 0.002 (reported).
+    - **Raise rule (O4):** K doubles (400, 800, …) and the whole run repeats from the seed until every judged cell's MC SE ≤ 0.002; the final K is stored and reported.
+    - **Judged cells:** the 0.002 target applies to cells whose status depends on r, i.e. not fixed display and not D17-dropped. Fixed-display cells report their MC SE without driving K.
+    - **Expected (stats-reviewer):** the SD of r_full,k is 0.034–0.054 near 0.6, so K = 200 gives an MC SE of 0.0024–0.0038. Expect K = 800, more for ratios on small halves.
+    - **Cap: K = 3200**, fixed before the run. A judged cell still above 0.002 at the cap keeps its mean r_full in the registry, is listed with its MC SE in the review, and gets a boundary row if its mean is within ±0.02 of 0.6. The cap is not raised after the run.
   - **Stored:** the mean r_full over splits, the SD and the MC SE. The odd/even r_full is kept next to it for the before/after.
+    - Also stored: the mean r_k and the final K.
+    - **Correlation across cells:** one assignment per split serves every cell, so MC errors are correlated across cells. That helps metric-vs-metric comparisons, but "how many cells cross 0.6" is not a count of independent events.
+    - **Ratios:** the n per split is reported as min / median / max, plus the share of rows present in every split.
+    - **Odd/even comparison (stats-reviewer condition):** each cell reports z = (odd/even − mean) / SD. Odd/even behaves like one random draw: mean z ≈ +0.1 over 9 cells, single cells up to ±1.9 SD (FB-WB `np_shots_on_target` 0.59 → about 0.48; ST `np_xg` 0.585 → about 0.66, a possible flip into DNA). A change is never described as "improved reliability". The new value estimates the same quantity with less split noise.
   - Applies to every metric × group, ratios' split-half cross-checks and `team_pass_share` included.
   - For ratios, the rows with attempts in both halves change per split; the n range is reported.
   - **Limit (stats-reviewer, M4g0):** it removes split-assignment noise only. Sampling error over players (SE ≈ 0.04) remains, so cells near 0.6 stay fragile.
@@ -1036,6 +1055,18 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - the per-league ρ and sign are already measured; the rule goes into `analytics/registry.py`;
   - a league with |ρ| < 0.05 has no sign (§10.2);
   - both proxies are evaluated as for the mean rule.
+  - **Allow-list precedence (O1, user 2026-10-07):** the allow-list admits a majority-triggered cell exactly as it admits a mean-triggered one (its bound stays the max |mean ρ|). This is what the pre-registration assumed: only ST `np_shots_on_target` was named as a flip.
+    - Measured on the committed measurements before any code, 8 allow-listed DNA cells are majority-triggered: CB `progressive_passes_p90`, `progressive_carries_p90`, `long_pass_completion_pct`; FB-WB `progressive_passes_p90`, `progressive_carries_p90`; DM-CM `progressive_passes_p90`, `progressive_carries_p90`, `long_pass_completion_pct`.
+    - Each is recorded as "majority-triggered, admitted by allow-list" in ADR 004 and in the boundary report, and is re-examined in M4g4.
+    - **Stats-reviewer conditions (pre-code review, 2026-10-07):**
+      - All 8 already fire the mean rule, so the majority rule changes none of their statuses. The only cells it fires on alone are ST `np_shots_on_target_p90` and ST `shots_on_target_p90` (already fixed display).
+      - `derive()` returns the allow-admitted cells that fire the majority rule; a fast test asserts the set equals the 8 above on statsbomb_27. A new source reports its own set; it is never hand-copied.
+      - Each recorded row carries, per proxy: the four league ρ, the count of leagues at |ρ| ≥ 0.4, and the max single-league |ρ|. The allow-list bound looks at means only: CB `long_pass_completion_pct` has a PL ρ of 0.715 / 0.750 and DM-CM `progressive_carries_p90` a La Liga ρ of 0.632 / 0.637, both admitted.
+  - **Sign (already fixed in M4g0, restated):** the leagues at |ρ| ≥ 0.4 must all share one sign, and a league below 0.4 is not tested. So a league at ≥ 0.4 with the opposite sign blocks the trigger. The §10.2 no-sign rule (0.05) cannot bind here, because a qualifying league is at ≥ 0.4.
+  - **Boundary rows (O3, user 2026-10-07; judged value per the stats-reviewer's conditions):**
+    - V = the max over s ∈ {+, −} of the 3rd-largest |ρ| among leagues with sign s (|ρ| ≥ 0.05). There is no row when neither sign has 3 leagues.
+    - `majority_trigger:{proxy}` when V is within ±`BOUNDARY_MARGIN` (0.02) of 0.4. ST `np_shots_on_target` (duration proxy, V = 0.408) is one.
+    - `majority_sign:{proxy}` when V ≥ 0.38 and the largest opposite-sign |ρ| is within ±0.02 of 0.4.
 - **Minute-bucket reliability (#9, report only):**
   - multi-split r_full per nominal-minutes bucket: 900–1350, 1350–2000 and ≥ 2000, per metric × group, with the n of each bucket;
   - also pooled over groups per metric;
@@ -1045,13 +1076,37 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - `dribbled_past_p90` direction → `style`;
   - add `defensive_duel_success_pct` as a ratio (`RatioSpec("tackles_won", ("tackles_attempted", "dribbled_past"))`), with a beta-binomial `min_attempts`, measured in `spikes/m4_decision_measurements.py`;
   - it runs through every registry rule like any ratio (coverage, `no_signal`, D19, D12, D17, D9), and its Defending-score membership waits for M4g3 (mover rule) and M4g4 (possession criteria).
-  - A stored season column only if the registry admits it (the ratio is computable from the existing counts, so the pipeline does not change otherwise).
+  - ~~A stored season column only if the registry admits it.~~ **Stored unconditionally (O2, user 2026-10-07):** the registry requires every spec column in the season schema, and display ratios get percentiles too. Null on a 0 denominator; a season-stage rebuild, with every existing column byte-identical.
 - **Then:**
   - `--write-json`, then re-derive and list every status change as metric × group: old → new, with the rule;
   - new `REGISTRY_VERSION`;
   - rebuild percentiles and DNA; reference checks pass;
   - re-run `spikes/m4f_weighting_checks.py` and report its neighbour-list changes.
 - **Fixed before the run:** C and the multi-split adoption. The outcome cannot reopen them.
+- **Expected flips approved (user, 2026-10-07)** (`spikes/expected_m4g2_flips.json`, written before the registry code), with the undefined-r amendment. Notes for the rest of the chunk:
+  - **Odd/even optimism is recorded as hypotheses, not a finding.** Over 215 per-90 cells, mean z = +0.27 (SD 1.05) and the mean shift is −0.008. Candidate causes:
+    - temporal balance: alternating dates spread both halves over the whole season, so form, injuries and coach changes are shared, while random halves can cluster in time;
+    - home/away alternation, though on its own it would more likely lower r than raise it.
+    No extra analysis now; it goes to the stats-reviewer at the end of the chunk.
+  - **ST `dribbled_past_p90` enters DNA as `style`.** On the cards and the legend, strikers get plain words: how often he is dribbled past while pressing, not just "Dribbled past".
+  - **Expected map changes:** CB PC2 (`aerials_lost` was its top loading) and FB-WB PC2. Any axis name that loses support comes back to the user with the new loadings.
+  - **After the rebuild:** print Benzema's ST hover reasons before → after (`np_shots_on_target` leaves ST DNA).
+  - **Display, at the next map regeneration (this chunk):** an ST PC1 legend note like CB's. "Aerial target" measures how often the player contests aerial duels (volume), not heading ability or headed goals.
+
+- **Outcome (2026-10-07; ADR 004 §13.6):**
+  - **Reliability:** K = 3200, the cap. 22 expected registry changes and nothing else (STOP rule passed). `REGISTRY_VERSION` aaecf86fa483 → 930d0019ee11.
+  - **DNA counts:** CB 16 → 15, FB-WB 19 → 17, DM-CM 24 → 25, AM-Winger 22 (unchanged), ST 20.
+  - **New ratio:** `defensive_duel_success_pct` is display in every group.
+  - **8 majority-admitted cells:** recorded, for M4g4.
+  - **Style maps:**
+    - axes pinned to named metrics;
+    - CB PC2 and FB-WB PC2 renamed "Fewer ↔ More aerials won", ST PC2 "Safe passer ↔ Box striker";
+    - ST notes and the "Dribbled past while pressing" label added.
+  - **New files:**
+    - `tools/registry_snapshot.py`;
+    - `spikes/m4g2_multisplit.py`, `m4g2_reliability_reference.py`, `m4g2_before_after.py`, `m4g2_reliability_review.py`;
+    - `spikes/expected_m4g2_flips.json`;
+    - `docs/reviews/m4g2-reliability.md`.
 
 ### M4g3 — Mover stability (report + the fixed threshold)
 - **Population (A):**
@@ -1129,6 +1184,8 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - An adjusted member enters the score and the vector adjusted, so weights stay as §12.6.
   - The vector change re-runs the M4f3 checks.
 - **Then:** re-run the teammates-among-neighbours count (same pass criteria, all groups); report only.
+- **The 8 majority-triggered allow-listed cells (M4g2 O1, user 2026-10-07):** re-examined after the possession adjustment: CB `progressive_passes_p90`, `progressive_carries_p90`, `long_pass_completion_pct`; FB-WB `progressive_passes_p90`, `progressive_carries_p90`; DM-CM `progressive_passes_p90`, `progressive_carries_p90`, `long_pass_completion_pct`.
+  - **Before its run (stats-reviewer condition), M4g4 states what it decides for these 8.** If it decides nothing, it says so.
 - **Compare-mode re-check (user, 2026-10-07; M4g1b pairs):** after the possession adjustment, re-run Busquets vs Kanté and Carrick vs Busquets on the DM-CM compare panel. Report only.
   - **Before (M4g1b, unadjusted):** Busquets–Kanté distance 0.1430, Kanté #100 for Busquets and Busquets #133 for Kanté (of 293). Carrick–Busquets 0.1136, #46 / #44.
   - **Expectation, written before the adjustment:**
@@ -1203,6 +1260,17 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
 - **Evaluation:** the pre-registered list in the M4g item list (D19 multi-split, `min_attempts`, the zero-heavy rule not applicable to execution, D17 between the two execution metrics, D12 and the possession criteria, D9, mover stability with the Koné illustration).
 - **Then the user decides:** whether to restore Passing, and the role of `long_pass_completion_pct`.
 
+### Decision: family weighting when a family has one member (required for M4 sign-off)
+- **Open** (stats-reviewer, M4g2 `/finish-chunk`; user 2026-10-07). M4 is not signed off until the user decides it.
+- **The problem:**
+  - Under the §10.8 family weights, a family reduced to one metric puts its whole family weight on that metric.
+  - After M4g2: CB Aerial (`aerials_won`, 0.20); FB-WB Aerial, Goal threat and Creation (43% of the vector on 3 metrics); ST Goal threat (`np_shots`, 0.167).
+  - Effective metrics fall by about 3 in CB, FB-WB and ST, and the neighbours depend more on the weighting (FB-WB rows with ≥ 7 of 10 shared: 59% → 37%).
+  - ST Goal threat becomes shot volume only (Kane 90 vs Vardy 68), from the same cause.
+- **Options:** accept it, cap a single-member family's weight, or merge families.
+- **Evidence:** ADR 004 §13.6 ("Stats-reviewer outcome").
+- **Timing:** decide after M4g4/M4g5, which may add members (Defending, Passing) and change the picture, and before M4g6.
+
 ### M4g6 — Validation write-up (closes M4)
 `spikes/m4_validation.py` → `docs/reviews/m4-validation.md`:
 - threshold sensitivity;
@@ -1264,6 +1332,7 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   - ADR 004 §10.3 should state that signature traits are exempt from the possession step (step 3 precedes step 5; set-piece duty is a role, not possession);
   - an override from display to `dna` forces `low_reliability` False, while `reliability` keeps the measured value. Derive the note from `reliability` instead;
   - the registry docstring's step list omits the ratio `no_signal` gate (step 4 in effect).
+- **Metric candidate: headed finishing for strikers** (user, 2026-10-07): from the shot `body_part`, a headed share of shots and/or headed np_xg per 90. It must pass every registry rule like any new metric. It would complement ST PC1 "Aerial target", which measures aerial-duel volume, not heading ability.
 - **Empirical-Bayes shrinkage of ratios** (user, 2026-10-03): shrink each ratio toward its group mean by attempts, then re-evaluate `aerial_win_pct` for CB and FB-WB DNA. CB aerial ability is a known DNA gap: `aerial_win_pct` r 0.499 with 63.5% coverage, so only the aerial volumes are in DNA (ADR 004 §10.9).
   - **Linked: ST DNA has no chance-quality metric.** np_xg 0.599, op_key_passes 0.540 and op_xg_assisted 0.534 are below 0.6, and `np_xg_per_shot` is display (r 0.464, coverage 61.4%).
 - **`op_crosses_attempted`** (stats-reviewer, user 2026-10-04; priority): crosses that are not restart deliveries. FB-WB DNA has no crossing metric, because `crosses_attempted` (r 0.787, 0% zeros) includes corners and free kicks and is fixed display (ADR 004 §10.3).

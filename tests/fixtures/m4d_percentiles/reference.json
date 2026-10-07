@@ -1,6 +1,6 @@
 {
  "generated_by": "spikes/m4d_percentiles_reference.py",
- "measurements_sha256": "0a58e9e3fc019f44bdb1d66b5260dfccc4ca236b77744bc137cda18408e833fd",
+ "measurements_sha256": "7724d7a87bdf1aa17b88d70d714d5af703bbae509693bcc9cbf2c156a88f0b9b",
  "min_cohort_size": 30,
  "rows": [
   {
@@ -112,6 +112,15 @@
      "status_global": "ok",
      "status_local": "ok",
      "value": 4.2844548927416986
+    },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.4
     },
     "dispossessed_p90": {
      "n_global": 275,
@@ -615,6 +624,15 @@
      "status_local": "ok",
      "value": 1.1199999999999999
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.42857142857142855
+    },
     "dispossessed_p90": {
      "n_global": 293,
      "n_local": 67,
@@ -1116,6 +1134,15 @@
      "status_global": "ok",
      "status_local": "ok",
      "value": 2.1416295774027234
+    },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.2923076923076923
     },
     "dispossessed_p90": {
      "n_global": 275,
@@ -1619,6 +1646,15 @@
      "status_local": "ok",
      "value": 0.05181322292639165
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.5487804878048781
+    },
     "dispossessed_p90": {
      "n_global": 254,
      "n_local": 59,
@@ -2120,6 +2156,15 @@
      "status_global": "ok",
      "status_local": "ok",
      "value": 0.26947317993323056
+    },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.4418604651162791
     },
     "dispossessed_p90": {
      "n_global": 157,
@@ -2623,6 +2668,15 @@
      "status_local": "ok",
      "value": 0.9869068483649963
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.2962962962962963
+    },
     "dispossessed_p90": {
      "n_global": 157,
      "n_local": 36,
@@ -3125,6 +3179,15 @@
      "status_local": "below_gate",
      "value": 0.5898523548580895
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_gate",
+     "status_local": "below_gate",
+     "value": 0.26666666666666666
+    },
     "dispossessed_p90": {
      "n_global": null,
      "n_local": null,
@@ -3619,6 +3682,15 @@
      "value": null
     },
     "crosses_attempted_p90": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "goalkeeper",
+     "status_local": "goalkeeper",
+     "value": 0.0
+    },
+    "defensive_duel_success_pct": {
      "n_global": null,
      "n_local": null,
      "pct_global": null,
@@ -4129,6 +4201,15 @@
      "status_local": "not_in_pool",
      "value": 2.2439853378072456
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "not_in_pool",
+     "status_local": "not_in_pool",
+     "value": 0.36363636363636365
+    },
     "dispossessed_p90": {
      "n_global": null,
      "n_local": null,
@@ -4630,6 +4711,15 @@
      "status_global": "ok",
      "status_local": "ok",
      "value": 1.9294902334444977
+    },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.41935483870967744
     },
     "dispossessed_p90": {
      "n_global": 275,
@@ -5133,6 +5223,15 @@
      "status_local": "ok",
      "value": 1.9294902334444977
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.41935483870967744
+    },
     "dispossessed_p90": {
      "n_global": 157,
      "n_local": 35,
@@ -5634,6 +5733,15 @@
      "status_global": "ok",
      "status_local": "ok",
      "value": 0.02453296503598168
+    },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.55
     },
     "dispossessed_p90": {
      "n_global": 254,
@@ -6137,6 +6245,15 @@
      "status_local": "ok",
      "value": 1.910907060429334
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.3170731707317073
+    },
     "dispossessed_p90": {
      "n_global": 249,
      "n_local": 58,
@@ -6638,6 +6755,15 @@
      "status_global": "league_inconsistent",
      "status_local": "ok",
      "value": 0.1716722603968445
+    },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.30927835051546393
     },
     "dispossessed_p90": {
      "n_global": 293,
@@ -7141,6 +7267,15 @@
      "status_local": "ok",
      "value": 2.99116643829626
     },
+    "defensive_duel_success_pct": {
+     "n_global": null,
+     "n_local": null,
+     "pct_global": null,
+     "pct_local": null,
+     "status_global": "below_min_attempts",
+     "status_local": "below_min_attempts",
+     "value": 0.4069767441860465
+    },
     "dispossessed_p90": {
      "n_global": 275,
      "n_local": 76,
@@ -7534,5 +7669,5 @@
    "why": "plain AM-Winger"
   }
  ],
- "season_parquet_sha256": "9c3730cbf573e16b19d81792a8ffce7bf942d307ad4f6defb0e03065d182fc01"
+ "season_parquet_sha256": "2acb8f8538d086b251a5b5ab278cd3afe8a2757aa2e91dd70525bcd3a4151c57"
 }

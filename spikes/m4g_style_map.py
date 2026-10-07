@@ -60,6 +60,8 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from typing import Sequence
+
 import numpy as np
 import polars as pl
 from sklearn.decomposition import PCA
@@ -103,7 +105,7 @@ FACE = {("N'Golo Kanté", 22): "Kanté", ("Sergio Busquets i Burgos", 217): "Bus
         ("Wes Morgan", 22): "Morgan", ("Morgan Schneiderlin", 39): "Schneiderlin"}
 DMCM_FACE = ("Isco", "Busquets", "Kanté", "Schneiderlin")
 # Axis names: the user's reading of the loadings, never generated. (positive end, negative end)
-# per PC; the sign convention is fixed (largest absolute loading positive).
+# per PC; the sign of each PC is pinned to a named metric (AXIS_PINS).
 # An axis whose proposed name the loadings do not support stays None (unnamed on the page)
 # until the user names it.
 AxisName = tuple[str, str] | None
@@ -111,30 +113,82 @@ AXIS_NAMES: dict[str, tuple[AxisName, AxisName]] = {
     "AM-Winger": (("Creator", "Physical"), ("Shooter", "Distributor")),   # user, 2026-10-07
     # Proposed by Claude, accepted by the user 2026-10-07, checked against the loadings:
     "CB": (("Ball-player", "Stopper"),
-           ("More aerial duels", "Fewer aerial duels")),  # PC2: user, 2026-10-07 (after the flag)
-    "FB-WB": (("Attacking", "Conservative"), ("Box presence", "Distributor")),
+           ("More aerials won", "Fewer aerials won")),    # PC2: user, 2026-10-07 (M4g2)
+    "FB-WB": (("Attacking", "Conservative"),
+              ("More aerials won", "Fewer aerials won")),  # PC2: user, 2026-10-07 (M4g2)
     "DM-CM": (("Creator", "Holder"), ("Box-arriving", "Deep playmaker")),
     "ST": (("Aerial target", "Technical forward"),
-           ("Link-up focal point", "Safe passer")),     # PC2: user, 2026-10-07 (after the flag)
+           ("Box striker", "Safe passer")),               # PC2: user, 2026-10-07 (M4g2)
+}
+# The sign of each PC (user, 2026-10-07, M4g2): PCA signs are arbitrary, so each axis is
+# oriented to make its pin metric's loading positive. The pins keep every name on the screen
+# side it had in M4g1 (positive = right / top). A pin must load at least END_MIN_LOADING.
+AXIS_PINS: dict[str, tuple[str, str]] = {
+    "CB": ("progressive_passes_p90", "aerials_won_p90"),
+    "FB-WB": ("op_key_passes_p90", "aerials_won_p90"),
+    "DM-CM": ("op_key_passes_p90", "np_xg_p90"),
+    "AM-Winger": ("op_key_passes_p90", "np_shots_p90"),
+    "ST": ("aerials_won_p90", "np_shots_p90"),
+}
+# Group-specific wording for the cards, the legend and the compare panel (user, 2026-10-07):
+# for strikers, dribbled past is about pressing, not defending.
+GROUP_LABELS: dict[tuple[str, str], str] = {
+    ("ST", "dribbled_past_p90"): "Dribbled past while pressing",
 }
 # Notes the legend shows next to an axis (user, 2026-10-07).
+_AERIALS_WON_NOTE = ("Almost entirely aerial duels won per 90 (a count, not a win rate). "
+                     "Aerials lost left the {g} DNA in M4g2 (lower reliability), so the Aerial "
+                     "family's weight now sits on this one metric.")
 AXIS_NOTES: dict[tuple[str, int], str] = {
-    ("CB", 1): ("This axis measures how many aerial duels a centre-back has, not how many he "
-                "wins: aerials lost load on it more than aerials won (+0.65 vs +0.58)."),
+    ("CB", 1): _AERIALS_WON_NOTE.format(g="CB"),        # user, 2026-10-07 (M4g2)
+    ("FB-WB", 1): _AERIALS_WON_NOTE.format(g="FB-WB"),  # user, 2026-10-07 (M4g2)
+    # User, 2026-10-07; aerial win rate also loads, so the note says it is weaker.
+    ("ST", 0): ("\"Aerial target\" mostly measures how often the striker contests aerial duels "
+                "(aerials won +0.30, lost +0.28), with aerial win rate weaker (+0.20). It is not "
+                "headed shots or headed goals."),
 }
 # Every loading quoted in AXIS_VERDICTS / AXIS_NOTES, checked on each run (code-reviewer,
 # M4g1): (group, axis, claim, metric, value). "value": the loading rounds to it; "min" / "max":
 # it is also the axis's most negative / most positive loading; "no_end": no loading of sign
 # `value` reaches END_MIN_LOADING (the end has nothing to name).
+# "dominant": the metric's squared loading is at least DOMINANT_SHARE of the axis ("almost
+# entirely", AXIS_NOTES).
+DOMINANT_SHARE = 0.5
 QUOTED_LOADINGS: tuple[tuple[str, int, str, str | None, float], ...] = (
-    ("CB", 1, "value", "aerials_lost_p90", 0.65), ("CB", 1, "value", "aerials_won_p90", 0.58),
-    ("CB", 1, "min", "long_pass_completion_pct", -0.11), ("CB", 1, "no_end", None, -1),
-    ("FB-WB", 0, "value", "clearances_p90", -0.16), ("FB-WB", 0, "value", "aerials_won_p90", -0.12),
-    ("FB-WB", 1, "value", "aerials_lost_p90", 0.41), ("FB-WB", 1, "value", "aerials_won_p90", 0.34),
-    ("ST", 1, "min", "pass_completion_pct", -0.39), ("ST", 1, "max", "aerial_win_pct", 0.40),
-    ("ST", 1, "value", "progressive_carries_p90", -0.08),
-    ("ST", 1, "value", "dribbles_attempted_p90", -0.10),
+    ("CB", 0, "value", "aerials_won_p90", -0.47), ("CB", 0, "value", "clearances_p90", -0.19),
+    ("CB", 0, "value", "final_third_entries_pass_p90", 0.37),
+    ("CB", 0, "value", "progressive_passes_p90", 0.36),
+    ("CB", 1, "max", "aerials_won_p90", 0.82), ("CB", 1, "dominant", "aerials_won_p90", 0.82),
+    ("CB", 1, "no_end", None, -1),
+    ("FB-WB", 0, "value", "clearances_p90", -0.16), ("FB-WB", 0, "value", "aerials_won_p90", -0.20),
+    ("FB-WB", 1, "max", "aerials_won_p90", 0.91), ("FB-WB", 1, "dominant", "aerials_won_p90", 0.91),
+    ("FB-WB", 1, "no_end", None, -1),
+    ("ST", 0, "value", "aerials_won_p90", 0.30), ("ST", 0, "value", "aerials_lost_p90", 0.28),
+    ("ST", 0, "value", "aerial_win_pct", 0.20), ("ST", 0, "min", "np_shots_p90", -0.40),
+    ("ST", 1, "max", "np_shots_p90", 0.57), ("ST", 1, "value", "aerial_win_pct", 0.39),
+    ("ST", 1, "value", "aerials_won_p90", 0.33),
+    ("ST", 1, "value", "final_third_entries_pass_p90", 0.27),
+    ("ST", 1, "min", "pass_completion_pct", -0.37),
 )
+
+
+def orient(components: np.ndarray, metrics: Sequence[str], pins: tuple[str, ...]) -> np.ndarray:
+    """Each component signed so that its pin metric loads positive (AXIS_PINS). Independent of
+    the sign the solver returns. Fails when a pin loads below END_MIN_LOADING (its sign would
+    not define the axis)."""
+    out = np.array(components, dtype=float, copy=True)
+    for a, pin in enumerate(pins):
+        c = out[a][list(metrics).index(pin)]
+        if abs(c) < page_mod.END_MIN_LOADING:
+            fail(f"pin {pin} loads {c:+.3f} on PC{a + 1}, below {page_mod.END_MIN_LOADING}")
+        if c < 0:
+            out[a] *= -1
+    return out
+
+
+def labels_for(group: str, labels: dict[str, str]) -> dict[str, str]:
+    """The registry display names with this group's GROUP_LABELS wording."""
+    return {**labels, **{m: t for (g, m), t in GROUP_LABELS.items() if g == group}}
 
 
 def check_quoted(maps: dict[str, dict]) -> None:
@@ -152,9 +206,9 @@ def check_quoted(maps: dict[str, dict]) -> None:
             fail(f"quoted: {g} PC{a + 1} {metric} is no longer the most negative loading")
         if claim == "max" and metric != max(comp, key=comp.get):
             fail(f"quoted: {g} PC{a + 1} {metric} is no longer the most positive loading")
-    cb2 = dict(zip(maps["CB"]["model"]["metrics"], maps["CB"]["model"]["components"][1]))
-    if not cb2["aerials_lost_p90"] > cb2["aerials_won_p90"]:     # AXIS_NOTES, the CB legend
-        fail("quoted: CB PC2 aerials lost no longer loads above aerials won")
+        if claim == "dominant" and comp[metric] ** 2 < DOMINANT_SHARE:
+            fail(f"quoted: {g} PC{a + 1} {metric} carries {comp[metric] ** 2:.0%} of the axis, "
+                 f"below {DOMINANT_SHARE:.0%} (\"almost entirely\")")
 
 
 def legend_changes(maps: dict[str, dict], labels: dict[str, str], old: float = 0.10) -> list[str]:
@@ -188,26 +242,30 @@ def pool_facts(roles: dict[tuple, dict], leagues: dict[int, str]) -> dict:
 
 # The check of each name against the loadings (top 3 per end), as written in the review.
 AXIS_VERDICTS: dict[tuple[str, int], str] = {
-    ("CB", 0): "supported: passing / carrying progression vs aerials and clearances",
-    ("CB", 1): ("**flagged:** \"Aerial\" is supported, but no metric loads on the other end "
-                "(strongest −0.11, long pass completion), so \"Ground\" names nothing; the end "
-                "means few aerial duels. **User decision (2026-10-07): \"Fewer aerial duels ↔ "
-                "More aerial duels\"**; the axis measures aerial volume (lost loads above won), "
-                "not dominance, which the page's legend says"),
-    ("FB-WB", 0): ("supported: the − end is the absence of attacking output (clearances −0.16, "
-                   "aerials −0.12, weak)"),
-    ("FB-WB", 1): "supported, with aerial duels part of \"Box presence\" (+0.41, +0.34)",
+    ("CB", 0): ("supported: final-third and progressive passes (+0.37, +0.36), long passes and "
+                "carries vs aerials won (−0.47) and clearances (−0.19). M4g2: the solver's sign "
+                "flipped; the progressive-passes pin keeps \"Ball-player\" on the right"),
+    ("CB", 1): ("M4g1: \"Fewer ↔ More aerial duels\" (aerials lost loaded above won). **M4g2:** "
+                "aerials lost left CB DNA and the axis is almost entirely aerials won (+0.82; "
+                "long and progressive passes +0.32, +0.24); nothing loads on the − end. **User "
+                "decision (2026-10-07): \"Fewer ↔ More aerials won\"**, with the legend note"),
+    ("FB-WB", 0): ("supported: the − end is the absence of attacking output (aerials won −0.20, "
+                   "clearances −0.16, weak)"),
+    ("FB-WB", 1): ("M4g1: \"Distributor ↔ Box presence\". **M4g2:** aerials lost and np_xg left "
+                   "FB-WB DNA; the axis is almost entirely aerials won (+0.91) and nothing loads "
+                   "on the − end, so \"Distributor\" named nothing. **User decision "
+                   "(2026-10-07): \"Fewer ↔ More aerials won\"**, with the legend note"),
     ("DM-CM", 0): "supported: creation and shots vs aerials and clearances",
     ("DM-CM", 1): "supported: xG, shots and aerials vs progressive passes, pass share, long passes",
     ("AM-Winger", 0): "supported (user's name): key passes, box entries vs aerials, clearances",
     ("AM-Winger", 1): "supported (user's name): shots vs long and final-third passes",
-    ("ST", 0): "supported: aerials vs box entries, long passes, carries, pass completion",
-    ("ST", 1): ("**flagged:** \"Link-up focal point\" is supported (aerial win rate, final-third "
-                "and long passes), but the − end is pass completion alone (−0.39; carries −0.08, "
-                "dribbles −0.10), so \"Runner\" names nothing in the loadings. Unnamed until the "
-                "user decides. **User decision (2026-10-07): \"Safe passer ↔ Link-up focal "
-                "point\"**; the − end is pass completion, the strongest negative loading (−0.39; "
-                "aerial win rate +0.40 is the strongest overall)"),
+    ("ST", 0): ("supported: aerials won and lost (+0.30, +0.28) and aerial win rate (+0.20) vs "
+                "shots (−0.40), long passes, box entries and carries. M4g2: the solver's sign "
+                "flipped; the aerials-won pin keeps \"Aerial target\" on the right"),
+    ("ST", 1): ("M4g1: \"Safe passer ↔ Link-up focal point\" (aerial win rate +0.40 strongest). "
+                "**M4g2:** shots on target left ST DNA and shots lead (+0.57), then aerial win "
+                "rate +0.39, aerials won +0.33, final-third passes +0.27, vs pass completion "
+                "(−0.37). **User decision (2026-10-07): \"Safe passer ↔ Box striker\"**"),
 }
 # The user's decision on the role split (2026-10-07), recorded in the review.
 SPLIT_DECISION = (
@@ -271,10 +329,7 @@ def style_map(group: str, rows: list[dict]) -> dict:
                 fail(f"{group}: input distance != pair_distance for {complete[i]['key']}, "
                      f"{complete[j]['key']}")
     pca = PCA(svd_solver="full").fit(x)
-    comps = pca.components_.copy()
-    for c in comps:
-        if c[np.argmax(np.abs(c))] < 0:
-            c *= -1
+    comps = orient(pca.components_[:2], metrics, AXIS_PINS[group])
     scores = (x - pca.mean_) @ comps[:2].T
     loadings = []
     for c in comps[:2]:
@@ -422,8 +477,10 @@ def review(maps: dict[str, dict], lab: dict[tuple, dict], f68: dict, fpv: dict, 
          "- **Input:** complete primary scored rows per group; each local percentile / 100 times "
          "√(its per-metric family weight). Every complete pair's input distance equals "
          "`pair_distance` within 1e-12 (asserted). No standardisation.",
-         "- **PCA:** scikit-learn, `svd_solver=\"full\"`, one fit per group; each component's "
-         "largest absolute loading is positive.",
+         "- **PCA:** scikit-learn, `svd_solver=\"full\"`, one fit per group. Each component is "
+         "signed so that its pin metric loads positive (user, 2026-10-07, M4g2: the pins keep "
+         "every name on its M4g1 screen side; a sign flip in the solver output does not move "
+         "an axis).",
          "- **Labels:** per-position DM-CM minutes on the ADR 002 §31 clock (the "
          "`verify_core_metrics` spike's implementation); their sum equals `minutes_dm_cm` for "
          f"every DM-CM row (tolerance {MINUTES_TOL:g}). 6 / 8 and pivot labels at "
@@ -447,17 +504,19 @@ def review(maps: dict[str, dict], lab: dict[tuple, dict], f68: dict, fpv: dict, 
           "1/√k = 0.20–0.25 of an even spread over the k = 16–24 metrics) has nothing to name. Every loading quoted "
           "in a verdict or in the legend is checked on each run (QUOTED_LOADINGS); a mismatch "
           "fails it.", "",
-          "| Group | Axis | Name | + end (top 3) | − end (top 3) | Check |",
-          "| --- | --- | --- | --- | --- | --- |"]
+          "| Group | Axis | Name | Pin (loads +) | + end (top 3) | − end (top 3) | Check |",
+          "| --- | --- | --- | --- | --- | --- | --- |"]
     for g, sm in maps.items():
         for a in (0, 1):
             nm = AXIS_NAMES[g][a]
             cs = list(zip(sm["model"]["components"][a], sm["model"]["metrics"]))
             pos = sorted(cs, key=lambda t: (-t[0], t[1]))[:3]
             neg = sorted(cs, key=lambda t: (t[0], t[1]))[:3]
-            fmt_end = lambda e: "; ".join(f"{labels[m]} {c:+.2f}" for c, m in e)  # noqa: E731
+            lg = labels_for(g, labels)
+            fmt_end = lambda e: "; ".join(f"{lg[m]} {c:+.2f}" for c, m in e)  # noqa: E731
             L.append(f"| {g} | PC{a + 1} | {page_mod.axis_title(nm) if nm else '(unnamed)'} | "
-                     f"{fmt_end(pos)} | {fmt_end(neg)} | {AXIS_VERDICTS[(g, a)]} |")
+                     f"{lg[AXIS_PINS[g][a]]} | {fmt_end(pos)} | {fmt_end(neg)} | "
+                     f"{AXIS_VERDICTS[(g, a)]} |")
     L += ["", "**Display rule for naming an axis end (not pre-registered).** An end is "
           f"described by its loadings of at least {page_mod.END_MIN_LOADING} (unrounded). The "
           "value was chosen after seeing the loadings, to keep the CB lower end from being "
@@ -590,10 +649,11 @@ def main() -> None:
     page_of = {g: f"style_map_{g.lower().replace('-', '_')}.html" for g in maps}
     for g, sm in maps.items():
         is_dm = g == "DM-CM"
+        labels_g = labels_for(g, labels)
         order = sorted(range(len(sm["rows"])), key=lambda i: sm["rows"][i]["key"])
-        cmp_data = cmp_mod.build(g, [sm["rows"][i] for i in order], by_group[g], labels, sm["evr"])
+        cmp_data = cmp_mod.build(g, [sm["rows"][i] for i in order], by_group[g], labels_g, sm["evr"])
         others = [[r["name"], g2, page_of[g2]] for g2 in maps if g2 != g for r in by_group[g2]]
-        ctx = {"sm": sm, "names": AXIS_NAMES[g], "labels": labels, "ident": ident,
+        ctx = {"sm": sm, "names": AXIS_NAMES[g], "labels": labels_g, "ident": ident,
                "roles": roles, "lab": lab if is_dm else None, "face": FACE,
                "leagues": wc.LEAGUES, "meta": meta, "facts": facts,
                "notes": {a: AXIS_NOTES[(g, a)] for a in (0, 1) if (g, a) in AXIS_NOTES},
@@ -601,9 +661,9 @@ def main() -> None:
         path = args.out_dir / page_of[g]
         path.write_text(page_mod.page(ctx, dmcm_figs_html(f68) if is_dm else ""))
         n = page_mod.check_page(path, g, metric_weights(g), wc.DNA_PARQUET, SEASON_PARQUET, KEY,
-                                wc.LEAGUES, labels, AXIS_NAMES[g], roles,
+                                wc.LEAGUES, labels_g, AXIS_NAMES[g], roles,
                                 lab if is_dm else None)
-        n_cmp = cmp_mod.check_page(path, g, wc.DNA_PARQUET, KEY, metric_weights(g), labels,
+        n_cmp = cmp_mod.check_page(path, g, wc.DNA_PARQUET, KEY, metric_weights(g), labels_g,
                                    sm["evr"])
         print(f"{g}: PC1 {sm['evr'][0]:.3f} PC2 {sm['evr'][1]:.3f}, {n} card values traced, "
               f"{n_cmp} compare panels checked → {path} ({path.stat().st_size:,} bytes)")

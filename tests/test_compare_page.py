@@ -501,7 +501,10 @@ def test_radar_style_axes_uncoloured():
         assert (cls == "rd-lab style") == plain, (m, cls)
     assert P.uncoloured(P.SPECS_BY_COLUMN["interceptions_p90"], False)
     assert P.uncoloured(P.SPECS_BY_COLUMN["long_pass_completion_pct"], False)
-    assert "Dribbled past (lower better)" in radar
+    # ADR 004 §13.2 (M4g2): dribbled past is a style axis, so it carries no "lower better" reading.
+    assert P.uncoloured(P.SPECS_BY_COLUMN["dribbled_past_p90"], False)
+    assert "Dribbled past (lower better)" not in radar
+    assert re.search(r'<text class="rd-lab style"[^>]*>Dribbled past<', radar)
 
 
 def test_radar_needs_a_dna_vector():

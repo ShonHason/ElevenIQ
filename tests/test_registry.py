@@ -437,12 +437,12 @@ class TestOverrideMechanics:
             derive(measurements=meas, overrides=bad)
 
     def test_override_away_from_dna_resets_low_reliability(self, meas):
-        # CB aerials_lost_p90 is DNA with low_reliability True by rule (r_full 0.612).
-        before = R.cell("aerials_lost_p90", "CB")
+        # CB fouls_won_p90 is DNA with low_reliability True by rule (r_full 0.689, ADR 004 §13.6).
+        before = R.cell("fouls_won_p90", "CB")
         assert before.status == "dna" and before.low_reliability is True
-        bad = (*R.OVERRIDES, Override("aerials_lost_p90", "CB", "display",
+        bad = (*R.OVERRIDES, Override("fouls_won_p90", "CB", "display",
                                        "test: override away from dna", "ADR 004 §10"))
-        after = derive(measurements=meas, overrides=bad).cell("aerials_lost_p90", "CB")
+        after = derive(measurements=meas, overrides=bad).cell("fouls_won_p90", "CB")
         assert after.status == "display" and after.low_reliability is False
 
 
@@ -453,8 +453,9 @@ def _cell(meas, column, group, **kw):
 
 
 class TestThresholdEdges:
-    # CB aerials_lost: zero share 0, r_full 0.612, no trigger → DNA with a low-reliability note.
-    COL, GRP = "aerials_lost_p90", "CB"
+    # CB fouls_won: zero share 0, r_full 0.689, no trigger → DNA with a low-reliability note
+    # (ADR 004 §13.6; CB aerials_lost, the fixture before M4g2, is display since then).
+    COL, GRP = "fouls_won_p90", "CB"
 
     def _m(self, meas):
         return meas["metrics"][self.COL]["groups"][self.GRP]
@@ -494,9 +495,17 @@ class TestThresholdEdges:
         p["rho_within_mean"] = sum(values) / 4 if mean is None else mean
 
     def test_rho_exactly_at_the_trigger_triggers(self, meas):
+        # Four leagues at exactly 0.4 fire the mean rule and the majority rule (both inclusive).
         self._set_rho(meas, "poss_dur_loo", [0.4, 0.4, 0.4, 0.4], mean=0.4)
         c = _cell(meas, self.COL, self.GRP)
-        assert c.status == "display" and c.team_style_biased and c.reasons == ("team_style_biased",)
+        assert c.status == "display" and c.team_style_biased
+        assert c.reasons == ("majority_triggered", "team_style_biased")
+
+    def test_mean_rule_alone_has_no_majority_tag(self, meas):
+        # Mean 0.4 with only two leagues at >= 0.4: the mean rule fires, the majority rule does not.
+        self._set_rho(meas, "poss_dur_loo", [0.7, 0.6, 0.2, 0.1], mean=0.4)
+        c = _cell(meas, self.COL, self.GRP)
+        assert c.status == "display" and c.reasons == ("team_style_biased",)
 
     def test_negative_rho_triggers_on_its_magnitude(self, meas):
         self._set_rho(meas, "poss_pass_loo", [-0.5, -0.45, -0.4, -0.3])
@@ -663,3 +672,138 @@ def test_spike_constants_equal_config(spike, name):
     values = [ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
               and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)]
     assert values == [getattr(config, name)]
+
+
+# ── The majority-of-leagues trigger (ADR 004 §13.1, plan 005 M4g2) ──────────────
+
+class TestMajorityTrigger:
+    """≥ POSSESSION_MAJORITY_LEAGUES pool leagues at |ρ| ≥ the trigger, all of one sign; an OR
+    with the mean rule on either proxy. The mean is set below 0.4 so only the majority rule can
+    fire. Base cell: CB fouls_won (DNA, no trigger on the committed measurements)."""
+    COL, GRP = "fouls_won_p90", "CB"
+
+    def _set(self, meas, proxy, values, mean=0.2):
+        p = meas["metrics"][self.COL]["groups"][self.GRP]["possession"][proxy]
+        p["by_league"] = dict(zip(("11", "2", "12", "7"), values))
+        p["rho_within_mean"] = mean
+
+    def _derive(self, meas, **kw):
+        return derive(measurements=meas, **kw)
+
+    def test_config_is_three_leagues(self):
+        assert config.POSSESSION_MAJORITY_LEAGUES == 3
+        assert R.Rules().possession_majority_leagues == 3
+
+    def test_three_of_four_same_sign_fires_although_the_mean_is_below(self, meas):
+        self._set(meas, "poss_dur_loo", [0.45, 0.41, 0.40, 0.05])
+        c = self._derive(meas).cell(self.COL, self.GRP)
+        assert c.status == "display" and c.team_style_biased
+        assert c.reasons == ("majority_triggered", "team_style_biased")
+
+    def test_third_league_just_below_the_trigger_does_not_fire(self, meas):
+        self._set(meas, "poss_dur_loo", [0.45, 0.41, 0.4 - 1e-12, 0.05])
+        assert self._derive(meas).cell(self.COL, self.GRP).status == "dna"
+
+    def test_negative_majority_fires(self, meas):
+        self._set(meas, "poss_pass_loo", [-0.5, -0.45, -0.4, 0.1], mean=-0.2)
+        assert self._derive(meas).cell(self.COL, self.GRP).status == "display"
+
+    def test_an_opposite_sign_league_at_the_trigger_blocks(self, meas):
+        # The qualifying leagues must share one sign (M4g0): −0.45 qualifies and disagrees.
+        self._set(meas, "poss_dur_loo", [0.5, 0.5, 0.5, -0.45])
+        assert self._derive(meas).cell(self.COL, self.GRP).status == "dna"
+
+    def test_an_opposite_sign_league_below_the_trigger_is_not_tested(self, meas):
+        self._set(meas, "poss_dur_loo", [0.5, 0.5, 0.5, -0.3])
+        assert self._derive(meas).cell(self.COL, self.GRP).status == "display"
+
+    def test_two_leagues_do_not_fire(self, meas):
+        self._set(meas, "poss_dur_loo", [0.9, 0.9, 0.1, 0.1], mean=0.3)
+        assert self._derive(meas).cell(self.COL, self.GRP).status == "dna"
+
+    def test_either_proxy_fires(self, meas):
+        self._set(meas, "poss_pass_loo", [0.45, 0.41, 0.40, 0.05])
+        assert self._derive(meas).cell(self.COL, self.GRP).status == "display"
+
+    def test_allow_list_admits_a_majority_triggered_cell_and_reports_it(self, meas):
+        # O1 (user, 2026-10-07): the allow-list admits it as it admits a mean-triggered cell.
+        self._set(meas, "poss_dur_loo", [0.45, 0.41, 0.40, 0.05])
+        allow = (*R.POSSESSION_ALLOW_LIST, AllowEntry(self.COL, self.GRP, 0.55, "test"))
+        d = self._derive(meas, allow=allow)
+        c = d.cell(self.COL, self.GRP)
+        assert c.status == "dna" and c.team_style_biased
+        assert c.reasons == ("majority_triggered", "allow_listed", "dna")
+        adm = {(a.group, a.column): a for a in d.majority_admitted}[(self.GRP, self.COL)]
+        dur, pas = adm.proxies
+        assert dur.proxy == "poss_dur_loo" and dur.per_league == (0.45, 0.41, 0.40, 0.05)
+        assert dur.leagues_at_trigger == 3 and dur.max_single_league == 0.45 and dur.fires
+        assert not pas.fires
+
+    def test_a_mean_only_allow_listed_cell_is_not_majority_admitted(self, meas):
+        self._set(meas, "poss_dur_loo", [0.7, 0.6, 0.2, 0.1], mean=0.4)
+        allow = (*R.POSSESSION_ALLOW_LIST, AllowEntry(self.COL, self.GRP, 0.55, "test"))
+        d = self._derive(meas, allow=allow)
+        assert d.cell(self.COL, self.GRP).reasons == ("allow_listed", "dna")
+        assert (self.GRP, self.COL) not in {(a.group, a.column) for a in d.majority_admitted}
+
+    def _rows(self, d, prefix):
+        return {b.rule: b for b in d.boundary
+                if (b.group, b.column) == (self.GRP, self.COL) and b.rule.startswith(prefix)}
+
+    def test_boundary_row_is_the_third_largest_same_sign_rho(self, meas):
+        # O3: V = 0.39 (3rd of 0.5, 0.45, 0.39); 4 same-sign leagues still judge the 3rd.
+        self._set(meas, "poss_dur_loo", [0.5, 0.45, 0.39, 0.2])
+        b = self._rows(self._derive(meas), "majority_trigger")["majority_trigger:poss_dur_loo"]
+        assert b.value == pytest.approx(0.39) and b.threshold == 0.4
+        assert b.per_league == (0.5, 0.45, 0.39, 0.2)
+
+    def test_no_majority_row_when_neither_sign_has_three_leagues(self, meas):
+        self._set(meas, "poss_dur_loo", [0.6, -0.42, -0.04, 0.59])
+        assert not self._rows(self._derive(meas), "majority")
+
+    def test_majority_sign_row_for_a_near_trigger_opposite_league(self, meas):
+        # V = 0.39 ≥ 0.38 and the opposite league's |ρ| 0.41 is within ±0.02 of 0.4.
+        self._set(meas, "poss_dur_loo", [0.5, 0.45, 0.39, -0.41])
+        rows = self._rows(self._derive(meas), "majority")
+        assert rows["majority_sign:poss_dur_loo"].value == pytest.approx(0.41)
+        assert rows["majority_trigger:poss_dur_loo"].value == pytest.approx(0.39)
+
+    def test_no_majority_sign_row_when_v_is_far_below(self, meas):
+        self._set(meas, "poss_dur_loo", [0.5, 0.45, 0.30, -0.41])
+        assert not self._rows(self._derive(meas), "majority_sign")
+
+
+@pytest.mark.parametrize("spike, name", [
+    ("m4g2_reliability_reference.py", "MAJORITY_LEAGUES"),
+    ("m4g2_before_after.py", "MAJORITY_LEAGUES"),
+])
+def test_spike_majority_leagues_equals_config(spike, name):
+    """The M4g2 spikes cannot import eleveniq; their written-out copy equals config."""
+    import ast
+    tree = ast.parse((_ROOT / "spikes" / spike).read_text())
+    values = [ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
+              and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)]
+    if not values:   # a tuple assignment: RHO_TRIGGER, MAJORITY_LEAGUES = 0.4, 3
+        for n in tree.body:
+            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Tuple):
+                names = [t.id for t in n.targets[0].elts]
+                if name in names:
+                    values = [ast.literal_eval(n.value)[names.index(name)]]
+    assert values == [config.POSSESSION_MAJORITY_LEAGUES]
+
+
+def test_measurement_spike_judged_lists_equal_the_registry():
+    """spikes/m4_decision_measurements.py writes out which cells drive K (plan 005 M4g2): not
+    fixed display and not D17-dropped. Its copies must equal the registry's."""
+    import ast
+    tree = ast.parse((_ROOT / "spikes" / "m4_decision_measurements.py").read_text())
+    consts = {}
+    for n in tree.body:
+        if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and \
+                n.targets[0].id in ("FIXED_DISPLAY_COLUMNS", "D17_DROPPED"):
+            consts[n.targets[0].id] = n.value
+    # Both are frozenset({...literal...}): read the set literal, never evaluate code.
+    fixed = set(ast.literal_eval(consts["FIXED_DISPLAY_COLUMNS"].args[0]))
+    assert fixed == {s.column for s in R.SPECS if s.fixed_display}
+    dropped = set(ast.literal_eval(consts["D17_DROPPED"].args[0]))
+    assert dropped == {(c.dropped, g) for c in R.COLLINEAR_CHOICES for g in c.groups}

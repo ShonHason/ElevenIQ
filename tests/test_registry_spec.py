@@ -1,7 +1,8 @@
 """
 Hand-written spec tests for the metric registry (src/eleveniq/analytics/registry.py,
 plan 005 M4c3), transcribed from ADR 004 §10 ("Metric registry decisions"), especially
-§10.3, §10.6, §10.7 and §10.10.
+§10.3, §10.6, §10.7 and §10.10. Since M4g2, the DNA lists and the boundary report's status
+and note rows are transcribed from §13.6, which supersedes §10.6 and §10.10 for 2015/16.
 
 These values are copied from the ADR text itself, not read off the registry's own
 output: the point is to catch a registry/ADR mismatch, not to describe whatever the
@@ -29,12 +30,11 @@ def col(name: str) -> str:
     return f"{name}_p90"
 
 
-# ── §10.6: the exact DNA lists, with * (low_reliability) and (AL) (team_style_biased) ──
+# ── §13.6 (supersedes §10.6): the exact DNA lists, with * (low_reliability) and (AL) (team_style_biased) ──
 
 # Each entry: (bare metric name, starred, allow-listed).
 DNA_SPEC: dict[str, list[tuple[str, bool, bool]]] = {
     "CB": [
-        ("aerials_lost", True, False),
         ("aerials_won", False, False),
         ("ball_recoveries", False, False),
         ("box_entries_pass", False, False),
@@ -52,7 +52,6 @@ DNA_SPEC: dict[str, list[tuple[str, bool, bool]]] = {
         ("long_pass_completion_pct", False, True),
     ],
     "FB-WB": [
-        ("aerials_lost", True, False),
         ("aerials_won", False, False),
         ("ball_recoveries", False, False),
         ("box_entries_carry", False, False),
@@ -60,12 +59,11 @@ DNA_SPEC: dict[str, list[tuple[str, bool, bool]]] = {
         ("clearances", False, False),
         ("dribbled_past", True, False),
         ("dribbles_attempted", False, False),
+        ("fouls_committed", True, False),
         ("fouls_won", False, False),
-        ("interceptions", True, False),
         ("long_passes_attempted", False, False),
         ("np_shots", False, False),
-        ("np_xg", True, False),
-        ("op_key_passes", False, False),
+        ("op_key_passes", True, False),
         ("pressures", False, False),
         ("progressive_carries", False, True),
         ("progressive_passes", False, True),
@@ -80,7 +78,7 @@ DNA_SPEC: dict[str, list[tuple[str, bool, bool]]] = {
         ("box_entries_carry", False, False),
         ("box_entries_pass", False, False),
         ("clearances", False, False),
-        ("dribbled_past", False, False),
+        ("dribbled_past", True, False),
         ("dribbles_attempted", False, False),
         ("final_third_entries_carry", False, False),
         ("fouls_committed", False, False),
@@ -88,9 +86,10 @@ DNA_SPEC: dict[str, list[tuple[str, bool, bool]]] = {
         ("interceptions", True, False),
         ("long_passes_attempted", False, False),
         ("np_shots", False, False),
+        ("np_shots_on_target", True, False),
         ("np_xg", False, False),
-        ("op_key_passes", True, False),
-        ("op_xg_assisted", False, False),
+        ("op_key_passes", False, False),
+        ("op_xg_assisted", True, False),
         ("pressures", False, False),
         ("progressive_carries", False, True),
         ("progressive_passes", False, True),
@@ -115,7 +114,7 @@ DNA_SPEC: dict[str, list[tuple[str, bool, bool]]] = {
         ("long_passes_attempted", False, False),
         ("np_shots", False, False),
         ("np_shots_on_target", False, False),
-        ("op_key_passes", False, False),
+        ("op_key_passes", True, False),
         ("pressures", False, False),
         ("progressive_carries", False, False),
         ("progressive_passes", False, False),
@@ -126,31 +125,32 @@ DNA_SPEC: dict[str, list[tuple[str, bool, bool]]] = {
         ("aerials_lost", False, False),
         ("aerials_won", False, False),
         ("ball_recoveries", False, False),
-        ("blocks", False, False),
+        ("blocks", True, False),
         ("box_entries_carry", False, False),
         ("box_entries_pass", False, False),
         ("clearances", False, False),
+        ("dribbled_past", True, False),
         ("dribbles_attempted", False, False),
         ("final_third_entries_pass", False, False),
         ("fouls_committed", False, False),
         ("fouls_won", False, False),
         ("long_passes_attempted", False, False),
         ("np_shots", False, False),
-        ("np_shots_on_target", True, False),
         ("pressures", False, False),
         ("progressive_carries", False, False),
         ("progressive_passes", False, False),
-        ("tackles_attempted", True, False),
+        ("tackles_attempted", False, False),
         ("pass_completion_pct", False, False),
         ("aerial_win_pct", False, False),
     ],
 }
 
-DNA_COUNTS = {"CB": 16, "FB-WB": 19, "DM-CM": 24, "AM-Winger": 22, "ST": 20}
+DNA_COUNTS = {"CB": 15, "FB-WB": 17, "DM-CM": 25, "AM-Winger": 22, "ST": 20}
 
 
 class TestDnaLists:
-    """ADR 004 §10.6: the exact DNA set per group, the * markers and the (AL) flag."""
+    """ADR 004 §13.6 (supersedes §10.6): the exact DNA set per group, the * markers and the
+    (AL) flag."""
 
     @pytest.mark.parametrize("group", GROUPS)
     def test_dna_count_matches_adr(self, group):
@@ -211,22 +211,14 @@ class TestSignatureTraits:
         assert cell.status == "display"
 
 
-# ── §10.10: the boundary report ──────────────────────────────────────────────────────
+# ── §13.6 (supersedes §10.10's status and note rows): the boundary report ────────────
 
 # (rule, group, column): (value, threshold, status, team_style_biased, low_reliability, per_league)
 BOUNDARY_SPEC: dict[tuple[str, str, str], tuple] = {
-    ("r_full", "CB", "interceptions_p90"): (0.599849, 0.6, "display", False, False, None),
-    ("r_full", "CB", "fouls_committed_p90"): (0.589712, 0.6, "display", False, False, None),
-    ("r_full", "CB", "aerials_lost_p90"): (0.612088, 0.6, "dna", False, True, None),
-    ("r_full", "FB-WB", "fouls_committed_p90"): (0.597776, 0.6, "display", False, False, None),
-    ("r_full", "FB-WB", "aerials_lost_p90"): (0.606793, 0.6, "dna", False, True, None),
-    ("r_full", "FB-WB", "dribbled_past_p90"): (0.618266, 0.6, "dna", False, True, None),
-    ("r_full", "FB-WB", "np_shots_on_target_p90"): (0.580878, 0.6, "display", False, False, None),
-    ("r_full", "DM-CM", "blocks_p90"): (0.608874, 0.6, "dna", False, True, None),
-    ("r_full", "DM-CM", "np_shots_on_target_p90"): (0.592665, 0.6, "display", False, False, None),
-    ("r_full", "ST", "dribbled_past_p90"): (0.597873, 0.6, "display", False, False, None),
-    ("r_full", "ST", "np_xg_p90"): (0.599369, 0.6, "display", False, False, None),
-    ("r_full", "ST", "tackles_attempted_p90"): (0.612458, 0.6, "dna", False, True, None),
+    ("r_full", "FB-WB", "interceptions_p90"): (0.585339, 0.6, "display", False, False, None),
+    ("r_full", "FB-WB", "np_xg_p90"): (0.595898, 0.6, "display", False, False, None),
+    ("r_full", "DM-CM", "blocks_p90"): (0.617896, 0.6, "dna", False, True, None),
+    ("r_full", "ST", "blocks_p90"): (0.611414, 0.6, "dna", False, True, None),
 
     ("rho_trigger:poss_dur_loo", "FB-WB", "final_third_entries_pass_p90"): (
         0.409583, 0.4, "display", True, False, (0.346, 0.600, 0.313, 0.380)),
@@ -238,45 +230,58 @@ BOUNDARY_SPEC: dict[tuple[str, str, str], tuple] = {
         0.417085, 0.4, "dna", True, True, (0.587, 0.430, 0.296, 0.355)),
     ("rho_trigger:poss_pass_loo", "FB-WB", "long_pass_completion_pct"): (
         0.416738, 0.4, "dna", True, True, (0.568, 0.433, 0.295, 0.370)),
-    ("rho_trigger:poss_pass_loo", "AM-Winger", "np_xg_p90"): (
-        0.410867, 0.4, "display", True, False, (0.323, 0.435, 0.401, 0.484)),
-    ("rho_trigger:poss_pass_loo", "AM-Winger", "op_xg_assisted_p90"): (
-        0.419109, 0.4, "display", True, False, (0.460, 0.322, 0.525, 0.369)),
-    # AM-Winger pass_completion_pct, duration proxy: this proxy alone does not trigger
-    # ("— (pass share triggers)"), but the cell's actual outcome (shared with the pass
-    # share row below) is display + team_style_biased, because the other proxy does.
+    # AM-Winger pass_completion_pct, duration proxy: this proxy alone does not trigger, but the
+    # cell's outcome (shared with the pass share row) is display + team_style_biased.
     ("rho_trigger:poss_dur_loo", "AM-Winger", "pass_completion_pct"): (
         0.383490, 0.4, "display", True, False, (0.321, 0.295, 0.654, 0.264)),
     ("rho_trigger:poss_pass_loo", "AM-Winger", "pass_completion_pct"): (
         0.410877, 0.4, "display", True, False, (0.323, 0.412, 0.646, 0.263)),
+    ("rho_trigger:poss_pass_loo", "AM-Winger", "np_xg_p90"): (
+        0.410867, 0.4, "display", True, False, (0.323, 0.435, 0.401, 0.484)),
     ("rho_trigger:poss_pass_loo", "AM-Winger", "np_shots_on_target_p90"): (
         0.389822, 0.4, "dna", False, False, (0.412, 0.306, 0.364, 0.477)),
     ("rho_trigger:poss_pass_loo", "ST", "np_shots_on_target_p90"): (
-        0.395111, 0.4, "dna", False, True, (0.449, 0.467, 0.126, 0.538)),
+        0.395111, 0.4, "display", True, False, (0.449, 0.467, 0.126, 0.538)),
+
+    # M4g2 O3: V, the 3rd-largest same-sign |ρ| (ADR 004 §13.6).
+    ("majority_trigger:poss_dur_loo", "FB-WB", "progressive_carries_p90"): (
+        0.385216, 0.4, "dna", True, False, (0.324, 0.385, 0.508, 0.413)),
+    ("majority_trigger:poss_dur_loo", "ST", "np_shots_on_target_p90"): (
+        0.407722, 0.4, "display", True, False, (0.447, 0.408, 0.139, 0.512)),
+    ("majority_trigger:poss_pass_loo", "CB", "long_pass_completion_pct"): (
+        0.417317, 0.4, "dna", True, False, (0.364, 0.750, 0.504, 0.417)),
+    ("majority_trigger:poss_pass_loo", "FB-WB", "progressive_carries_p90"): (
+        0.419963, 0.4, "dna", True, False, (0.376, 0.460, 0.503, 0.420)),
+    ("majority_trigger:poss_pass_loo", "DM-CM", "progressive_passes_p90"): (
+        0.412802, 0.4, "dna", True, False, (0.413, 0.541, 0.396, 0.541)),
+    ("majority_trigger:poss_pass_loo", "AM-Winger", "np_xg_p90"): (
+        0.401357, 0.4, "display", True, False, (0.323, 0.435, 0.401, 0.484)),
+    ("majority_trigger:poss_pass_loo", "ST", "np_shots_p90"): (
+        0.381793, 0.4, "dna", False, False, (0.585, 0.523, -0.002, 0.382)),
 
     ("allow_bound", "CB", "progressive_carries_p90"): (
         0.548655, 0.55, "dna", True, False, (0.459, 0.620, 0.561, 0.556)),
 
-    ("lower_reliability", "CB", "box_entries_pass_p90"): (0.707877, 0.7, "dna", False, False, None),
-    ("lower_reliability", "CB", "dribbles_attempted_p90"): (0.698475, 0.7, "dna", False, True, None),
-    ("lower_reliability", "FB-WB", "box_entries_pass_p90"): (0.702734, 0.7, "dna", False, False, None),
-    ("lower_reliability", "FB-WB", "op_key_passes_p90"): (0.714213, 0.7, "dna", False, False, None),
-    ("lower_reliability", "FB-WB", "long_pass_completion_pct"): (
-        0.693778, 0.7, "dna", True, True, None),
-    ("lower_reliability", "DM-CM", "fouls_committed_p90"): (0.706483, 0.7, "dna", False, False, None),
-    ("lower_reliability", "DM-CM", "interceptions_p90"): (0.686207, 0.7, "dna", False, True, None),
-    ("lower_reliability", "DM-CM", "op_key_passes_p90"): (0.692856, 0.7, "dna", False, True, None),
-    ("lower_reliability", "DM-CM", "op_xg_assisted_p90"): (0.714909, 0.7, "dna", False, False, None),
+    ("lower_reliability", "CB", "box_entries_pass_p90"): (0.707266, 0.7, "dna", False, False, None),
+    ("lower_reliability", "CB", "dribbles_attempted_p90"): (0.696195, 0.7, "dna", False, True, None),
+    ("lower_reliability", "CB", "fouls_won_p90"): (0.688642, 0.7, "dna", False, True, None),
+    ("lower_reliability", "CB", "tackles_attempted_p90"): (0.714502, 0.7, "dna", False, False, None),
+    ("lower_reliability", "FB-WB", "box_entries_pass_p90"): (0.705739, 0.7, "dna", False, False, None),
+    ("lower_reliability", "FB-WB", "op_key_passes_p90"): (0.683752, 0.7, "dna", False, True, None),
+    ("lower_reliability", "DM-CM", "dribbled_past_p90"): (0.690658, 0.7, "dna", False, True, None),
+    ("lower_reliability", "DM-CM", "np_xg_p90"): (0.702235, 0.7, "dna", False, False, None),
+    ("lower_reliability", "AM-Winger", "long_pass_completion_pct"): (
+        0.704960, 0.7, "dna", False, False, None),
     ("lower_reliability", "AM-Winger", "np_shots_on_target_p90"): (
-        0.700334, 0.7, "dna", False, False, None),
-    ("lower_reliability", "ST", "blocks_p90"): (0.715456, 0.7, "dna", False, False, None),
+        0.710162, 0.7, "dna", False, False, None),
+    ("lower_reliability", "ST", "box_entries_pass_p90"): (0.719059, 0.7, "dna", False, False, None),
 }
 
 
 class TestBoundaryReport:
-    """ADR 004 §10.10: the boundary report holds exactly these rows (no zero-share,
-    ratio-r, coverage or D12b value is within +-0.02 of its threshold, per the ADR's
-    own closing statement), each at the ADR's value/threshold/outcome."""
+    """ADR 004 §13.6 (supersedes §10.10's status and note rows): the boundary report holds
+    exactly these rows (no zero-share, ratio-r, coverage or D12b value is within +-0.02 of its
+    threshold, and no majority_sign row), each at the ADR's value/threshold/outcome."""
 
     def test_boundary_report_has_exactly_the_adr_rows(self):
         # The D9 rows (added 2026-10-05) are checked in TestD9BoundaryRows.
@@ -328,11 +333,13 @@ class TestFixedDisplay:
             assert cell.status == "display", f"{column} x {group} is not display"
             assert "fixed_display" in cell.reasons, f"{column} x {group}: {cell.reasons}"
 
-    def test_am_winger_op_xg_assisted_is_display_and_team_style_biased(self):
-        # U1 (§10.2): rho 0.419 on pass share; no substitute, no allow-list entry.
+    def test_am_winger_op_xg_assisted_is_display(self):
+        # U1 (§10.2) made it display for team style (ρ 0.419 on pass share). Since M4g2 (§13.6)
+        # its multi-split r 0.555 is below 0.6, so it is display before the possession step.
         cell = R.cell("op_xg_assisted_p90", "AM-Winger")
         assert cell.status == "display"
-        assert cell.team_style_biased is True
+        assert cell.reasons == ("unreliable",)
+        assert cell.team_style_biased is False
 
     def test_team_pass_share_dna_only_in_dm_cm(self):
         # D12b / R10 (§10.3 step 6): DM-CM enters, CB and the rest are display.
@@ -386,12 +393,13 @@ FAMILY_DIRECTION: dict[str, tuple[str, str]] = {
     "tackles_attempted_p90": ("Defending", "style"),
     "tackles_won_p90": ("Defending", "higher_better"),
     "tackle_success_pct": ("Defending", "higher_better"),
+    "defensive_duel_success_pct": ("Defending", "higher_better"),  # ADR 004 §13.2 (M4g2)
     "interceptions_p90": ("Defending", "style"),  # ADR 004 §12 (user, 2026-10-06)
     "ball_recoveries_p90": ("Defending", "higher_better"),
     "pressures_p90": ("Defending", "style"),
     "clearances_p90": ("Defending", "style"),
     "blocks_p90": ("Defending", "style"),
-    "dribbled_past_p90": ("Defending", "lower_better"),
+    "dribbled_past_p90": ("Defending", "style"),  # ADR 004 §13.2 (M4g2)
     "fouls_committed_p90": ("Defending", "style"),
     "aerials_won_p90": ("Aerial", "higher_better"),
     "aerial_win_pct": ("Aerial", "higher_better"),
@@ -402,8 +410,8 @@ FAMILY_DIRECTION: dict[str, tuple[str, str]] = {
 
 
 class TestFamilyAndDirection:
-    """ADR 004 §10.7: every metric's family and direction, and every spec's applies_to
-    excludes GK (D21)."""
+    """ADR 004 §10.7 (and §13.2 for dribbled_past and defensive_duel_success_pct): every
+    metric's family and direction, and every spec's applies_to excludes GK (D21)."""
 
     def test_every_adr_metric_has_the_adr_family_and_direction(self):
         specs_by_col = {s.column: s for s in R.SPECS}
@@ -496,3 +504,38 @@ class TestD9BoundaryRows:
     def test_a_cell_failing_far_in_one_league_is_not_listed(self):
         # CB clearances: PL 73.5 decides D9 (margin −13.5), although La Liga is 41.5.
         assert ("CB", "clearances_p90") not in {(b.group, b.column) for b in self._rows()}
+
+
+# ── §13.6: majority-triggered cells the allow-list admits (M4g2 O1) ──────────────────
+
+# (group, column): ((dur leagues ≥ 0.4, dur max |ρ|, dur fires), (pass ..., ..., ...))
+MAJORITY_ADMITTED_SPEC = {
+    ("CB", "long_pass_completion_pct"): ((3, 0.715, True), (3, 0.750, True)),
+    ("CB", "progressive_carries_p90"): ((3, 0.589, True), (4, 0.620, True)),
+    ("CB", "progressive_passes_p90"): ((3, 0.509, True), (4, 0.558, True)),
+    ("FB-WB", "progressive_carries_p90"): ((2, 0.508, False), (3, 0.503, True)),
+    ("FB-WB", "progressive_passes_p90"): ((4, 0.646, True), (4, 0.642, True)),
+    ("DM-CM", "long_pass_completion_pct"): ((3, 0.574, True), (3, 0.607, True)),
+    ("DM-CM", "progressive_carries_p90"): ((4, 0.632, True), (4, 0.637, True)),
+    ("DM-CM", "progressive_passes_p90"): ((3, 0.544, True), (3, 0.541, True)),
+}
+
+
+class TestMajorityAdmitted:
+    """ADR 004 §13.6 (stats-reviewer condition, M4g2 O1): derive() returns exactly these 8
+    cells on statsbomb_27, each with its per-proxy league count, max league |ρ| and outcome."""
+
+    def test_set_is_the_adr_list(self):
+        got = {(a.group, a.column) for a in R.REGISTRY.majority_admitted}
+        assert got == set(MAJORITY_ADMITTED_SPEC)
+
+    @pytest.mark.parametrize("key", list(MAJORITY_ADMITTED_SPEC))
+    def test_detail_matches_adr(self, key):
+        a = {(a.group, a.column): a for a in R.REGISTRY.majority_admitted}[key]
+        cell = R.cell(key[1], key[0])
+        assert cell.status == "dna" and cell.team_style_biased
+        assert cell.reasons == ("majority_triggered", "allow_listed", "dna")
+        for proxy, (n, top, fires) in zip(a.proxies, MAJORITY_ADMITTED_SPEC[key]):
+            assert proxy.leagues_at_trigger == n
+            assert math.isclose(proxy.max_single_league, top, abs_tol=5e-4)
+            assert proxy.fires is fires

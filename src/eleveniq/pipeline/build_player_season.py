@@ -432,6 +432,15 @@ def aggregate_player_season(
         .otherwise(None)
         .alias("tackle_success_pct"),
 
+        # ADR 004 §13.2: a lost tackle and a Dribbled Past both count as failures. The two
+        # denominator terms are disjoint, as measured there (plan 005 M4g0: lost tackles are
+        # 39.2% of attempts and none is linked to a Dribbled Past).
+        pl.when((pl.col("tackles_attempted") + pl.col("dribbled_past")) > 0)
+        .then(pl.col("tackles_won").cast(pl.Float64)
+              / (pl.col("tackles_attempted") + pl.col("dribbled_past")).cast(pl.Float64))
+        .otherwise(None)
+        .alias("defensive_duel_success_pct"),
+
         # Unknown-outcome crosses / long passes are neither completed nor failed:
         # excluded from the denominator, like pass_completion_pct (ADR 002 §15, §19).
         pl.when(known_crosses > 0)

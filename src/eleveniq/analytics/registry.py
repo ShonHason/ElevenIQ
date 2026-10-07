@@ -18,7 +18,10 @@ Steps per metric x group (ADR 004 §10.3), first match wins; overrides last:
      else display;
   4. r < DNA_RELIABILITY_MIN -> display; a ratio also needs coverage >= RATIO_MIN_COVERAGE;
   5. possession trigger (per-90s and ratios) -> display + team_style_biased, unless an
-     allow-list entry admits the cell;
+     allow-list entry admits the cell. Either proxy triggers by the mean rule (|mean rho| >=
+     POSSESSION_RHO_TRIGGER and the sign test) or the majority rule (ADR 004 §13.1: at least
+     POSSESSION_MAJORITY_LEAGUES leagues at |rho| >= the trigger, all of one sign); the allow-list
+     admits a majority-triggered cell as it admits a mean-triggered one (M4g2 O1);
   6. team_pass_share (D12b, DM-CM and CB only);
   7. otherwise DNA, with a lower-reliability note when r < LOW_RELIABILITY_BELOW.
 
@@ -64,6 +67,7 @@ R_NO_SIGNAL = "no_signal"
 R_UNTESTABLE = "possession_untestable"
 R_TEAM_STYLE = "team_style_biased"
 R_ALLOW = "allow_listed"
+R_MAJORITY = "majority_triggered"
 R_D12B = "d12b"
 R_D12B_NOT_REGISTERED = "d12b_not_preregistered"
 R_DNA = "dna"
@@ -149,6 +153,7 @@ class Rules:
     ratio_min_coverage: float = config.RATIO_MIN_COVERAGE
     possession_rho_trigger: float = config.POSSESSION_RHO_TRIGGER
     possession_sign_neutral: float = config.POSSESSION_SIGN_NEUTRAL
+    possession_majority_leagues: int = config.POSSESSION_MAJORITY_LEAGUES
     possession_allow_max_rho: float = config.POSSESSION_ALLOW_MAX_RHO
     team_pass_share_max_rho: float = config.TEAM_PASS_SHARE_MAX_RHO
     collinear_rho: float = config.COLLINEAR_RHO
@@ -193,11 +198,30 @@ class BoundaryCell:
 
 
 @dataclass(frozen=True)
+class MajorityProxy:
+    """One proxy's per-league view of a majority-triggered cell (stats-reviewer, M4g2 O1)."""
+    proxy: str
+    per_league: tuple[float, ...]          # the pool leagues, in provenance order
+    leagues_at_trigger: int                # leagues with |rho| >= POSSESSION_RHO_TRIGGER
+    max_single_league: float               # the largest single-league |rho|
+    fires: bool                            # the majority rule fires on this proxy
+
+
+@dataclass(frozen=True)
+class MajorityAdmitted:
+    """A cell the majority rule triggers and the allow-list admits (ADR 004 §13.1, M4g2 O1)."""
+    column: str
+    group: str
+    proxies: tuple[MajorityProxy, ...]
+
+
+@dataclass(frozen=True)
 class Derivation:
     cells: Mapping[tuple[str, str], Cell]
     boundary: tuple[BoundaryCell, ...]
     source: str
     version: str
+    majority_admitted: tuple[MajorityAdmitted, ...] = ()
 
     def cell(self, column: str, group: str) -> Cell:
         try:
@@ -323,6 +347,9 @@ SPECS: tuple[MetricSpec, ...] = (
     _p90("tackles_won", "Tackles won", "Defending", "higher_better"),
     _ratio("tackle_success_pct", "Tackle success", "Defending",
            RatioSpec("tackles_won", ("tackles_attempted",)), fixed=_D19),
+    # ADR 004 §13.2 (M4g2): a lost tackle and a Dribbled Past are both failures; the rules decide.
+    _ratio("defensive_duel_success_pct", "Defensive duel success", "Defending",
+           RatioSpec("tackles_won", ("tackles_attempted", "dribbled_past"))),
     # style, not higher_better (ADR 004 §12, user 2026-10-06): fails D9 in every group and
     # tracks team style (Barcelona 9.1 per match vs 13–18), like its Defending siblings.
     _p90("interceptions", "Interceptions", "Defending", "style",
@@ -331,7 +358,9 @@ SPECS: tuple[MetricSpec, ...] = (
     _p90("pressures", "Pressures", "Defending", "style"),
     _p90("clearances", "Clearances", "Defending", "style"),
     _p90("blocks", "Blocks", "Defending", "style"),
-    _p90("dribbled_past", "Dribbled past", "Defending", "lower_better",
+    # style, not lower_better (ADR 004 §13.2, M4g2): it rises with how often a player engages
+    # (ρ 0.48–0.55 with tackles_attempted_p90 by group).
+    _p90("dribbled_past", "Dribbled past", "Defending", "style",
          notes=(_DRIBBLED_PAST_NOTE,)),
     _p90("fouls_committed", "Fouls committed", "Defending", "style"),
     # Aerial
@@ -529,6 +558,27 @@ def _sign_ok(values: Sequence[float], neutral: float) -> bool:
     return bool(signed) and (all(v > 0 for v in signed) or all(v < 0 for v in signed))
 
 
+def _majority(values: Sequence[float], trigger: float, leagues: int) -> bool:
+    """ADR 004 §13.1: at least `leagues` leagues at |ρ| >= trigger, and those leagues share one
+    sign (a league at >= trigger with the other sign blocks it; leagues below are not tested)."""
+    hit = [v for v in values if abs(v) >= trigger]
+    return len(hit) >= leagues and (all(v > 0 for v in hit) or all(v < 0 for v in hit))
+
+
+def _majority_margin(values: Sequence[float], neutral: float, leagues: int
+                     ) -> tuple[float | None, float | None]:
+    """M4g2 O3: (V, opposite). V = the max over the two signs of the `leagues`-th largest |ρ|
+    among leagues of that sign (|ρ| >= neutral); opposite = the largest |ρ| of the other sign for
+    the sign giving V. (None, None) when neither sign has `leagues` leagues."""
+    best: tuple[float | None, float | None] = (None, None)
+    for sign in (1, -1):
+        same = sorted((abs(v) for v in values if abs(v) >= neutral and v * sign > 0), reverse=True)
+        if len(same) >= leagues and (best[0] is None or same[leagues - 1] > best[0]):
+            other = [abs(v) for v in values if abs(v) >= neutral and v * sign < 0]
+            best = (same[leagues - 1], max(other) if other else None)
+    return best
+
+
 class _Judge:
     """One derive() run: judges each cell and collects the boundary values."""
 
@@ -540,6 +590,7 @@ class _Judge:
         self.allow = {(a.column, a.group): a for a in allow}
         self.dropped = dropped
         self.boundary: list[BoundaryCell] = []
+        self.majority_admitted: list[MajorityAdmitted] = []
 
     def d9(self, m: Mapping[str, Any] | None, ref_n_local: Mapping[str, int] | None
            ) -> dict[str, Any]:
@@ -559,22 +610,35 @@ class _Judge:
             raise RegistryRuleError(f"{col} × {grp}: no possession measurement")
         r = self.rules
         means: dict[str, float] = {}
-        triggered = False
+        pers: dict[str, tuple[float, ...]] = {}
+        triggered = majority = False
         for proxy in POSSESSION_PROXIES:
             p = block[proxy]
             per = [p["by_league"].get(c) for c in self.pool]
             if p["rho_within_mean"] is None or any(v is None for v in per):
                 return "display", False, (R_UNTESTABLE,)
             means[proxy] = p["rho_within_mean"]
+            pers[proxy] = tuple(per)
             self.near(f"rho_trigger:{proxy}", col, grp, abs(means[proxy]),
                       r.possession_rho_trigger, tuple(per))
             if abs(means[proxy]) >= r.possession_rho_trigger and _sign_ok(per, r.possession_sign_neutral):
                 triggered = True
+            # ADR 004 §13.1 (M4g2): the majority rule, an OR with the mean rule, and its two
+            # boundary rows (O3, stats-reviewer conditions).
+            if _majority(per, r.possession_rho_trigger, r.possession_majority_leagues):
+                triggered = majority = True
+            v, opposite = _majority_margin(per, r.possession_sign_neutral, r.possession_majority_leagues)
+            if v is not None:
+                self.near(f"majority_trigger:{proxy}", col, grp, v, r.possession_rho_trigger, tuple(per))
+                if v >= r.possession_rho_trigger - r.boundary_margin and opposite is not None:
+                    self.near(f"majority_sign:{proxy}", col, grp, opposite, r.possession_rho_trigger,
+                              tuple(per))
         if not triggered:
             return None, False, ()
+        tag = (R_MAJORITY,) if majority else ()
         entry = self.allow.get((col, grp))
         if entry is None:
-            return "display", True, (R_TEAM_STYLE,)
+            return "display", True, (*tag, R_TEAM_STYLE)
         top = max(abs(v) for v in means.values())
         per = tuple(block[max(POSSESSION_PROXIES, key=lambda p: abs(means[p]))]["by_league"][c]
                     for c in self.pool)
@@ -582,7 +646,15 @@ class _Judge:
         if top > entry.max_rho:   # also checked for every entry in _check_allow_bounds
             raise RegistryRuleError(f"allow-list {col} × {grp}: measured max |ρ| {top:.6f} > "
                                     f"its bound {entry.max_rho}")
-        return None, True, (R_ALLOW,)
+        if majority:
+            self.majority_admitted.append(MajorityAdmitted(col, grp, tuple(
+                MajorityProxy(proxy, pers[proxy],
+                              sum(abs(v) >= r.possession_rho_trigger for v in pers[proxy]),
+                              max(abs(v) for v in pers[proxy]),
+                              _majority(pers[proxy], r.possession_rho_trigger,
+                                        r.possession_majority_leagues))
+                for proxy in POSSESSION_PROXIES)))
+        return None, True, (*tag, R_ALLOW)
 
     def dna(self, spec: MetricSpec, grp: str, r: float, tsb: bool, reasons: tuple[str, ...],
             **kw: Any) -> Cell:
@@ -810,8 +882,11 @@ def derive(specs: Sequence[MetricSpec] = SPECS,
                  low_reliability=cells[(b.column, b.group)].low_reliability)
          for b in boundary),
         key=lambda b: (b.rule, GROUPS.index(b.group), b.column)))
+    admitted = tuple(sorted((a for a in judge.majority_admitted
+                             if cells[(a.column, a.group)].status == "dna"),
+                            key=lambda a: (GROUPS.index(a.group), a.column)))
     return Derivation(cells=cells, boundary=resolved, source=source,
-                      version=_version(cells, meas, rules, specs))
+                      version=_version(cells, meas, rules, specs), majority_admitted=admitted)
 
 
 # ── Resolved at import ──────────────────────────────────────────────────────────

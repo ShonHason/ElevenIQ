@@ -96,6 +96,7 @@ DENOMINATOR_NOUN: dict[str, str] = {
     "team_pass_share": "team open-play passes", "dribble_success_pct": "dribbles",
     "cross_completion_pct": "crosses", "np_xg_per_shot": "non-penalty shots",
     "xg_per_shot": "shots", "tackle_success_pct": "tackles", "aerial_win_pct": "aerial duels",
+    "defensive_duel_success_pct": "defensive duels (tackles + times dribbled past)",
 }
 # Restart deliveries include throw-ins (ADR 004 §10.6): no "set-piece" label until the
 # FB-WB throw-in share is measured (plan 005 backlog). Overrides the registry display name.

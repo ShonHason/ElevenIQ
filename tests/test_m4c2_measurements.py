@@ -32,7 +32,8 @@ _RAW_MATCHES = _ROOT / "data" / "raw" / "statsbomb" / "matches"
 OUTFIELD = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
 POOL = ("11", "2", "12", "7")
 RATIOS = {"pass_completion_pct", "long_pass_completion_pct", "cross_completion_pct",
-          "dribble_success_pct", "tackle_success_pct", "aerial_win_pct", "np_xg_per_shot"}
+          "dribble_success_pct", "tackle_success_pct", "aerial_win_pct", "np_xg_per_shot",
+          "defensive_duel_success_pct"}   # ADR 004 §13.2 (M4g2)
 
 
 def _reject_constant(name: str):
@@ -83,15 +84,16 @@ class TestMeasurementsScope:
 
     def test_metric_set_is_every_season_per90_except_goals_and_assists(self, m):
         """43 per-90s = every *_p90 column of the season parquet except goals/assists (never DNA);
-        np_shots_on_target_p90 joined in M4c2b."""
+        np_shots_on_target_p90 joined in M4c2b. The season parquet has 145 columns since M4g2
+        (defensive_duel_success_pct, a ratio)."""
         cols = m["provenance"]["season_columns"]
-        assert len(cols) == 144
+        assert len(cols) == 145
         expected = {c for c in cols if c.endswith("_p90")} - {"goals_p90", "assists_p90"}
         assert set(m["metrics"]) == expected
         assert len(expected) == 43
 
     def test_ratio_set_and_columns_exist(self, m):
-        """The 7 ratios, and every column a ratio or per-90 is built from is a season column."""
+        """The 8 ratios, and every column a ratio or per-90 is built from is a season column."""
         cols = set(m["provenance"]["season_columns"])
         assert set(m["ratios"]) == RATIOS
         assert RATIOS <= cols
@@ -258,7 +260,14 @@ class TestMeasurementsInternalConsistency:
         short = {(where.split("/")[0], where.split("/")[1]) for where, _, b in _possession_blocks(m)
                  if set(b["by_league"]) != set(POOL)}
         judged = {(name, grp) for name, grp in short if name not in _FIXED_DISPLAY}
-        assert not judged, sorted(judged)
+        # ADR 004 §13.6 (M4g2): defensive_duel_success_pct has 2–3 rows meeting min_attempts in
+        # FB-WB and DM-CM. Both cells stop before the possession step (r < 0.6, coverage ≤ 1%),
+        # and the registry reads a missing league as possession_untestable anyway.
+        expected = {("defensive_duel_success_pct", "FB-WB"), ("defensive_duel_success_pct", "DM-CM")}
+        assert judged == expected, sorted(judged)
+        for name, grp in judged:
+            c = m["ratios"][name]["groups"][grp]
+            assert c["split_half_r_full"] < 0.6 and c["coverage"] < 0.9
 
     def test_collinear_pairs_respect_floor_and_are_unique(self, m):
         seen = set()
@@ -296,6 +305,14 @@ _RATIO_PAIRS_OVER_085 = {
     ("FB-WB", frozenset(("dribble_success_pct", "tackles_attempted_p90"))),
     ("FB-WB", frozenset(("pass_completion_pct", "dribble_success_pct"))),
     ("FB-WB", frozenset(("np_xg_per_shot", "np_xg_p90"))),
+    # ADR 004 §13.6 (M4g2): DM-CM defensive_duel_success_pct has 3 rows meeting min_attempts, so
+    # its ρ is ±1 (or ±0.866) with most metrics: noise. It is display in every group.
+    *(("DM-CM", frozenset(("defensive_duel_success_pct", b))) for b in (
+        "aerial_win_pct", "aerials_won_p90", "ball_recoveries_p90", "box_entries_carry_p90",
+        "clearances_p90", "dispossessed_p90", "dribbled_past_p90", "final_third_entries_carry_p90",
+        "fouls_committed_p90", "key_passes_p90", "op_assists_p90", "op_key_passes_p90",
+        "op_xg_assisted_p90", "progressive_carries_p90", "restart_key_passes_p90",
+        "restart_xg_assisted_p90", "xg_assisted_direct_p90", "xg_assisted_p90")),
 }
 
 
@@ -316,7 +333,7 @@ class TestMeasurementsReconcileWithAdr004:
         (fixed display), and np_shots_p90 stays below 0.85."""
         c = m["metrics"]["np_shots_on_target_p90"]["groups"][grp]
         r, zero, rho = self._NP_SOT[grp]
-        assert c["r_full"] == pytest.approx(r, abs=1e-6)
+        assert c["r_full_odd_even"] == pytest.approx(r, abs=1e-6)   # §10 quotes odd/even (M4g2)
         assert c["zero_share"] == pytest.approx(zero, abs=1e-4)
         rhos = [c["possession"][k]["rho_within_mean"] for k in ("poss_dur_loo", "poss_pass_loo")]
         assert max(abs(x) for x in rhos) == pytest.approx(rho, abs=1e-6)
@@ -356,7 +373,7 @@ class TestMeasurementsReconcileWithAdr004:
         assert c["M"] == pytest.approx(M, abs=0.005)
         assert c["min_attempts"] == min_att
         assert c["coverage"] == pytest.approx(coverage, abs=0.0005)
-        assert c["split_half_r_full"] == pytest.approx(r, abs=0.0005)
+        assert c["split_half_r_full_odd_even"] == pytest.approx(r, abs=0.0005)   # odd/even (M4g2)
         assert c["n_estimate_rows"] == rows
 
     def test_reference_cells_below_min_cohort_size_are_the_adr_list(self, m):
@@ -370,6 +387,10 @@ class TestMeasurementsReconcileWithAdr004:
             ("long_pass_completion_pct", "ST"): (64, 12),
             ("np_xg_per_shot", "CB"): (0, 0), ("np_xg_per_shot", "FB-WB"): (43, 4),
             ("np_xg_per_shot", "DM-CM"): (118, 23), ("np_xg_per_shot", "ST"): (96, 23),
+            # ADR 004 §13.6 (M4g2): coverage 0–15% in every group.
+            ("defensive_duel_success_pct", "CB"): (0, 0), ("defensive_duel_success_pct", "FB-WB"): (2, 0),
+            ("defensive_duel_success_pct", "DM-CM"): (3, 0),
+            ("defensive_duel_success_pct", "AM-Winger"): (42, 3), ("defensive_duel_success_pct", "ST"): (0, 0),
         }
         actual = {}
         for name, spec in m["ratios"].items():
@@ -388,7 +409,7 @@ class TestMeasurementsReconcileWithAdr004:
         c = m["metrics"]["restart_key_passes_p90"]["groups"][grp]
         assert c["count_p90"] == p90
         assert c["holders_at_count"][str(max(5, p90))] == holders
-        assert c["r_full"] == pytest.approx(r, abs=0.0005)
+        assert c["r_full_odd_even"] == pytest.approx(r, abs=0.0005)   # §10 quotes odd/even (M4g2)
 
     def test_cohort_sizes_quoted_in_10_1(self, m):
         co = m["cohorts"]
@@ -425,7 +446,7 @@ class TestMeasurementsReconcileWithAdr004:
         spec = m["metrics"].get(name) or m["ratios"][name]
         cell = spec["groups"][grp]
         if kind == "r":
-            got = cell["r_full"]
+            got = cell["r_full_odd_even"]   # §10.10 quotes the odd/even r (M4g2: ADR 004 §13.6)
         elif kind == "allow":
             got = max(abs(cell["possession"][p]["rho_within_mean"]) for p in ("poss_dur_loo", "poss_pass_loo"))
         else:
@@ -521,3 +542,63 @@ def test_spike_reruns_are_byte_identical_and_reproduce_committed_json(tmp_path):
     assert outs[0].read_bytes() == _JSON.read_bytes()
     versions = [R.derive(measurements=json.loads(o.read_text())).version for o in outs]
     assert versions[0] == versions[1] == R.REGISTRY_VERSION
+
+
+class TestMultiSplitFields:
+    """Plan 005 M4g2 (ADR 004 §13.1, §13.6): every stored reliability is the multi-split mean,
+    with its comparator and spread."""
+
+    def _cells(self, m):
+        for name, spec in m["metrics"].items():
+            for grp, c in spec["groups"].items():
+                yield ("metrics", name, grp), c, "r_full"
+        for name, spec in m["ratios"].items():
+            for grp, c in spec["groups"].items():
+                yield ("ratios", name, grp), c, "split_half_r_full"
+        for grp, c in m["team_pass_share"].items():
+            yield ("team_pass_share", "team_pass_share", grp), c, "split_half_r_full"
+
+    def test_provenance_k_seed_and_cap(self, m):
+        rel = m["reliability"]
+        assert rel["seed"] == 20261007 and rel["k_start"] == 200 and rel["k_cap"] == 3200
+        assert rel["mc_se_target"] == 0.002
+        assert rel["k"] == 3200 and rel["reached_cap"] is True
+        assert rel["judged_cells_above_target"] == [["ST", "defensive_duel_success_pct"]]
+
+    def test_every_cell_has_the_multi_split_fields(self, m):
+        suffixes = ("odd_even", "sd", "mc_se", "r_k_mean", "n_undefined", "n_min", "n_median",
+                    "n_max", "share_present_every_split")
+        for where, c, prefix in self._cells(m):
+            for sfx in suffixes:
+                assert f"{prefix}_{sfx}" in c, (where, sfx)
+
+    def test_mc_se_is_sd_over_root_k(self, m):
+        k = m["reliability"]["k"]
+        for where, c, prefix in self._cells(m):
+            if c[prefix] is None:
+                continue
+            n = k - c[f"{prefix}_n_undefined"]
+            assert c[f"{prefix}_mc_se"] == pytest.approx(c[f"{prefix}_sd"] / math.sqrt(n), abs=2e-9), where
+
+    def test_mean_of_corrected_is_at_most_correction_of_mean(self, m):
+        """Spearman-Brown is concave on (−1, 1), so mean(SB(r_k)) ≤ SB(mean r_k) (Jensen;
+        stats-reviewer, M4g2 O4: the stored mean sits slightly low)."""
+        for where, c, prefix in self._cells(m):
+            if c[prefix] is None:
+                continue
+            rk = c[f"{prefix}_r_k_mean"]
+            assert c[prefix] <= 2 * rk / (1 + rk) + 2e-9, where
+
+    def test_only_cb_restart_assists_is_partly_undefined_among_gated_cells(self, m):
+        """Amendment (user, 2026-10-07; ADR 004 §13.6): the fail applies to judged gated cells;
+        the one gated cell with a partly undefined r is fixed display."""
+        k = m["reliability"]["k"]
+        partly = {where for where, c, prefix in self._cells(m)
+                  if 0 < c[f"{prefix}_n_undefined"] < k}
+        assert partly == {("metrics", "restart_assists_p90", "CB")}
+        assert "restart_assists_p90" in _FIXED_DISPLAY
+
+    def test_odd_even_comparator_is_the_m4c2_value(self, m):
+        # ADR 004 §10.10 quotes the M4c2 odd/even r_full of CB interceptions_p90 as 0.599849.
+        assert m["metrics"]["interceptions_p90"]["groups"]["CB"]["r_full_odd_even"] == \
+            pytest.approx(0.599849, abs=5e-7)

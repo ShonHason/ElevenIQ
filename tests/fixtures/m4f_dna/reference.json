@@ -1,7 +1,7 @@
 {
  "dna_percentile_basis": "local",
  "generated_by": "spikes/m4f_dna_reference.py",
- "measurements_sha256": "0a58e9e3fc019f44bdb1d66b5260dfccc4ca236b77744bc137cda18408e833fd",
+ "measurements_sha256": "7724d7a87bdf1aa17b88d70d714d5af703bbae509693bcc9cbf2c156a88f0b9b",
  "rows": [
   {
    "cells": {
@@ -104,7 +104,7 @@
      "z_status": "ok"
     },
     "dribbled_past_p90": {
-     "direction": "lower_better",
+     "direction": "style",
      "family": "Defending",
      "metric_status": "ok",
      "n_local": 67,
@@ -215,6 +215,20 @@
      "z_scale_method": "mad",
      "z_status": "ok"
     },
+    "np_shots_on_target_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 36.56716417910448,
+     "value": 0.13889674827279322,
+     "weight": 0.047619047619047616,
+     "z": -0.32013793343957303,
+     "z_median": 0.1973371663844664,
+     "z_scale": 0.18254762090761104,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
     "np_shots_p90": {
      "direction": "higher_better",
      "family": "Goal threat",
@@ -222,7 +236,7 @@
      "n_local": 67,
      "pct_local": 29.1044776119403,
      "value": 0.5833663427457315,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": -0.4663531489378002,
      "z_median": 0.8277361277556367,
      "z_scale": 0.524001575986995,
@@ -236,7 +250,7 @@
      "n_local": 67,
      "pct_local": 15.671641791044777,
      "value": 0.02127629780851797,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": -0.7583253920320269,
      "z_median": 0.049499991978468875,
      "z_scale": 0.03721844799937665,
@@ -374,10 +388,11 @@
     },
     "Goal threat": {
      "members": [
+      "np_shots_on_target_p90",
       "np_shots_p90",
       "np_xg_p90"
      ],
-     "score": 22.388059701492537,
+     "score": 27.11442786069652,
      "score_status": "ok"
     },
     "Passing": {
@@ -507,7 +522,7 @@
      "z_status": "ok"
     },
     "dribbled_past_p90": {
-     "direction": "lower_better",
+     "direction": "style",
      "family": "Defending",
      "metric_status": "ok",
      "n_local": 67,
@@ -618,6 +633,20 @@
      "z_scale_method": "mad",
      "z_status": "ok"
     },
+    "np_shots_on_target_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 15.671641791044777,
+     "value": 0.05989352262644189,
+     "weight": 0.047619047619047616,
+     "z": -0.8546681527158398,
+     "z_median": 0.18935187890830457,
+     "z_scale": 0.15147207237158516,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
     "np_shots_p90": {
      "direction": "higher_better",
      "family": "Goal threat",
@@ -625,7 +654,7 @@
      "n_local": 67,
      "pct_local": 3.731343283582089,
      "value": 0.17968056787932565,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": -1.7109157104253339,
      "z_median": 0.8293911654481785,
      "z_scale": 0.3797443635650144,
@@ -639,7 +668,7 @@
      "n_local": 67,
      "pct_local": 2.2388059701492535,
      "value": 0.0067785901430789715,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": -1.379892583535226,
      "z_median": 0.05365001307830806,
      "z_scale": 0.03396744318687944,
@@ -777,10 +806,11 @@
     },
     "Goal threat": {
      "members": [
+      "np_shots_on_target_p90",
       "np_shots_p90",
       "np_xg_p90"
      ],
-     "score": 2.9850746268656714,
+     "score": 7.213930348258707,
      "score_status": "ok"
     },
     "Passing": {
@@ -910,7 +940,7 @@
      "z_status": "ok"
     },
     "dribbled_past_p90": {
-     "direction": "lower_better",
+     "direction": "style",
      "family": "Defending",
      "metric_status": "ok",
      "n_local": 67,
@@ -1021,6 +1051,20 @@
      "z_scale_method": "mad",
      "z_status": "ok"
     },
+    "np_shots_on_target_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 93.28358208955224,
+     "value": 0.5236479040860404,
+     "weight": 0.047619047619047616,
+     "z": 2.2069812602659478,
+     "z_median": 0.18935187890830457,
+     "z_scale": 0.15147207237158516,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
     "np_shots_p90": {
      "direction": "higher_better",
      "family": "Goal threat",
@@ -1028,7 +1072,7 @@
      "n_local": 67,
      "pct_local": 99.25373134328358,
      "value": 1.9993829065103366,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": 3.0809983065406286,
      "z_median": 0.8293911654481785,
      "z_scale": 0.3797443635650144,
@@ -1042,7 +1086,7 @@
      "n_local": 67,
      "pct_local": 97.76119402985076,
      "value": 0.1707729902393441,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": 3.4480951809253924,
      "z_median": 0.05365001307830806,
      "z_scale": 0.03396744318687944,
@@ -1180,10 +1224,11 @@
     },
     "Goal threat": {
      "members": [
+      "np_shots_on_target_p90",
       "np_shots_p90",
       "np_xg_p90"
      ],
-     "score": 98.50746268656717,
+     "score": 96.76616915422886,
      "score_status": "ok"
     },
     "Passing": {
@@ -1313,7 +1358,7 @@
      "z_status": "ok"
     },
     "dribbled_past_p90": {
-     "direction": "lower_better",
+     "direction": "style",
      "family": "Defending",
      "metric_status": "ok",
      "n_local": 76,
@@ -1637,7 +1682,7 @@
      "n_local": 44,
      "pct_local": 12.5,
      "value": 1.8417211224949182,
-     "weight": 0.027777777777777776,
+     "weight": 0.023809523809523808,
      "z": -1.0511886614242558,
      "z_median": 2.6774524568934996,
      "z_scale": 0.7950345785372617,
@@ -1651,7 +1696,7 @@
      "n_local": 44,
      "pct_local": 3.4090909090909087,
      "value": 0.5893507591983739,
-     "weight": 0.027777777777777776,
+     "weight": 0.023809523809523808,
      "z": -1.2329950687326885,
      "z_median": 1.126159230741497,
      "z_scale": 0.4353695202486672,
@@ -1693,10 +1738,24 @@
      "n_local": 44,
      "pct_local": 14.772727272727273,
      "value": 0.14733768979959347,
-     "weight": 0.027777777777777776,
+     "weight": 0.023809523809523808,
      "z": -1.0924337541277112,
      "z_median": 0.589767185180966,
      "z_scale": 0.4049943474463993,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
+    "dribbled_past_p90": {
+     "direction": "style",
+     "family": "Defending",
+     "metric_status": "ok",
+     "n_local": 44,
+     "pct_local": 32.95454545454545,
+     "value": 0.29467537959918694,
+     "weight": 0.023809523809523808,
+     "z": -0.3875054843329767,
+     "z_median": 0.3926546961448515,
+     "z_scale": 0.2528462705871606,
      "z_scale_method": "mad",
      "z_status": "ok"
     },
@@ -1735,7 +1794,7 @@
      "n_local": 44,
      "pct_local": 1.1363636363636365,
      "value": 0.36834422449898363,
-     "weight": 0.027777777777777776,
+     "weight": 0.023809523809523808,
      "z": -2.1289487791306168,
      "z_median": 1.8201009938650117,
      "z_scale": 0.6819124929623114,
@@ -1770,20 +1829,6 @@
      "z_scale_method": "mad",
      "z_status": "ok"
     },
-    "np_shots_on_target_p90": {
-     "direction": "higher_better",
-     "family": "Goal threat",
-     "metric_status": "ok",
-     "n_local": 44,
-     "pct_local": 48.86363636363637,
-     "value": 0.8103572938977639,
-     "weight": 0.08333333333333333,
-     "z": -0.10958338778354605,
-     "z_median": 0.8376422479291328,
-     "z_scale": 0.24898804995209062,
-     "z_scale_method": "mad",
-     "z_status": "ok"
-    },
     "np_shots_p90": {
      "direction": "higher_better",
      "family": "Goal threat",
@@ -1791,7 +1836,7 @@
      "n_local": 44,
      "pct_local": 53.40909090909091,
      "value": 2.283734191893698,
-     "weight": 0.08333333333333333,
+     "weight": 0.16666666666666666,
      "z": 0.031121886136908004,
      "z_median": 2.260443803221328,
      "z_scale": 0.7483604486538369,
@@ -1819,7 +1864,7 @@
      "n_local": 44,
      "pct_local": 3.4090909090909087,
      "value": 8.692923698176013,
-     "weight": 0.027777777777777776,
+     "weight": 0.023809523809523808,
      "z": -1.7313972694862976,
      "z_median": 15.756898680121711,
      "z_scale": 4.079927297125498,
@@ -1861,7 +1906,7 @@
      "n_local": 44,
      "pct_local": 7.954545454545454,
      "value": 0.29467537959918694,
-     "weight": 0.027777777777777776,
+     "weight": 0.023809523809523808,
      "z": -0.9998402115501746,
      "z_median": 0.7676521376180327,
      "z_scale": 0.4730523463199506,
@@ -1892,10 +1937,9 @@
     },
     "Goal threat": {
      "members": [
-      "np_shots_on_target_p90",
       "np_shots_p90"
      ],
-     "score": 51.13636363636364,
+     "score": 53.40909090909091,
      "score_status": "ok"
     },
     "Passing": {
@@ -2028,7 +2072,7 @@
      "z_status": "ok"
     },
     "dribbled_past_p90": {
-     "direction": "lower_better",
+     "direction": "style",
      "family": "Defending",
      "metric_status": "ok",
      "n_local": 67,
@@ -2139,6 +2183,20 @@
      "z_scale_method": "mad",
      "z_status": "ok"
     },
+    "np_shots_on_target_p90": {
+     "direction": "higher_better",
+     "family": "Goal threat",
+     "metric_status": "ok",
+     "n_local": 67,
+     "pct_local": 94.02985074626866,
+     "value": 0.5599999999999999,
+     "weight": 0.047619047619047616,
+     "z": 1.9866752128151832,
+     "z_median": 0.1973371663844664,
+     "z_scale": 0.18254762090761104,
+     "z_scale_method": "mad",
+     "z_status": "ok"
+    },
     "np_shots_p90": {
      "direction": "higher_better",
      "family": "Goal threat",
@@ -2146,7 +2204,7 @@
      "n_local": 67,
      "pct_local": 89.55223880597015,
      "value": 1.76,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": 1.7791241762744257,
      "z_median": 0.8277361277556367,
      "z_scale": 0.524001575986995,
@@ -2160,7 +2218,7 @@
      "n_local": 67,
      "pct_local": 64.17910447761194,
      "value": 0.06801015216,
-     "weight": 0.07142857142857142,
+     "weight": 0.047619047619047616,
      "z": 0.4973383141027574,
      "z_median": 0.049499991978468875,
      "z_scale": 0.03721844799937665,
@@ -2298,10 +2356,11 @@
     },
     "Goal threat": {
      "members": [
+      "np_shots_on_target_p90",
       "np_shots_p90",
       "np_xg_p90"
      ],
-     "score": 76.86567164179104,
+     "score": 82.58706467661692,
      "score_status": "ok"
     },
     "Passing": {
@@ -2332,20 +2391,6 @@
   },
   {
    "cells": {
-    "aerials_lost_p90": {
-     "direction": "style",
-     "family": "Aerial",
-     "metric_status": "ok",
-     "n_local": 59,
-     "pct_local": 50.0,
-     "value": 1.7418405175546996,
-     "weight": 0.1,
-     "z": 0.0,
-     "z_median": 1.7418405175546996,
-     "z_scale": 0.4407358964196458,
-     "z_scale_method": "mad",
-     "z_status": "ok"
-    },
     "aerials_won_p90": {
      "direction": "higher_better",
      "family": "Aerial",
@@ -2353,7 +2398,7 @@
      "n_local": 59,
      "pct_local": 38.13559322033898,
      "value": 3.1647524896416366,
-     "weight": 0.1,
+     "weight": 0.2,
      "z": -0.32315906216845713,
      "z_median": 3.406311060510485,
      "z_scale": 0.7474912485756885,
@@ -2403,7 +2448,7 @@
      "z_status": "ok"
     },
     "dribbled_past_p90": {
-     "direction": "lower_better",
+     "direction": "style",
      "family": "Defending",
      "metric_status": "ok",
      "n_local": 59,
@@ -2706,7 +2751,7 @@
      "z_status": "ok"
     },
     "dribbled_past_p90": {
-     "direction": "lower_better",
+     "direction": "style",
      "family": "Defending",
      "metric_status": "ok",
      "n_local": 81,
@@ -3004,5 +3049,5 @@
   ],
   "zero_spread": 0
  },
- "season_parquet_sha256": "9c3730cbf573e16b19d81792a8ffce7bf942d307ad4f6defb0e03065d182fc01"
+ "season_parquet_sha256": "2acb8f8538d086b251a5b5ab278cd3afe8a2757aa2e91dd70525bcd3a4151c57"
 }

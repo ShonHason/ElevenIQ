@@ -135,7 +135,7 @@ def test_two_missing_metrics_make_the_row_dna_incomplete_but_keep_its_data():
     scores; only the distance refuses it."""
     group = "FB-WB"
     row = _row_dna(group, _specs(group),
-                    _inputs(group, missing=("long_pass_completion_pct", "np_xg_p90")))
+                    _inputs(group, missing=("long_pass_completion_pct", "progressive_passes_p90")))
     assert row.dna_status == "dna_incomplete"
     assert len(row.cells) == len(_specs(group))
     assert math.isclose(sum(c.weight for c in row.cells.values() if c.weight), 1.0, abs_tol=1e-12)
@@ -199,14 +199,27 @@ def test_withheld_for_and_unknown_status():
 
 
 def test_score_is_mean_of_directional_members_with_lower_better_inverted():
-    """With nothing withheld, CB Defending = mean(ball_recoveries, 100 − dribbled_past);
-    the style members (clearances, pressures, tackles_attempted) do not enter."""
+    """A lower_better member enters as 100 − p. Synthetic since M4g2: no DNA metric is
+    lower_better (ADR 004 §13.2 made dribbled_past style), so dribbled_past is set to
+    lower_better here; CB Defending = mean(ball_recoveries, 100 − dribbled_past)."""
     pct = {"ball_recoveries_p90": 80.0, "dribbled_past_p90": 30.0, "clearances_p90": 1.0,
            "pressures_p90": 1.0, "tackles_attempted_p90": 1.0}
-    d = _row_dna("CB", _specs("CB"), _inputs("CB", pct), withheld={}).dimensions["Defending"]
+    specs = [replace(s, direction="lower_better") if s.column == "dribbled_past_p90" else s
+             for s in _specs("CB")]
+    d = _row_dna("CB", specs, _inputs("CB", pct), withheld={}).dimensions["Defending"]
     assert d.score == pytest.approx((80.0 + 70.0) / 2, abs=1e-12)
     assert d.members == ("ball_recoveries_p90", "dribbled_past_p90")
     assert d.score_status == "ok"
+
+
+def test_style_members_do_not_enter_the_score():
+    """With the registry's specs, CB Defending = ball_recoveries alone: dribbled_past (style
+    since ADR 004 §13.2), clearances, pressures and tackles_attempted do not enter."""
+    pct = {"ball_recoveries_p90": 80.0, "dribbled_past_p90": 30.0, "clearances_p90": 1.0,
+           "pressures_p90": 1.0, "tackles_attempted_p90": 1.0}
+    d = _row_dna("CB", _specs("CB"), _inputs("CB", pct), withheld={}).dimensions["Defending"]
+    assert d.score == pytest.approx(80.0, abs=1e-12)
+    assert d.members == ("ball_recoveries_p90",)
 
 
 def test_withheld_is_a_required_keyword():

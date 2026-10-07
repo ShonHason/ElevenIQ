@@ -302,6 +302,24 @@ class TestSafeDivision:
         row = result.filter(pl.col("player_id") == 1).row(0, named=True)
         assert row["tackle_success_pct"] is None
 
+    def test_zero_defensive_duels_null(self):
+        """ADR 004 §13.2: null when tackles_attempted + dribbled_past is 0."""
+        rows = [_match_row(player_id=1, tackles_attempted=0, tackles_won=0, dribbled_past=0,
+                           minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["defensive_duel_success_pct"] is None
+
+    def test_defensive_duel_success_counts_lost_tackles_and_dribbled_past(self):
+        """tackles_won / (tackles_attempted + dribbled_past), summed over the season."""
+        rows = [_match_row(player_id=1, tackles_attempted=3, tackles_won=2,
+                           dribbled_past=1, minutes_dm_cm=90.0),
+                _match_row(player_id=1, tackles_attempted=0, tackles_won=0,
+                           dribbled_past=2, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["defensive_duel_success_pct"] == pytest.approx(2 / 6)
+
 
 # ---------------------------------------------------------------------------
 # TestPositionGroup

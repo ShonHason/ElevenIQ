@@ -163,6 +163,18 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # Independent check of the DNA output (no eleveniq imports; reads the dimensions file alongside)
 .venv/bin/python spikes/m4f_dna_reference.py --check-output data/processed/player_dna.parquet
 
+# M4g2 multi-split reliability: independent check of the measurements and the cells report;
+# --write-expected writes spikes/expected_m4g2_flips.json from a registry snapshot BEFORE a registry change
+.venv/bin/python spikes/m4g2_reliability_reference.py --check-output src/eleveniq/analytics/measurements/statsbomb_27.json --snapshot data/interim/m4g2_snapshot
+
+# Registry before/after (STOP rule): dump the registry before and after a change, then compare
+.venv/bin/python tools/registry_snapshot.py --out data/interim/m4g2_after/registry.json
+.venv/bin/python spikes/m4g2_before_after.py --before data/interim/m4g2_snapshot/registry.json --after data/interim/m4g2_after/registry.json --measurements src/eleveniq/analytics/measurements/statsbomb_27.json
+
+# Style maps (M4g1, re-run after any DNA change) and the M4g2 reliability review
+.venv/bin/python spikes/m4g_style_map.py
+.venv/bin/python spikes/m4g2_reliability_review.py
+
 # Comparison page (M4e): 2–3 players, one season → data/processed/reports/*.html
 # (--player is a player_id, player_id@team_id, or a name fragment)
 .venv/bin/python tools/compare_page.py --season-id 27 --player 3244 --player "Wes Morgan"

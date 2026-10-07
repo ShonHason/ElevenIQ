@@ -226,3 +226,54 @@ def test_within_team_contrast_counts_teammate_pairs_on_the_6_side():
     # 6 side on PC1 is negative (6 mean −1.5 vs 8 mean 1.5); row 5 is more 6
     # (0.6) than row 3 (0.1) and sits at 0.0 < 2.0, so it is on the 6 side.
     assert wt["agree"][0] == 1
+
+
+# ── Axis pins (user, 2026-10-07, M4g2) ──────────────────────────────────────────
+
+class TestOrient:
+    """Each PC is signed so its pin metric loads positive; the solver's sign never moves an
+    axis (a name keeps its screen side)."""
+    METRICS = ("a", "b", "c")
+    COMPS = np.array([[0.6, -0.5, 0.2], [-0.1, 0.3, -0.9]])
+
+    def test_pin_loads_positive(self):
+        out = sm.orient(self.COMPS, self.METRICS, ("b", "c"))
+        assert out[0][1] > 0 and out[1][2] > 0
+        np.testing.assert_allclose(out[0], -self.COMPS[0])
+        np.testing.assert_allclose(out[1], -self.COMPS[1])
+
+    def test_a_sign_flip_in_the_solver_output_does_not_move_the_axis(self):
+        for flip in ([1, 1], [-1, 1], [1, -1], [-1, -1]):
+            solver = self.COMPS * np.array(flip)[:, None]
+            np.testing.assert_allclose(sm.orient(solver, self.METRICS, ("a", "b")),
+                                       sm.orient(self.COMPS, self.METRICS, ("a", "b")))
+
+    def test_input_is_not_modified(self):
+        before = self.COMPS.copy()
+        sm.orient(self.COMPS, self.METRICS, ("b", "c"))
+        np.testing.assert_array_equal(self.COMPS, before)
+
+    def test_a_weak_pin_fails(self):
+        with pytest.raises(SystemExit):
+            sm.orient(np.array([[0.6, -0.1, 0.2]]), self.METRICS, ("b",))
+
+    def test_every_pin_is_a_dna_metric_of_its_group(self):
+        for g, pins in sm.AXIS_PINS.items():
+            assert len(pins) == 2
+            assert set(pins) <= set(sm.ref.DNA[g]), g
+
+    def test_pins_keep_the_m4g1_screen_sides(self):
+        # The pinned metric sits in the named + end the user agreed (AXIS_NAMES, positive first).
+        assert sm.AXIS_NAMES["CB"][0][0] == "Ball-player" and sm.AXIS_PINS["CB"][0] == "progressive_passes_p90"
+        assert sm.AXIS_NAMES["ST"][0][0] == "Aerial target" and sm.AXIS_PINS["ST"][0] == "aerials_won_p90"
+        assert sm.AXIS_NAMES["ST"][1] == ("Box striker", "Safe passer") and sm.AXIS_PINS["ST"][1] == "np_shots_p90"
+        for g in ("CB", "FB-WB"):
+            assert sm.AXIS_NAMES[g][1] == ("More aerials won", "Fewer aerials won")
+            assert sm.AXIS_PINS[g][1] == "aerials_won_p90"
+
+
+def test_group_labels_override_only_their_group():
+    labels = {"dribbled_past_p90": "Dribbled past", "np_shots_p90": "Shots (non-penalty)"}
+    assert sm.labels_for("ST", labels)["dribbled_past_p90"] == "Dribbled past while pressing"
+    assert sm.labels_for("CB", labels)["dribbled_past_p90"] == "Dribbled past"
+    assert sm.labels_for("ST", labels)["np_shots_p90"] == "Shots (non-penalty)"

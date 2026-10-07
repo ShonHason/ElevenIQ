@@ -74,12 +74,13 @@ WITHHELD = {
 }
 
 H, L, S = "higher_better", "lower_better", "style"
-# ADR 004 §10.6 / §10.7 after §12.3: metric -> (family, direction), for every DNA metric.
+# ADR 004 §10.6 / §10.7 after §12.3 and §13.2 (M4g2: dribbled_past is style): metric ->
+# (family, direction), for every DNA metric.
 SPEC = {
     "aerial_win_pct": ("Aerial", H), "aerials_lost_p90": ("Aerial", S),
     "aerials_won_p90": ("Aerial", H),
     "ball_recoveries_p90": ("Defending", H), "blocks_p90": ("Defending", S),
-    "clearances_p90": ("Defending", S), "dribbled_past_p90": ("Defending", L),
+    "clearances_p90": ("Defending", S), "dribbled_past_p90": ("Defending", S),
     "fouls_committed_p90": ("Defending", S), "interceptions_p90": ("Defending", S),
     "pressures_p90": ("Defending", S), "tackles_attempted_p90": ("Defending", S),
     "box_entries_pass_p90": ("Progression", H), "final_third_entries_pass_p90": ("Progression", H),
@@ -93,25 +94,27 @@ SPEC = {
     "np_shots_on_target_p90": ("Goal threat", H),
     "op_key_passes_p90": ("Creation", H), "op_xg_assisted_p90": ("Creation", H),
 }
-_COMMON = ("aerials_lost_p90", "aerials_won_p90", "ball_recoveries_p90", "box_entries_pass_p90",
+# M4g2 (plan 005, ADR 004 §13): the multi-split r_full and the majority trigger re-derived the lists.
+_COMMON = ("aerials_won_p90", "ball_recoveries_p90", "box_entries_pass_p90",
            "clearances_p90", "dribbles_attempted_p90", "fouls_won_p90", "long_passes_attempted_p90",
            "pressures_p90", "progressive_carries_p90", "progressive_passes_p90",
            "tackles_attempted_p90")
 DNA: dict[str, tuple[str, ...]] = {g: tuple(sorted(_COMMON + extra)) for g, extra in {
     "CB": ("dribbled_past_p90", "final_third_entries_carry_p90", "final_third_entries_pass_p90",
            "long_pass_completion_pct"),
-    "FB-WB": ("box_entries_carry_p90", "dribbled_past_p90", "interceptions_p90",
-              "long_pass_completion_pct", "np_shots_p90", "np_xg_p90", "op_key_passes_p90"),
-    "DM-CM": ("blocks_p90", "box_entries_carry_p90", "dribbled_past_p90",
+    "FB-WB": ("box_entries_carry_p90", "dribbled_past_p90", "fouls_committed_p90",
+              "long_pass_completion_pct", "np_shots_p90", "op_key_passes_p90"),
+    "DM-CM": ("aerials_lost_p90", "blocks_p90", "box_entries_carry_p90", "dribbled_past_p90",
               "final_third_entries_carry_p90", "fouls_committed_p90", "interceptions_p90",
-              "long_pass_completion_pct", "np_shots_p90", "np_xg_p90", "op_key_passes_p90",
-              "op_xg_assisted_p90", "team_pass_share"),
-    "AM-Winger": ("blocks_p90", "box_entries_carry_p90", "dribbled_past_p90",
+              "long_pass_completion_pct", "np_shots_on_target_p90", "np_shots_p90", "np_xg_p90",
+              "op_key_passes_p90", "op_xg_assisted_p90", "team_pass_share"),
+    "AM-Winger": ("aerials_lost_p90", "blocks_p90", "box_entries_carry_p90", "dribbled_past_p90",
                   "final_third_entries_pass_p90", "fouls_committed_p90", "interceptions_p90",
                   "long_pass_completion_pct", "np_shots_on_target_p90", "np_shots_p90",
                   "op_key_passes_p90"),
-    "ST": ("aerial_win_pct", "blocks_p90", "box_entries_carry_p90", "final_third_entries_pass_p90",
-           "fouls_committed_p90", "np_shots_on_target_p90", "np_shots_p90", "pass_completion_pct"),
+    "ST": ("aerial_win_pct", "aerials_lost_p90", "blocks_p90", "box_entries_carry_p90",
+           "dribbled_past_p90", "final_third_entries_pass_p90", "fouls_committed_p90", "np_shots_p90",
+           "pass_completion_pct"),
 }.items()}
 
 Z_TOL = 1e-9          # z, median and scale (plain Python vs polars order of operations)
