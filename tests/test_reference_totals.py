@@ -81,6 +81,11 @@ class TestReferenceTotalsFixtures:
             "np_xg", "np_shots", "np_shots_on_target", "passes_injury_clearance",
             "open_play_passes_attempted",
             "team_open_play_passes_while_on",
+            # ADR 004 §13.8 (M4g4b)
+            "opponent_open_play_passes_while_on",
+            "team_ball_recoveries_while_on", "team_tackles_attempted_while_on",
+            "team_pressures_while_on", "team_clearances_while_on", "team_dribbled_past_while_on",
+            "team_fouls_committed_while_on", "team_blocks_while_on", "team_interceptions_while_on",
             "op_key_passes", "restart_key_passes", "op_assists", "restart_assists",
             "minutes_am_winger", "minutes_cb", "minutes_dm_cm", "minutes_fb_wb",
             "minutes_gk", "minutes_st",

@@ -12,6 +12,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from eleveniq.metrics.defensive_actions import DEFENSIVE_ACTIONS, team_column
 from eleveniq.config import COMPETITION_SEASONS, CompetitionSeason
 from eleveniq.pipeline.coverage import CoverageCheckError
 from eleveniq.pipeline.build_player_season import (
@@ -117,6 +118,10 @@ def _match_row(
     long_passes_injury_clearance: int = 0,
     open_play_passes_attempted: int | None = None,
     team_open_play_passes_while_on: int = 0,
+    # ADR 004 §13.8 (M4g4b): exposure and team-action counts, neutral 0 by default;
+    # team_actions maps an action (DEFENSIVE_ACTIONS) to its team_<action>_while_on.
+    opponent_open_play_passes_while_on: int = 0,
+    team_actions: dict[str, int] | None = None,
     # ADR 004 §9: neutral defaults, everything open play (no restart key passes).
     op_xg_assisted: float | None = None,
     restart_xg_assisted: float = 0.0,
@@ -196,6 +201,8 @@ def _match_row(
         open_play_passes_attempted=(passes_attempted if open_play_passes_attempted is None
                                     else open_play_passes_attempted),
         team_open_play_passes_while_on=team_open_play_passes_while_on,
+        opponent_open_play_passes_while_on=opponent_open_play_passes_while_on,
+        **{team_column(a): (team_actions or {}).get(a, 0) for a in DEFENSIVE_ACTIONS},
         op_xg_assisted=xg_assisted if op_xg_assisted is None else op_xg_assisted,
         restart_xg_assisted=restart_xg_assisted,
         op_key_passes=key_passes if op_key_passes is None else op_key_passes,
@@ -2831,6 +2838,16 @@ class TestM4bRatios:
             _match_row(open_play_passes_attempted=10, team_open_play_passes_while_on=100),
         ], min_minutes=0)
         assert row["team_pass_share"] == pytest.approx(50 / 500)
+
+    def test_exposure_and_team_action_counts_are_summed_over_matches(self):
+        row = _season_one([
+            _match_row(opponent_open_play_passes_while_on=300, team_actions={"pressures": 5, "blocks": 1}),
+            _match_row(opponent_open_play_passes_while_on=200, team_actions={"pressures": 7}),
+        ], min_minutes=0)
+        assert row["opponent_open_play_passes_while_on"] == 500
+        assert row["team_pressures_while_on"] == 12
+        assert row["team_blocks_while_on"] == 1
+        assert row["team_interceptions_while_on"] == 0
 
     def test_team_pass_share_null_without_team_passes(self):
         row = _season_one([_match_row(team_open_play_passes_while_on=0)], min_minutes=0)

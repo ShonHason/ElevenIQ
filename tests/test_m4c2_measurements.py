@@ -85,9 +85,10 @@ class TestMeasurementsScope:
     def test_metric_set_is_every_season_per90_except_goals_and_assists(self, m):
         """43 per-90s = every *_p90 column of the season parquet except goals/assists (never DNA);
         np_shots_on_target_p90 joined in M4c2b. The season parquet has 145 columns since M4g2
-        (defensive_duel_success_pct, a ratio)."""
+        (defensive_duel_success_pct, a ratio) and 154 since M4g4b (the 9 count columns
+        opponent_open_play_passes_while_on and team_<action>_while_on, no per-90s)."""
         cols = m["provenance"]["season_columns"]
-        assert len(cols) == 145
+        assert len(cols) == 154
         expected = {c for c in cols if c.endswith("_p90")} - {"goals_p90", "assists_p90"}
         assert set(m["metrics"]) == expected
         assert len(expected) == 43

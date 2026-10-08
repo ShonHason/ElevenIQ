@@ -45,6 +45,7 @@ from pathlib import Path
 
 import polars as pl
 
+from eleveniq.metrics.defensive_actions import DEFENSIVE_ACTIONS, team_column
 from eleveniq.config import (
     COMPETITION_SEASONS,
     AMBIGUOUS_POSITION_MARGIN,
@@ -130,6 +131,9 @@ _DISPLAY_ONLY_COLS: list[str] = [
     "passes_injury_clearance",  # ADR 004 D13
     "open_play_passes_attempted",  # ADR 004 D12
     "team_open_play_passes_while_on",  # ADR 004 D12
+    # ADR 004 §13.8 (M4g4b): exposure and team-action counts while on (counts only)
+    "opponent_open_play_passes_while_on",
+    *(team_column(a) for a in DEFENSIVE_ACTIONS),
     "passes_missing_length",
     "ball_recoveries_failed",
 ]

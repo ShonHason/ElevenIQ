@@ -57,6 +57,15 @@ Scope rule shared by every column: period-5 (shootout) events are excluded
 event (other than an allow-listed bench card, which is not a counted type)
 would make the pipeline total fall short.
 
+M4g4b (ADR 004 §13.8, plan 005): opponent_open_play_passes_while_on (each open-play pass
+credited to every player of the other lineup team whose window holds its instant; no passer
+rule; 7-11 defenders or the spike fails) and team_<action>_while_on for the 8 Defending
+actions (the action rules written out below, ACTIONS; the actor always credited plus each
+teammate whose window holds). The 7-11 check follows the user's rule C: the credited set with
+the actor once, not counted as an extra player at his own exit instant (his window does not
+hold, but a closed segment covers the instant); the same count is applied to the team-pass
+check. Only keys are added (CHANGED_BY_CURRENT_CHUNK is empty).
+
 Minutes structural check (not a second implementation)
 ------------------------------------------------------
 Per team, per period, at most 11 players are on the pitch, so the team's
@@ -220,6 +229,10 @@ KINDS = {
     "passes_injury_clearance": "independent (pass.outcome, ADR 004 D13)",
     "open_play_passes_attempted": "independent (pass.type, ADR 004 D12)",
     "team_open_play_passes_while_on": "second implementation (ADR 004 D12) + 7-11 credit check",
+    "opponent_open_play_passes_while_on": "second implementation (ADR 004 §13.8) + 7-11 defenders",
+    **{f"team_{a}_while_on": "second implementation (ADR 004 §13.8) + 7-11 credit check (rule C)"
+       for a in ("ball_recoveries", "tackles_attempted", "pressures", "clearances",
+                 "dribbled_past", "fouls_committed", "blocks", "interceptions")},
     "op_key_passes": "independent (pass.type, ADR 004 §9)",
     "restart_key_passes": "independent (pass.type, ADR 004 §9)",
     "op_assists": "independent (pass.type, ADR 004 §9)",
@@ -642,11 +655,85 @@ def team_open_play_pass_credits(
                    for a, b, _ in segs):
                 n += 1
         n += 1  # the passer
-        if not MIN_PLAYERS_PER_PASS <= n <= MAX_PLAYERS_PER_PASS:
-            raise SystemExit(f"FAIL: match {mid}: pass {e['id']} credited to {n} players")
+        bound = _bounds_count(n, segments[e["team"]["id"]].get(passer), at, start, end)  # rule C
+        if not MIN_PLAYERS_PER_PASS <= bound <= MAX_PLAYERS_PER_PASS:
+            raise SystemExit(f"FAIL: match {mid}: pass {e['id']} credited to {bound} players "
+                             "(rule-C count)")
         credits[n] += 1
         total += n
     return total
+
+
+# M4g4b: the 8 Defending actions with a team-share candidate, written out (no eleveniq).
+def _action(e: dict) -> str | None:
+    if e["period"] > 4 or not e.get("player"):
+        return None
+    kind = e["type"]["name"]
+    if kind == "Ball Recovery":
+        return None if (e.get("ball_recovery") or {}).get("recovery_failure") else "ball_recoveries"
+    if kind == "Duel":
+        return "tackles_attempted" if ((e.get("duel") or {}).get("type") or {}).get("name") == "Tackle" else None
+    if kind == "Block":
+        b = e.get("block") or {}
+        return None if b.get("offensive") or b.get("save_block") else "blocks"
+    return {"Pressure": "pressures", "Clearance": "clearances", "Dribbled Past": "dribbled_past",
+            "Foul Committed": "fouls_committed", "Interception": "interceptions"}.get(kind)
+
+
+def _holds(segs, at: float, start: float, end: float) -> bool:
+    """The D12 window: [a, b) inside the event's period, or the period's end closing a segment."""
+    return any(b - a > TIME_EPS
+               and ((a - TIME_EPS <= at < b - TIME_EPS and start - TIME_EPS <= at < end - TIME_EPS)
+                    or (abs(at - end) <= TIME_EPS and abs(b - end) <= TIME_EPS))
+               for a, b, _ in segs)
+
+
+def _bounds_count(n_credited: int, actor_segs, at: float, start: float, end: float) -> int:
+    """Rule C: the actor is not an extra player at his own exit instant (his window does not
+    hold the instant, but a closed segment [a, b] covers it)."""
+    at_exit = (actor_segs is not None and not _holds(actor_segs, at, start, end)
+               and any(a - TIME_EPS <= at <= b + TIME_EPS for a, b, _ in actor_segs))
+    return n_credited - at_exit
+
+
+def exposure_and_action_credits(
+    mid: int, events: list[dict], teams: list[dict], clock: Clock,
+    opp_dist: Counter, action_dist: Counter,
+) -> tuple[int, Counter]:
+    """M4g4b league totals: (Σ over open-play passes of the defenders credited, Σ per action
+    over its events of the players credited). Fails on a defender count or a rule-C action
+    count outside MIN_PLAYERS_PER_PASS-MAX_PLAYERS_PER_PASS."""
+    segments = {t["team_id"]: {p["player_id"]: p["segments"] for p in t["players"]} for t in teams}
+    if len(segments) != 2:
+        raise SystemExit(f"FAIL: match {mid}: {len(segments)} lineup teams")
+    other = dict(zip(segments, reversed(list(segments))))
+    opp_total, actions = 0, Counter()
+    for e in events:
+        if e["period"] > 4:
+            continue
+        p = e["period"]
+        start = clock.offset[p]
+        end = start + clock.length(p)
+        at = clock.elapsed(_at(e))
+        if (e["type"]["name"] == "Pass" and e.get("player")
+                and ((e.get("pass") or {}).get("type") or {}).get("name") not in RESTART_TYPES):
+            n = sum(_holds(segs, at, start, end) for segs in segments[other[e["team"]["id"]]].values())
+            if not MIN_PLAYERS_PER_PASS <= n <= MAX_PLAYERS_PER_PASS:
+                raise SystemExit(f"FAIL: match {mid}: pass {e['id']} credited to {n} defenders")
+            opp_dist[n] += 1
+            opp_total += n
+        a = _action(e)
+        if a is None:
+            continue
+        team, actor = e["team"]["id"], e["player"]["id"]
+        mates = sum(_holds(segs, at, start, end) for pid, segs in segments[team].items() if pid != actor)
+        credited = mates + 1
+        n = _bounds_count(credited, segments[team].get(actor), at, start, end)
+        if not MIN_PLAYERS_PER_PASS <= n <= MAX_PLAYERS_PER_PASS:
+            raise SystemExit(f"FAIL: match {mid}: {a} {e['id']} counts {n} players (rule C)")
+        action_dist[(a, n)] += 1
+        actions[f"team_{a}_while_on"] += credited
+    return opp_total, actions
 
 
 def _group(mid: int, name: str | None, where: str) -> str:
@@ -758,6 +845,8 @@ def main() -> None:
     outside_rows: list[dict] = []
     match_duration = 0.0
     pass_credits: Counter = Counter()
+    opp_dist: Counter = Counter()
+    action_dist: Counter = Counter()
     for m in matches:
         mid = m["match_id"]
         events = json.loads((DATA_ROOT / "events" / f"{mid}.json").read_text())
@@ -767,6 +856,10 @@ def main() -> None:
         match_duration += clock.duration
         totals["team_open_play_passes_while_on"] += team_open_play_pass_credits(
             mid, events, teams, clock, pass_credits)
+        opp_total, action_totals = exposure_and_action_credits(
+            mid, events, teams, clock, opp_dist, action_dist)
+        totals["opponent_open_play_passes_while_on"] += opp_total
+        totals.update(action_totals)
         outside_rows.extend({"match_id": mid, **r}
                             for r in events_outside_credited_time(events, teams, clock))
         for t in teams:
@@ -811,6 +904,11 @@ def main() -> None:
     print(f"  {'overlap minutes deduplicated':<32} {counts['overlap_minutes']:.2f}")
     print(f"  {'unpaired-Off minutes removed':<32} {counts['unpaired_off_minutes']:.2f}")
 
+    print(f"\nDefenders per open-play pass (M4g4b): "
+          + ", ".join(f"{k}: {v:,}" for k, v in sorted(opp_dist.items())))
+    print("Players per Defending action, rule-C count (M4g4b): "
+          + "; ".join(f"{a} " + ", ".join(f"{n}: {v:,}" for (aa, n), v in sorted(action_dist.items()) if aa == a)
+                      for a in sorted({a for a, _ in action_dist})))
     n_passes = sum(pass_credits.values())
     print(f"\nOpen-play passes credited (ADR 004 D12): {n_passes:,} passes; players per pass "
           + ", ".join(f"{k}: {v:,} ({v / n_passes:.2%})" for k, v in sorted(pass_credits.items())))

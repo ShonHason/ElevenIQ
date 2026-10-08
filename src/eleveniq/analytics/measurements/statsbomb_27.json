@@ -16835,7 +16835,7 @@
    12
   ],
   "match_parquet": "data/interim/player_match_stats.parquet",
-  "match_parquet_sha256": "97b3db10b4bc321e69cc32f6b8eba4fa8ed4903844f899d7f39989314defe890",
+  "match_parquet_sha256": "a8cc1eb69e9f568bd9315a86461c9e29de6ccb58017b0ef1377357c18659c2b7",
   "pool_competition_ids": [
    11,
    2,
@@ -16908,6 +16908,15 @@
    "passes_injury_clearance",
    "open_play_passes_attempted",
    "team_open_play_passes_while_on",
+   "opponent_open_play_passes_while_on",
+   "team_ball_recoveries_while_on",
+   "team_tackles_attempted_while_on",
+   "team_pressures_while_on",
+   "team_clearances_while_on",
+   "team_dribbled_past_while_on",
+   "team_fouls_committed_while_on",
+   "team_blocks_while_on",
+   "team_interceptions_while_on",
    "passes_missing_length",
    "ball_recoveries_failed",
    "minutes_am_winger",
@@ -16991,7 +17000,7 @@
   ],
   "season_id": 27,
   "season_parquet": "data/processed/player_season_stats.parquet",
-  "season_parquet_sha256": "2acb8f8538d086b251a5b5ab278cd3afe8a2757aa2e91dd70525bcd3a4151c57",
+  "season_parquet_sha256": "cfb8819d8650842b31e9772e738b3b83e5d79bd4c5ba237db6fb8a97cde1c198",
   "source": "statsbomb"
  },
  "ratios": {

@@ -1,6 +1,6 @@
 {
  "generated_by": "spikes/m4d_percentiles_reference.py",
- "measurements_sha256": "7724d7a87bdf1aa17b88d70d714d5af703bbae509693bcc9cbf2c156a88f0b9b",
+ "measurements_sha256": "0d4035cf8b3faf2ba24c5d7b6dc132089ea4398bd9d72c8a4bf38d45918caf49",
  "min_cohort_size": 30,
  "rows": [
   {
@@ -7669,5 +7669,5 @@
    "why": "plain AM-Winger"
   }
  ],
- "season_parquet_sha256": "2acb8f8538d086b251a5b5ab278cd3afe8a2757aa2e91dd70525bcd3a4151c57"
+ "season_parquet_sha256": "cfb8819d8650842b31e9772e738b3b83e5d79bd4c5ba237db6fb8a97cde1c198"
 }

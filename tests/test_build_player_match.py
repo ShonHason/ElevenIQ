@@ -57,9 +57,23 @@ def synthetic_small_teams(monkeypatch):
     fixtures (teams of 1-4 players, below the Laws minimum of 7 that the build
     enforces). Applied explicitly, test by test, never autouse: every other test,
     including TestPassCreditBounds, runs with the real MIN_PLAYERS_PER_PASS = 7.
-    Patched where it is read (build_player_match), not only in config.
+    Patched where it is read (build_player_match), not only in config. The defending
+    team's minimum (ADR 004 §13.8, M4g4b) is relaxed the same way.
     """
     monkeypatch.setattr(_bpm, "MIN_PLAYERS_PER_PASS", 1)
+    # min(): never raise a lower value set by synthetic_one_team (fixture order is not fixed)
+    monkeypatch.setattr(_bpm, "MIN_DEFENDERS_PER_PASS", min(_bpm.MIN_DEFENDERS_PER_PASS, 1))
+
+
+@pytest.fixture
+def synthetic_one_team(monkeypatch):
+    """
+    Relax the ADR 004 §13.8 (M4g4b) defenders-per-pass minimum for synthetic fixtures whose
+    lineups hold one team only (_build_team), where every pass has 0 defenders. Real
+    matches have two lineups. Applied explicitly, test by test, never autouse; the team
+    and pass bounds stay real. Patched where it is read (build_player_match).
+    """
+    monkeypatch.setattr(_bpm, "MIN_DEFENDERS_PER_PASS", 0)
 
 # ---------------------------------------------------------------------------
 # _process_match
@@ -1445,6 +1459,8 @@ class TestPenaltyShootoutExcluded:
         assert row["goals"] == 1
         assert row["xg"] == pytest.approx(0.1)
 
+    @pytest.mark.usefixtures("synthetic_small_teams")
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_extra_time_red_card_still_cuts_minutes(self, tmp_path):
         # Only period 5 is ignored: a period-3 red card ends an open stint.
         events = [_ev("Bad Behaviour", period=3, minute=100,
@@ -1836,6 +1852,7 @@ def test_failing_quality_issues_are_emitted_names():
 
 class TestPeriodFiveAssists:
     @pytest.mark.usefixtures("synthetic_small_teams")
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_shootout_shot_assist_counts_toward_neither_key_passes_nor_xga(self, tmp_path):
         # A period-2 pass → shot pair is the control; the same pair in period 5
         # (shootout) must add nothing (H1 review follow-up 4).
@@ -2357,6 +2374,7 @@ class TestPeriodAwarePipeline:
         return [d for d in report if d.get("issue") == name]
 
     @pytest.mark.usefixtures("synthetic_small_teams")
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_first_half_stoppage_is_credited_and_post_whistle_events_extend_nothing(self, tmp_path):
         # Half End (1, 47:00) and (2, 93:00); a Ball Receipt after the first-half
         # whistle stays a counted event but adds no time: 47 + 48 = 95.
@@ -2470,6 +2488,7 @@ class TestPeriodAwarePipeline:
             build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
 
     @pytest.mark.usefixtures("synthetic_small_teams")
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_events_outside_credited_time_are_reported(self, tmp_path):
         # Milinković-Savić 3879637 pattern: Player Off (1, 30:00), Player On
         # (1, 32:00), but the lineup resumes only at (2, 45:00). His pass at
@@ -2557,6 +2576,7 @@ class TestPeriodAwarePipelineEdges:
         assert not [d for d in report if d.get("issue") == "events_outside_credited_time"]
 
     @pytest.mark.usefixtures("synthetic_small_teams")
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_events_outside_credited_time_uses_the_period_clock(self, tmp_path):
         # Half End (1, 47:00). Inside credited time, so not reported:
         #  - the starter's pass in first-half stoppage (1, 46:00);
@@ -2612,6 +2632,7 @@ class TestPassCreditBounds:
         assert "'players': 6" in msg
 
     @pytest.mark.parametrize("n", [7, 11])
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_seven_and_eleven_player_teams_pass(self, tmp_path, n):
         df, report = _build_team(tmp_path, _full_match_players(n), [_open_play_pass(_TEAM_BASE)])
         assert not [d for d in report if d.get("issue") == "pass_credit_out_of_range"]
@@ -2987,6 +3008,7 @@ class TestOpenPlayCreditPipeline:
     """End to end (ADR 004 D12): team_open_play_passes_while_on on output rows for a
     substitute and a sent-off player, under the real 7-11 bound."""
 
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_substitute_and_sent_off_player_credited_only_while_on(self, tmp_path):
         """11 starters. P0 is replaced at 60:00 by P11; P1 sees red at (2, 50:00).
         Passes by P2 at 30' and 70', by P11 at 75'. Expected credits: P0 1 (30'),
@@ -3059,6 +3081,7 @@ class TestPassOutsideCreditedTime:
         assert sum(credits.values()) == 11
         assert not out_of_range and not mismatches
 
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_pass_outside_the_passers_time_is_credited_and_reported(self, tmp_path):
         """End to end, same pattern: the period-1 whistle is at (1, 48:00); player 0's
         stint stops at (1, 44:00) and resumes at (2, 45:00); he passes at (1, 46:00).
@@ -3074,6 +3097,7 @@ class TestPassOutsideCreditedTime:
         assert [d["player_id"] for d in outside] == [_TEAM_BASE]
         assert df["team_open_play_passes_while_on"].to_list() == [1] * 11
 
+    @pytest.mark.usefixtures("synthetic_one_team")
     def test_post_whistle_pass_is_credited_to_the_players_on_at_the_whistle(self, tmp_path):
         """A pass stamped (1, 46:00), after the (1, 45:00) whistle, is clamped to the
         whistle instant: it counts for the 11 on the pitch then, and is not outside
@@ -3185,3 +3209,166 @@ class TestProcessMatchOpenPlayRestartColumns:
         for col in ("op_xg_assisted", "restart_xg_assisted", "op_key_passes",
                     "restart_key_passes", "op_assists", "restart_assists"):
             assert shooter[col] == 0, col
+
+
+# ---------------------------------------------------------------------------
+# M4g4b (ADR 004 §13.8, plan 005): opponent and team-action credits, the 7-11 bounds
+# on the default path (no synthetic fixture), and the count rule C
+# ---------------------------------------------------------------------------
+
+_AWAY = 802
+_AWAY_BASE = 8300
+
+
+def _two_team_build(tmp_path, home: list[list[dict]], away: list[list[dict]], events):
+    """One match, two lineups: home players _TEAM_BASE + i, away _AWAY_BASE + i. Builds
+    with whatever bounds are in force (the default path unless a test opts into a fixture)."""
+    lineups = _team_lineups(home) + [{
+        "team_id": _AWAY, "team_name": "Away FC",
+        "lineup": [{"player_id": _AWAY_BASE + i, "player_name": f"A{i}", "positions": pos}
+                   for i, pos in enumerate(away)]}]
+    xi = [_xi_event(t, [base + i for i, pos in enumerate(players)
+                        if any(s["start_reason"] == "Starting XI" for s in pos)])
+          for t, base, players in ((_TEAM, _TEAM_BASE, home), (_AWAY, _AWAY_BASE, away))]
+    xi[1]["id"] = "xi-away"
+    events = list(events)
+    _write_match(tmp_path, 8100, [*xi, *events, *_default_half_end(events)], lineups)
+    out = tmp_path / "out.parquet"
+    return build_competition_season(99, 1, data_root=tmp_path, output_path=out)
+
+
+def _two_team_fails(tmp_path, home, away, events) -> str:
+    with pytest.raises(DataQualityError) as exc:
+        _two_team_build(tmp_path, home, away, events)
+    return str(exc.value)
+
+
+def _away(e: dict) -> dict:
+    return {**e, "team": {"id": _AWAY}}
+
+
+class TestDefaultPathBounds:
+    """The 7-11 bounds hold on the default path: the synthetic fixtures relax them only when a
+    test opts in, so the relaxation cannot leak into a real run."""
+
+    def test_module_bounds_are_the_config_bounds(self):
+        from eleveniq import config
+        assert (_bpm.MIN_PLAYERS_PER_PASS, _bpm.MAX_PLAYERS_PER_PASS) == (7, 11)
+        assert (_bpm.MIN_DEFENDERS_PER_PASS, _bpm.MAX_DEFENDERS_PER_PASS) == (
+            config.MIN_PLAYERS_PER_PASS, config.MAX_PLAYERS_PER_PASS)
+
+    def test_eleven_v_eleven_credits_every_defender_once(self, tmp_path):
+        df, _ = _two_team_build(tmp_path, _full_match_players(11), _full_match_players(11),
+                                [_open_play_pass(_TEAM_BASE)])
+        away = df.filter(pl.col("team_id") == _AWAY)
+        home = df.filter(pl.col("team_id") == _TEAM)
+        assert away["opponent_open_play_passes_while_on"].to_list() == [1] * 11
+        assert home["opponent_open_play_passes_while_on"].to_list() == [0] * 11
+        assert home["team_open_play_passes_while_on"].to_list() == [1] * 11
+
+    def test_six_defenders_fail_the_build(self, tmp_path):
+        msg = _two_team_fails(tmp_path, _full_match_players(11), _full_match_players(6),
+                              [_open_play_pass(_TEAM_BASE)])
+        assert "opponent_pass_credit_out_of_range" in msg and "'players': 6" in msg
+
+    def test_a_restart_is_not_credited_to_defenders(self, tmp_path):
+        df, _ = _two_team_build(tmp_path, _full_match_players(11), _full_match_players(6),
+                                [_open_play_pass(_TEAM_BASE, ptype="Throw-in")])
+        assert df["opponent_open_play_passes_while_on"].sum() == 0
+
+    def test_six_player_team_action_fails_the_build(self, tmp_path):
+        msg = _two_team_fails(tmp_path, _full_match_players(11), _full_match_players(6),
+                              [_away(_ev("Pressure", _AWAY_BASE, minute=20))])
+        assert "team_action_credit_out_of_range" in msg and "'players': 6" in msg
+
+    def test_team_action_credits_and_team_at_least_own(self, tmp_path):
+        events = [_ev("Pressure", _TEAM_BASE, minute=20),
+                  _ev("Ball Recovery", _TEAM_BASE, minute=21),
+                  _ev("Ball Recovery", _TEAM_BASE + 1, minute=22,
+                      ball_recovery={"recovery_failure": True}),
+                  _ev("Block", _TEAM_BASE + 2, minute=23, block={"offensive": True}),
+                  _ev("Duel", _TEAM_BASE + 3, minute=24, duel={"type": {"name": "Tackle"},
+                                                               "outcome": {"name": "Won"}})]
+        df, _ = _two_team_build(tmp_path, _full_match_players(11), _full_match_players(11), events)
+        home = df.filter(pl.col("team_id") == _TEAM).sort("player_id")
+        assert home["team_pressures_while_on"].to_list() == [1] * 11
+        assert home["team_ball_recoveries_while_on"].to_list() == [1] * 11   # failed one not counted
+        assert home["team_blocks_while_on"].sum() == 0                     # offensive block
+        assert home["team_tackles_attempted_while_on"].to_list() == [1] * 11
+        assert df.filter(pl.col("team_id") == _AWAY)["team_pressures_while_on"].sum() == 0
+        from eleveniq.metrics.defensive_actions import DEFENSIVE_ACTIONS, team_column
+        for a in DEFENSIVE_ACTIONS:
+            assert (df[team_column(a)] >= df[a]).all(), a
+
+
+class TestCountRuleC:
+    """User decision C (2026-10-08, ADR 004 §13.8): the actor is always credited, and the 7-11
+    count does not take him as an extra player at his own exit instant (§31 covers()); an
+    event strictly after his exit with 11 others on counts 12 and fails."""
+
+    @staticmethod
+    def _home_with_sub(sub_minute: str = "60:00") -> list[list[dict]]:
+        players = [[_spell("00:00", sub_minute, "Starting XI")]]
+        players += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
+        players += [[_spell(sub_minute, None, "Substitution - On")]]
+        return players
+
+    def test_action_at_the_actors_substitution_instant_passes(self, tmp_path):
+        foul = _ev("Foul Committed", _TEAM_BASE, period=2, minute=60)
+        df, _ = _two_team_build(tmp_path, self._home_with_sub(), _full_match_players(11),
+                                [_sub_off(_TEAM_BASE, period=2, minute=60), foul])
+        home = df.filter(pl.col("team_id") == _TEAM)
+        # credited: the actor, his 10 teammates and the incoming substitute
+        assert home["team_fouls_committed_while_on"].sum() == 12
+        assert home.filter(pl.col("player_id") == _TEAM_BASE)["team_fouls_committed_while_on"][0] == 1
+
+    def test_pass_at_the_passers_substitution_instant_passes(self, tmp_path):
+        df, _ = _two_team_build(tmp_path, self._home_with_sub(), _full_match_players(11),
+                                [_sub_off(_TEAM_BASE, period=2, minute=60),
+                                 _open_play_pass(_TEAM_BASE, period=2, minute=60)])
+        assert df.filter(pl.col("team_id") == _TEAM)["team_open_play_passes_while_on"].sum() == 12
+
+    def test_action_at_the_actors_dismissal_instant_passes(self, tmp_path):
+        foul = _ev("Foul Committed", _TEAM_BASE, period=2, minute=60,
+                   foul_committed={"card": {"name": "Red Card"}})
+        df, _ = _two_team_build(tmp_path, _full_match_players(11), _full_match_players(11), [foul])
+        home = df.filter(pl.col("team_id") == _TEAM)
+        assert home["team_fouls_committed_while_on"].sum() == 11   # actor + 10 still on
+
+    def test_action_strictly_after_the_actors_exit_with_eleven_others_counts_twelve(self, tmp_path):
+        foul = _ev("Foul Committed", _TEAM_BASE, period=2, minute=61)
+        msg = _two_team_fails(tmp_path, self._home_with_sub(), _full_match_players(11),
+                              [_sub_off(_TEAM_BASE, period=2, minute=60), foul])
+        assert "team_action_credit_out_of_range" in msg and "'players': 12" in msg
+
+
+class TestM4g4bEdges:
+    """Gaps around ADR 004 §13.8: team mismatch on actions, mismatched passes skipped for
+    exposure, defenders credited only while on, new issues fail the build."""
+
+    def test_new_issues_are_failing(self):
+        for name in ("opponent_pass_credit_out_of_range", "team_action_credit_out_of_range",
+                     "team_action_team_mismatch"):
+            assert name in _bpm.FAILING_QUALITY_ISSUES
+
+    def test_action_with_wrong_event_team_fails_and_credits_nobody(self, tmp_path):
+        bad = _away(_ev("Pressure", _TEAM_BASE, minute=20))   # home actor, away team.id
+        msg = _two_team_fails(tmp_path, _full_match_players(11), _full_match_players(11), [bad])
+        assert "team_action_team_mismatch" in msg
+
+    def test_pass_with_wrong_event_team_is_not_credited_to_defenders(self, tmp_path):
+        # pass_team_mismatch fails the build; the opponent credit must not double-report
+        bad = _away(_open_play_pass(_TEAM_BASE))
+        msg = _two_team_fails(tmp_path, _full_match_players(11), _full_match_players(11), [bad])
+        assert "pass_team_mismatch" in msg
+        assert "opponent_pass_credit_out_of_range" not in msg
+
+    def test_defender_substituted_off_is_exposed_only_while_on(self, tmp_path):
+        away = [[_spell("00:00", "60:00", "Starting XI")]]
+        away += [[_spell("00:00", None, "Starting XI")] for _ in range(10)]
+        away += [[_spell("60:00", None, "Substitution - On")]]
+        events = [_open_play_pass(_TEAM_BASE, period=1, minute=30),
+                  _open_play_pass(_TEAM_BASE, period=2, minute=70)]
+        df, _ = _two_team_build(tmp_path, _full_match_players(11), away, events)
+        a = df.filter(pl.col("team_id") == _AWAY).sort("player_id")["opponent_open_play_passes_while_on"].to_list()
+        assert a[0] == 1 and a[11] == 1 and a[1:11] == [2] * 10

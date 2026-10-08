@@ -58,6 +58,7 @@ from eleveniq.metrics.positions import (
     primary_position_group,
 )
 from eleveniq.metrics.aerials import has_aerial_won, is_aerial_lost
+from eleveniq.metrics.defensive_actions import DEFENSIVE_ACTIONS, defensive_action, team_column
 from eleveniq.metrics.entries import (
     is_final_third_entry_pass,
     is_final_third_entry_carry,
@@ -199,6 +200,18 @@ PASS_CREDIT_OUT_OF_RANGE = "pass_credit_out_of_range"
 # ADR 004 D12: a pass whose event team.id differs from the passer's lineup team.
 # Fails the build.
 PASS_TEAM_MISMATCH = "pass_team_mismatch"
+# ADR 004 §13.8 (M4g4b): an open-play pass credited to fewer than MIN_PLAYERS_PER_PASS or
+# more than MAX_PLAYERS_PER_PASS players of the defending team. Fails the build.
+OPPONENT_PASS_CREDIT_OUT_OF_RANGE = "opponent_pass_credit_out_of_range"
+# The defending team's bounds: the same Laws minimum and maximum as a pass's own team (a
+# separate name, so a one-team synthetic test fixture can relax it on its own).
+MIN_DEFENDERS_PER_PASS = MIN_PLAYERS_PER_PASS
+MAX_DEFENDERS_PER_PASS = MAX_PLAYERS_PER_PASS
+# ADR 004 §13.8 (M4g4b): a Defending action credited to fewer than 7 or more than 11 players
+# of its team (the actor counted once), or whose event team.id differs from the actor's
+# lineup team. Both fail the build.
+TEAM_ACTION_CREDIT_OUT_OF_RANGE = "team_action_credit_out_of_range"
+TEAM_ACTION_TEAM_MISMATCH = "team_action_team_mismatch"
 # ADR 004 D22: a stint starting more than STINT_LATE_START_FAIL_MINUTES after its
 # period's Half End. Fails the build.
 STINT_LATE_START_EXCEEDS_LIMIT = "stint_late_start_exceeds_limit"
@@ -248,6 +261,9 @@ FAILING_QUALITY_ISSUES = EVENT_QUALITY_ISSUES | {
     PLAYER_MINUTES_EXCEED_DURATION,
     PASS_CREDIT_OUT_OF_RANGE,
     PASS_TEAM_MISMATCH,
+    OPPONENT_PASS_CREDIT_OUT_OF_RANGE,
+    TEAM_ACTION_CREDIT_OUT_OF_RANGE,
+    TEAM_ACTION_TEAM_MISMATCH,
     STINT_LATE_START_EXCEEDS_LIMIT,
 }
 
@@ -276,6 +292,9 @@ _SCHEMA: dict[str, type] = {
     "passes_attempted": pl.Int32,
     "open_play_passes_attempted": pl.Int32,
     "team_open_play_passes_while_on": pl.Int32,
+    # ADR 004 §13.8 (M4g4b): exposure and team-action counts while on
+    "opponent_open_play_passes_while_on": pl.Int32,
+    **{team_column(a): pl.Int32 for a in DEFENSIVE_ACTIONS},
     "passes_injury_clearance": pl.Int32,
     "passes_completed": pl.Int32,
     "passes_unknown_outcome": pl.Int32,
@@ -394,21 +413,13 @@ def _aggregate_events(
     crosses_unknown_outcome = 0
     carries = 0
     progressive_carries = 0
-    tackles_attempted = 0
     tackles_won_count = 0
     dribbles_attempted = 0
     dribbles_completed = 0
-    interceptions = 0
-    clearances = 0
-    blocks = 0
-    fouls_committed = 0
     fouls_won = 0
     dispossessed = 0
     miscontrols = 0
-    pressures = 0
-    ball_recoveries = 0
     ball_recoveries_failed = 0
-    dribbled_past = 0
     aerials_won = 0
     aerials_lost = 0
     long_passes_attempted = 0
@@ -422,8 +433,14 @@ def _aggregate_events(
     box_entries_pass = 0
     box_entries_carry = 0
 
+    # The 8 Defending actions: one shared rule (ADR 004 §13.8; the team counts use it too).
+    actions: Counter[str] = Counter()
+
     for event in player_events:
         event_type = event.get("type", {}).get("name", "")
+        action = defensive_action(event)
+        if action is not None:
+            actions[action] += 1
 
         if has_aerial_won(event):
             aerials_won += 1
@@ -556,7 +573,6 @@ def _aggregate_events(
             if duel_type_name not in KNOWN_DUEL_TYPES:
                 issues[(UNKNOWN_DUEL_TYPE, duel_type_name)] += 1
             if duel_type_name == "Tackle":
-                tackles_attempted += 1
                 duel_outcome = (duel_data.get("outcome") or {}).get("name")
                 if duel_outcome not in KNOWN_TACKLE_OUTCOMES:
                     issues[(UNKNOWN_TACKLE_OUTCOME, duel_outcome)] += 1
@@ -571,38 +587,16 @@ def _aggregate_events(
         elif event_type == "Miscontrol":
             miscontrols += 1
 
-        elif event_type == "Pressure":
-            pressures += 1
-
-        elif event_type == "Dribbled Past":
-            dribbled_past += 1
-
         elif event_type == "Ball Recovery":
             br = event.get("ball_recovery") or {}
             if br.get("recovery_failure"):
                 ball_recoveries_failed += 1
-            else:
-                ball_recoveries += 1
 
         elif event_type == "Dribble":
             dribbles_attempted += 1
             dribble_data = event.get("dribble") or {}
             if (dribble_data.get("outcome") or {}).get("name") == "Complete":
                 dribbles_completed += 1
-
-        elif event_type == "Interception":
-            interceptions += 1
-
-        elif event_type == "Clearance":
-            clearances += 1
-
-        elif event_type == "Block":
-            block_data = event.get("block") or {}
-            if not block_data.get("offensive") and not block_data.get("save_block"):
-                blocks += 1
-
-        elif event_type == "Foul Committed":
-            fouls_committed += 1
 
         elif event_type == "Foul Won":
             fouls_won += 1
@@ -627,14 +621,14 @@ def _aggregate_events(
         "restart_key_passes": restart_key_passes,
         "carries": carries,
         "progressive_carries": progressive_carries,
-        "tackles_attempted": tackles_attempted,
+        "tackles_attempted": actions["tackles_attempted"],
         "tackles_won": tackles_won_count,
         "dribbles_attempted": dribbles_attempted,
         "dribbles_completed": dribbles_completed,
-        "interceptions": interceptions,
-        "clearances": clearances,
-        "blocks": blocks,
-        "fouls_committed": fouls_committed,
+        "interceptions": actions["interceptions"],
+        "clearances": actions["clearances"],
+        "blocks": actions["blocks"],
+        "fouls_committed": actions["fouls_committed"],
         "fouls_won": fouls_won,
         "assists": assists,
         "op_assists": op_assists,
@@ -644,10 +638,10 @@ def _aggregate_events(
         "crosses_unknown_outcome": crosses_unknown_outcome,
         "dispossessed": dispossessed,
         "miscontrols": miscontrols,
-        "pressures": pressures,
-        "ball_recoveries": ball_recoveries,
+        "pressures": actions["pressures"],
+        "ball_recoveries": actions["ball_recoveries"],
         "ball_recoveries_failed": ball_recoveries_failed,
-        "dribbled_past": dribbled_past,
+        "dribbled_past": actions["dribbled_past"],
         "aerials_won": aerials_won,
         "aerials_lost": aerials_lost,
         "long_passes_attempted": long_passes_attempted,
@@ -679,7 +673,9 @@ def team_open_play_pass_credits(
     is a dropped event and fails the build elsewhere, so it is skipped here.
 
     Returns (credits per player = team_open_play_passes_while_on, the passes
-    credited to a count outside MIN_PLAYERS_PER_PASS..MAX_PLAYERS_PER_PASS, the
+    credited to a count outside MIN_PLAYERS_PER_PASS..MAX_PLAYERS_PER_PASS (the count
+    is _players_for_bounds: the passer once, not counted as an extra player at his own
+    exit instant; user decision C, 2026-10-08), the
     team mismatches).
 
     A teammate is credited when PlayerTimeline.credits_pass_at holds for the pass's
@@ -691,15 +687,12 @@ def team_open_play_pass_credits(
     his share can never exceed 1. A pass stamped after its period's whistle is
     clamped to the whistle instant and counts for the players on at the whistle.
     """
-    team_players: dict[int, list[int]] = {}
-    for pid, team_id in team_of.items():
-        team_players.setdefault(team_id, []).append(pid)
+    team_players = _players_by_team(team_of)
     credits: Counter[int] = Counter()
     out_of_range: list[dict] = []
     mismatches: list[dict] = []
     for e in play_events:
-        if (e["type"]["name"] != "Pass" or not e.get("player")
-                or is_restart(e.get("pass") or {})):
+        if not _is_open_play_pass(e):
             continue
         period = e["period"]
         start = clock.offset(period)
@@ -724,10 +717,149 @@ def team_open_play_pass_credits(
                 credited.add(pid)
         for pid in credited:
             credits[pid] += 1
-        if not MIN_PLAYERS_PER_PASS <= len(credited) <= MAX_PLAYERS_PER_PASS:
+        players = _players_for_bounds(credited, passer, timelines, period, at, end)
+        if not MIN_PLAYERS_PER_PASS <= players <= MAX_PLAYERS_PER_PASS:
             out_of_range.append({"event_id": e.get("id"), "team_id": team_id,
                                  "period": period, "minute": e.get("minute"),
-                                 "second": e.get("second"), "players": len(credited)})
+                                 "second": e.get("second"), "players": players})
+    return credits, out_of_range, mismatches
+
+
+def _players_by_team(team_of: dict[int, int]) -> dict[int, list[int]]:
+    """Lineup players per team, in team_of order: the one grouping every team credit uses."""
+    team_players: dict[int, list[int]] = {}
+    for pid, team_id in team_of.items():
+        team_players.setdefault(team_id, []).append(pid)
+    return team_players
+
+
+def _players_for_bounds(credited: set[int], actor: int, timelines: dict[int, PlayerTimeline],
+                        period: int, at: float, end: float) -> int:
+    """
+    The count the 7-11 check reads for a team event (user decision C, 2026-10-08; ADR 004
+    §13.8): the credited set, the actor once, except that an actor at his own exit instant
+    is not counted as an extra player. That is, when his own window does not hold the instant
+    (credits_pass_at, half-open) but ADR 002 §31 covers() does (closed): a foul at the second
+    of his own substitution (his replacement is on from that instant) or of his own
+    dismissal. An event strictly after his exit with 11 others on still counts 12 and fails
+    the build. Credits are unchanged: the actor is always credited.
+    """
+    timeline = timelines.get(actor)
+    at_own_exit = (timeline is not None and not timeline.credits_pass_at(period, at, end)
+                   and timeline.covers(at))
+    return len(credited) - at_own_exit
+
+
+def _is_open_play_pass(e: dict) -> bool:
+    """ADR 004 D12: a Pass by a player whose type is not a restart (RESTART_TYPES). The one
+    filter of team_open_play_passes_while_on and opponent_open_play_passes_while_on."""
+    return e["type"]["name"] == "Pass" and bool(e.get("player")) and not is_restart(e.get("pass") or {})
+
+
+def _event_instant(e: dict, clock: PeriodClock) -> tuple[int, float, float]:
+    """(period, elapsed instant, the period's elapsed end): the D12 window inputs."""
+    period = e["period"]
+    end = clock.offset(period) + clock.length(period)
+    return period, clock.elapsed(event_instant(e)), end
+
+
+def opponent_open_play_pass_credits(
+    play_events: list[dict],
+    timelines: dict[int, PlayerTimeline],
+    team_of: dict[int, int],
+    clock: PeriodClock,
+) -> tuple[Counter[int], list[dict]]:
+    """
+    ADR 004 §13.8 (M4g4b): for every open-play pass (the D12 filter, _is_open_play_pass) by a
+    lineup player, the players of the *other* lineup team it is credited to:
+    opponent_open_play_passes_while_on. A defender is credited when
+    PlayerTimeline.credits_pass_at holds for the pass's period and instant (the D12 window).
+    There is no passer rule. The passing team is the event's team.id (the passer's lineup
+    team when the event has none); a pass whose team.id differs from the passer's lineup
+    team is skipped here (team_open_play_pass_credits reports it and fails the build), as is
+    a pass by a player outside the lineups (a dropped event).
+
+    Returns (credits per player, the passes credited to a defender count outside
+    MIN_DEFENDERS_PER_PASS..MAX_DEFENDERS_PER_PASS, i.e. 7-11).
+    """
+    team_players = _players_by_team(team_of)
+    credits: Counter[int] = Counter()
+    out_of_range: list[dict] = []
+    for e in play_events:
+        if not _is_open_play_pass(e):
+            continue
+        lineup_team = team_of.get(e["player"]["id"])
+        if lineup_team is None:
+            continue
+        event_team = (e.get("team") or {}).get("id")
+        if event_team is not None and event_team != lineup_team:
+            continue
+        period, at, end = _event_instant(e, clock)
+        defenders = [pid for team_id, pids in team_players.items() if team_id != lineup_team
+                     for pid in pids
+                     if pid in timelines and timelines[pid].credits_pass_at(period, at, end)]
+        for pid in defenders:
+            credits[pid] += 1
+        if not MIN_DEFENDERS_PER_PASS <= len(defenders) <= MAX_DEFENDERS_PER_PASS:
+            out_of_range.append({"event_id": e.get("id"), "team_id": lineup_team,
+                                 "period": period, "minute": e.get("minute"),
+                                 "second": e.get("second"), "players": len(defenders)})
+    return credits, out_of_range
+
+
+def team_action_credits(
+    play_events: list[dict],
+    timelines: dict[int, PlayerTimeline],
+    team_of: dict[int, int],
+    clock: PeriodClock,
+) -> tuple[dict[str, Counter[int]], list[dict], list[dict]]:
+    """
+    ADR 004 §13.8 (M4g4b): team_<action>_while_on for the DEFENSIVE_ACTIONS. Every event that
+    defensive_action() counts (the rule of the player's own counts) by a lineup player is
+    credited to its actor and to each teammate for whom PlayerTimeline.credits_pass_at holds
+    (the D12 window rule). The actor is always credited, even outside his own credited time
+    (e.g. an action at the instant of his own dismissal), so a player's team count is never
+    below his own count.
+
+    The 7-11 check reads _players_for_bounds (user decision C, 2026-10-08): the credited set,
+    the actor once, not counted as an extra player at his own exit instant. A count of 12 (an
+    event strictly after the actor's exit with 11 others on) or below 7 is reported and fails
+    the build. A team.id that differs from the actor's lineup team is
+    reported, fails the build and is credited to nobody; an actor outside the lineups is a
+    dropped event and is skipped here.
+
+    Returns (credits per action and player, the out-of-range events, the team mismatches).
+    """
+    team_players = _players_by_team(team_of)
+    credits: dict[str, Counter[int]] = {a: Counter() for a in DEFENSIVE_ACTIONS}
+    out_of_range: list[dict] = []
+    mismatches: list[dict] = []
+    for e in play_events:
+        action = defensive_action(e)
+        if action is None or not e.get("player"):
+            continue
+        actor = e["player"]["id"]
+        lineup_team = team_of.get(actor)
+        if lineup_team is None:
+            continue
+        event_team = (e.get("team") or {}).get("id")
+        if event_team is not None and event_team != lineup_team:
+            mismatches.append({"event_id": e.get("id"), "action": action, "player_id": actor,
+                               "event_team_id": event_team, "lineup_team_id": lineup_team})
+            continue
+        period, at, end = _event_instant(e, clock)
+        credited = {actor}
+        for pid in team_players.get(lineup_team, []):
+            if pid != actor and pid in timelines and timelines[pid].credits_pass_at(period, at, end):
+                credited.add(pid)
+        for pid in credited:
+            credits[action][pid] += 1
+        players = _players_for_bounds(credited, actor, timelines, period, at, end)
+        if not MIN_PLAYERS_PER_PASS <= players <= MAX_PLAYERS_PER_PASS:
+            out_of_range.append({"event_id": e.get("id"), "action": action,
+                                 "team_id": lineup_team, "period": period,
+                                 "minute": e.get("minute"), "second": e.get("second"),
+                                 "players": players})
     return credits, out_of_range, mismatches
 
 
@@ -1132,12 +1264,26 @@ def _process_match(
     team_of = {p["player_id"]: team["team_id"] for team in lineups for p in team["lineup"]}
     credits, out_of_range, mismatches = team_open_play_pass_credits(
         play_events, timelines, team_of, clock)
+    # ADR 004 §13.8 (M4g4b): the opponent's open-play passes and the team's actions while on.
+    opp_credits, opp_out_of_range = opponent_open_play_pass_credits(
+        play_events, timelines, team_of, clock)
+    action_credits, action_out_of_range, action_mismatches = team_action_credits(
+        play_events, timelines, team_of, clock)
     for row in rows:
         row["team_open_play_passes_while_on"] = credits.get(row["player_id"], 0)
+        row["opponent_open_play_passes_while_on"] = opp_credits.get(row["player_id"], 0)
+        for a in DEFENSIVE_ACTIONS:
+            row[team_column(a)] = action_credits[a].get(row["player_id"], 0)
     quality_report.extend({"issue": PASS_CREDIT_OUT_OF_RANGE, "match_id": match_id, **d}
                           for d in out_of_range)
     quality_report.extend({"issue": PASS_TEAM_MISMATCH, "match_id": match_id, **d}
                           for d in mismatches)
+    quality_report.extend({"issue": OPPONENT_PASS_CREDIT_OUT_OF_RANGE, "match_id": match_id, **d}
+                          for d in opp_out_of_range)
+    quality_report.extend({"issue": TEAM_ACTION_CREDIT_OUT_OF_RANGE, "match_id": match_id, **d}
+                          for d in action_out_of_range)
+    quality_report.extend({"issue": TEAM_ACTION_TEAM_MISMATCH, "match_id": match_id, **d}
+                          for d in action_mismatches)
     quality_report.extend(_dropped_events(match_id, player_events, lineups, rows))
     quality_report.extend(_events_outside_credited_time(match_id, play_events, timelines, clock))
 

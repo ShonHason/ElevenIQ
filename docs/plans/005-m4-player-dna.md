@@ -1402,7 +1402,7 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
     - **`s2_rms_a` write:** the STOP rule (`spikes/m4g4a_movers_before_after.py`) passed: every existing field identical, `s2_rms_a` added to the 28 testable metrics only, 0 cell, verdict or flag changes. `REGISTRY_VERSION` 78ceb0dae425… → 86b6389f389f…. The reference reproduces `s2_rms_a` within 1e-9.
       - Rebuild: percentiles and DNA changed in their stamps only (frame comparison); both reference checks pass; the two golden pages and the M4g1 validation section changed in the version string only.
       - **Observation (report only):** both "PASS (below model range)" metrics have √`s2_rms_a` ≤ 1: `fouls_won_p90` 0.818, `op_xg_assisted_p90` 0.964. So scale (a) agrees for both under D7's RMS form, while §13.7's mean-|Δ| form gave 1.05 for `op_xg_assisted_p90`. Neither is a Defending member, so no restore depends on it.
-      - **For M4g4d (stats-reviewer, M4g4a output review):** the D7 gate √`s2_rms_a` ≤ 1 is a point estimate with no uncertainty, and S² at n = 24 is noisy. The RMS and mean-|Δ| forms can fall on opposite sides of 1 (`op_xg_assisted_p90` 0.964 vs 1.05), and scale (a) differs from scale (b) on some PASS metrics (`aerials_won_p90` 1.25 vs 0.99). If an adjusted `ball_recoveries_p90` reaches the D7 exception, report √`s2_rms_a` next to the mean-|Δ| form and flag any case where the two forms fall on opposite sides of 1.
+      - **For M4g4d (stats-reviewer, M4g4a output review):** the D7 gate √`s2_rms_a` ≤ 1 is a point estimate with no uncertainty, and S² at n = 24 is noisy. The RMS and mean-|Δ| forms can fall on opposite sides of 1 (`op_xg_assisted_p90` 0.964 vs 1.05), and scale (a) differs from scale (b) on some PASS metrics: `aerials_won_p90` √`s2_rms_a` 1.25 vs √`s2_rms` 0.99 (movers block of `statsbomb_27.json`: `s2_rms_a` 1.569, `s2_rms` 0.985; the quoted figures are S, not S²). D7's exception applies only to a PASS (below model range), i.e. a CI upper bound < 0; this note covers that case for an adjusted `ball_recoveries_p90` and no other, so it does not widen D7. If it arises, report √`s2_rms_a` next to the mean-|Δ| form and flag any case where the two forms fall on opposite sides of 1.
 - **M4g4b — pipeline columns:**
   - `opponent_open_play_passes_while_on` and `team_<action>_while_on` for the Defending actions, per match and season;
   - every existing column byte-identical; `--force` rebuild and integration tests.
@@ -1436,6 +1436,63 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 - `Rules` thresholds not equal to the spike's copies.
 
 **Process:** the stats-reviewer reviewed this spec before any M4g4 code (2026-10-08, APPROVE WITH CONDITIONS, folded in above). M4g4-0 did not wait on the method.
+
+### M4g4b — Exposure and team-action columns in the pipeline (plan approved by the user, 2026-10-08)
+- **Columns (counts only, match and season level; Int32 at match level, season = sum):**
+  - `opponent_open_play_passes_while_on`: the M4g4a rule. An open-play pass by team T is credited to every player of the other lineup team whose window holds its instant; there is no passer exception; 7–11 defenders or the build fails.
+  - `team_<action>_while_on` for the 8 Defending DNA members with a team-share candidate (registry `86b6389f389f`): `ball_recoveries`, `tackles_attempted`, `pressures`, `clearances`, `dribbled_past` (DNA in all 5 groups), `fouls_committed` (FB-WB, DM-CM, AM-Winger, ST), `blocks` (DM-CM, AM-Winger, ST), `interceptions` (DM-CM, AM-Winger).
+  - Not included: `tackles_won_p90` (D17-dropped everywhere); ratios (team share not defined).
+  - **The team count includes the player's own actions** (share = player / team). The actor is always credited, so team ≥ own on every row and the share is ≤ 1.
+- **Crediting:** the D12 rule (window half-open, closed at the period end, the event's own period, 1e-9, clamped to the whistle; team key `team.id`, a mismatch with the lineup fails the build; periods 1–4).
+  - **One shared rule (user decision 1):** `metrics/defensive_actions.py` `defensive_action(event)` decides the 8 actions for both `_aggregate_events` and the team crediting. The all-columns-identical check proves the refactor changes nothing.
+  - The opponent column is computed in the `team_open_play_passes_while_on` loop, so the two share the open-play filter.
+- **Counts only (user decision 2):** E per 90 and the shares are derived in M4g4c; any stored derived column waits for M4g4d.
+- **Checks:**
+  - every existing column byte-identical: `spikes/m4b_before_after.py --snapshot data/interim/m4g4b_snapshot --all-columns-identical --expected spikes/expected_m4g4b_flips.json` (empty, written before the rebuild); `--force` rebuild;
+  - player-by-player: the opponent column equals the M4g4a recount (0 diffs); the 8 team columns equal the extended recount (0 diffs); team ≥ own;
+  - reference totals: `verify_core_metrics.py` adds the 9 league totals to `core` with `CHANGED_BY_CURRENT_CHUNK = frozenset()` (every recorded value must reproduce); `test_core_metrics_reconcile` then checks season = reference = match sums.
+- **Downstream:** the measurements pin both parquet shas and the season columns, so `--write-json` re-runs. STOP rule: measurements identical except `provenance`; movers identical; registry identical except `REGISTRY_VERSION`. Percentiles and DNA change in their stamps only; reference checks; golden pages and the M4g1 section (version line).
+- **Reviews:** code-reviewer; qa-tester (src/); integration tests; stats-reviewer output-only (user decision 3).
+- **Wording notes folded in (code-reviewer, M4g4a fix delta):** see the M4g4d note in the M4g4a outcome.
+- **Checkpoint 1 (2026-10-08, `spikes/m4g_opponent_exposure.py` extended; before any pipeline code):**
+  - **The written-out action rules reproduce the pipeline's player counts** on all 43,044 player-match rows for all 8 actions (0 diffs); team ≥ own on every row; no actor lacks a match row.
+  - **Credited players per event (actor + teammates on), all ≤ 11 and ≥ 8:** 8 occurs once (an open-play pass, the Frosinone case from M4g4a); every action is ≥ 9.
+
+    | Kind | Events | 11 | 10 | 9 | 8 |
+    |---|---|---|---|---|---|
+    | open-play pass | 1,346,205 | 1,305,911 | 38,983 | 1,310 | 1 |
+    | pressures | 503,490 | 483,974 | 18,838 | 678 | 0 |
+    | ball recoveries | 154,311 | 148,526 | 5,632 | 153 | 0 |
+    | clearances | 74,650 | 71,373 | 3,184 | 93 | 0 |
+    | tackles attempted | 61,610 | 59,228 | 2,298 | 84 | 0 |
+    | blocks | 59,418 | 56,903 | 2,416 | 99 | 0 |
+    | fouls committed | 46,659 | 44,947 | 1,658 | 54 | 0 |
+    | interceptions | 38,321 | 36,866 | 1,425 | 30 | 0 |
+    | dribbled past | 32,712 | 31,336 | 1,313 | 63 | 0 |
+
+  - **Actor outside his own window (credited anyway): 450 events.**
+    - 446 are actions (fouls committed 354, pressures 81, blocks 7, tackles 2, dribbled past 1, ball recoveries 1; clearances and interceptions 0), plus 4 open-play passes.
+    - **447 are at the same instant as the actor's own dismissal**: the card ends his credited time there, and the window is half-open. They include all 354 fouls that carry their own red or second-yellow card, and actions at that instant (e.g. Mitrović's pressure at 15:27, 3754205).
+    - **3 are one treatment-window edge:** Milinković-Savić, 3879637, period 1, 45:25–45:30. His Player On is at 45:16, but the §31 timeline resumes him only at the period 2 start. The recount and the pipeline agree, so this is existing §31 behaviour, recorded for a separate look; M4g4b does not change it.
+    - **No credit count reaches 12:** among actor-outside events at most 10 teammates are on (a dismissed or treated player's team has at most 10 others on), so the count is ≤ 11.
+  - **Rule for the 7–11 check: decision C (user, 2026-10-08, after the first proposal met a tested §31 pattern).**
+    - **Credits are unchanged:** the actor is always credited, and every teammate whose window holds the instant.
+    - **The count** the 7–11 check reads is the credited set with the actor once, except that **an actor at his own exit instant is not counted as an extra player**: his own window does not hold the instant (half-open), but ADR 002 §31 `covers()` does (closed).
+    - **Substitution-instant example:** P0 is replaced at 60:00 and commits a foul (second yellow) at 60:00; P11 is on from 60:00. Credited: P0 + 10 teammates + P11 = 12 players; count 11 (P0 at his exit instant). Passes. This is the tested §31 pattern `test_substitution_and_second_yellow_same_second_is_not_an_excess`, which the first proposal (actor once, 12 fails) would have broken.
+    - **Dismissal-instant example:** a foul carrying its own red card at 60:00. Credited: the actor + 10 teammates = 11; count 10. Passes. 447 of the 450 actor-outside events in 2015/16 are of this kind (all 354 fouls carrying their own card, plus actions at the same instant).
+    - **Strictly after the exit:** an event by P0 at 61:00 with 11 others on counts 12 and fails the build (`team_action_credit_out_of_range`). A real timeline inconsistency stays loud. Below 7 also fails.
+    - **Applied to the existing team-pass crediting too** (the same latent case: a pass at the passer's own substitution instant). It changes no 2015/16 value; the all-columns-identical check must show no change.
+    - **Implementation:** one helper, `build_player_match._players_for_bounds`, read by both `team_open_play_pass_credits` and `team_action_credits`; `verify_core_metrics.py` applies the same rule independently.
+    - The opponent column has no actor; its count is the defenders on, with its own named bounds (`MIN_DEFENDERS_PER_PASS` / `MAX_DEFENDERS_PER_PASS` = 7 / 11).
+- **Checkpoint 2 (2026-10-08): the pipeline columns.**
+  - `--force` rebuild of all 5 competition-seasons and the season stage: no data-quality failure, so every 7–11 check (team passes with rule C, team actions, defenders) holds on real data.
+  - **All columns identical** (`m4b_before_after.py --all-columns-identical`): 79 match-level and 145 season-level columns identical; 0 flag flips; rows unchanged (43,044 / 2,628); the 9 new columns are the only additions.
+  - **Player by player:** the opponent column and the 8 team-action columns equal the `m4g_opponent_exposure.py` recount on all 43,044 rows (0 diffs each); rows with no minutes are 0; team ≥ own on every row.
+  - **Reference totals:** `verify_core_metrics.py` passes in all 5 leagues with `CHANGED_BY_CURRENT_CHUNK` empty (every recorded value reproduced); the 9 totals are new keys, and their sums equal the pipeline's (opponent passes 14,737,650; ball recoveries 1,691,483). The reconcile tests (season = reference = match) pass.
+- **Downstream (2026-10-08):** `--write-json` re-run; STOP rule `spikes/m4g4b_before_after.py` passed: only `provenance` changed (the two parquet shas, plus the 9 season columns), movers and every other section identical, 0 registry changes. `REGISTRY_VERSION` 86b6389f389f… → 463d1a4c31ae…. Percentiles and DNA changed in their stamps only (`registry_version`, `season_parquet_sha256`, `percentiles_parquet_sha256`); both reference checks pass; the golden pages (registry version and season sha, one line each) and the M4g1 validation section (version line) were refreshed.
+- **Stats-reviewer, output only (M4g4b `/finish-chunk`): CONCERNS, both fixed in the one fix round** (2 integration tests failed on stale `season_parquet_sha256` pins in the m4d / m4f reference fixtures, refreshed by re-running both reference spikes; the checkpoint 1 "≥ 9" wording, now ≥ 8). The data passed every check it ran, including: in all 3,102 team-matches the largest `team_<action>_while_on` equals the team's summed own actions for all 8 actions, and the largest opponent count equals the opponent's largest team-pass count; credited ÷ events is 10.95–10.96 everywhere.
+  - **Notes for M4g4c (no action in M4g4b):** low-minute rows reach extreme values (opponent passes per 90 up to 1,568 at 0.52 minutes; shares of 1.0 at 5–42 minutes), so any share or E per 90 shown outside the gated pool needs the same gate or a minimum count. La Liga records 16.3 interceptions per team-match against 10.2–11.7 elsewhere, so pooled β̂ and team fits must stay league-demeaned (as D2 requires). The two recounts (`m4g_opponent_exposure`, `verify_core_metrics`) share the §31 timelines: independent of the pipeline, not of each other.
+  - **Synthetic test fixtures (user, 2026-10-08):** opt-in per test, never autouse. `synthetic_one_team` relaxes the defenders minimum for one-team lineups; `synthetic_small_teams` also relaxes it (never raising a lower value). A default-path test asserts the 7 / 11 bounds for team actions and defenders, so the relaxation cannot leak into a real run. No expected value in any existing test changed.
 
 ### M4g5 — xPass (spike, then pipeline)
 - **Passes:**
@@ -1571,6 +1628,16 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   4. `spikes/m4g3_movers.py`: move the Koné illustration out of `compute()` into `main()` (a report-only check must not block the measurement writer).
   5. `spikes/m4g3_movers.py`: fail on a null count column instead of letting NaN drop a baseline candidate silently.
   6. `spikes/m4g3_movers_reference.py` `power0` (and check `m4g3_power.low_power`): define the R_m ≤ 0 case (power 0) instead of a math domain error.
+- **M4g4b leftovers — GATE: before M4g4d writes any adjusted column to the registry or the vector** (one fix round done; code-reviewer, qa-tester and stats-reviewer, M4g4b; user rule 2026-10-08):
+  1. `build_player_match`: `opponent_open_play_pass_credits` and `team_action_credits` skip a lineup player with no timeline (`pid in timelines`), as `team_open_play_pass_credits` already did. Confirm that every lineup player has a timeline; if one can be missing, report it rather than skip it.
+  2. `opponent_open_play_pass_credits` skips a pass whose `team.id` differs from the passer's lineup team and relies on `team_open_play_pass_credits` to report it and fail the build. Make that dependency explicit (one shared check, or a test that fails if the reporting moves).
+  3. The two `continue` branches for an actor or passer outside the lineups (dropped events) are not covered by a test.
+  4. `spikes/m4g4b_before_after.py` maps sha keys to parquet paths with `k.replace("_sha256", "")`; use an explicit map.
+  5. Cosmetic: merge the stacked `usefixtures` decorators in `tests/test_build_player_match.py` into one list.
+  6. The m4d / m4f reference fixtures pin `season_parquet_sha256` (checked) and `measurements_sha256` (not checked: it was stale from M4g4a until the M4g4b refresh). Check it, or drop it.
+- **§31 treatment re-entry near a period end** (M4g4b checkpoint 1; user 2026-10-08; not part of M4g4b): match 3879637 (Lazio), Milinković-Savić has Player Off 44:27 and Player On 45:16 in period 1, but the ADR 002 §31 timeline (pipeline and `verify_core_metrics` agree) resumes him only at the period 2 start. His events at 45:25–45:30 (a pass, a pressure, a ball recovery) fall outside his credited time, and 45:16 → the 48:47 Half End (about 3.5 minutes) is not credited to him.
+  - To do: measure the lost seconds or minutes here, find every other treatment re-entry (Player On) between the nominal period end and the Half End, or otherwise near a period end, across all configured leagues, and report how much credited time each loses;
+  - then decide whether §31's window pairing needs an amendment (an ADR 002 change, its own chunk, with the before/after STOP rule).
 - **M4g4-0 follow-up** (code-reviewer, fix delta; user rule: one fix round): `tests/test_m4g3_reference_hardening.py::test_ctx_fails_on_a_null_in_either_parquet` asserts only `SystemExit`. Capture stderr and assert "null values in count columns" and the label, since `Ctx()` can `fail()` for other reasons. Verified by hand at the commit (both cases print the null message, and removing the guard turns both red).
 - **M4g3a mover-run follow-ups** (code-reviewer, M4g3a; user 2026-10-08): `spikes/m4g3_movers.py` filters the match parquet by competition only; add a `season_id` filter (today a second season would make `replace_strict` raise, so it is safe but implicit).
 - **M4g3a power follow-ups** (code-reviewer, M4g3a checkpoint fix delta; user 2026-10-08: no more fix rounds before the real run):
