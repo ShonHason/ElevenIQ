@@ -1,0 +1,504 @@
+{
+ "description": "M4g3b expected registry changes (plan 005 M4g3b), written by spikes/m4g3_movers_reference.py --write-expected BEFORE any registry code: no cell changes; one mover verdict per metric with its flags.",
+ "snapshot_registry_version": "930d0019ee11f76b8377191d567404560a87a27fb14e661a712881f951e160ca",
+ "status_changes": [],
+ "note_changes": [],
+ "reason_changes": [],
+ "rules": {
+  "threshold": 0.5,
+  "min_movers": 12,
+  "low_power": 0.8,
+  "extra_seeds": 5
+ },
+ "summary": {
+  "PASS": 9,
+  "inconclusive": 19,
+  "untestable": 6,
+  "underpowered": 18,
+  "borderline_seed": [
+   "pressures_p90"
+  ],
+  "below_model_range": [
+   "fouls_won_p90",
+   "op_xg_assisted_p90"
+  ]
+ },
+ "mover_verdicts": {
+  "aerial_win_pct": {
+   "verdict": "untestable",
+   "n": 4,
+   "underpowered": null,
+   "borderline_seed": null,
+   "below_model_range": null,
+   "extra_seed_verdicts": [
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable"
+   ]
+  },
+  "aerials_lost_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "aerials_won_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "ball_recoveries_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "blocks_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "box_entries_carry_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "box_entries_pass_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "clearances_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "cross_completion_pct": {
+   "verdict": "untestable",
+   "n": 0,
+   "underpowered": null,
+   "borderline_seed": null,
+   "below_model_range": null,
+   "extra_seed_verdicts": [
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable"
+   ]
+  },
+  "defensive_duel_success_pct": {
+   "verdict": "untestable",
+   "n": 0,
+   "underpowered": null,
+   "borderline_seed": null,
+   "below_model_range": null,
+   "extra_seed_verdicts": [
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable"
+   ]
+  },
+  "dribble_success_pct": {
+   "verdict": "untestable",
+   "n": 0,
+   "underpowered": null,
+   "borderline_seed": null,
+   "below_model_range": null,
+   "extra_seed_verdicts": [
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable"
+   ]
+  },
+  "dribbled_past_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "dribbles_attempted_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "final_third_entries_carry_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "final_third_entries_pass_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "fouls_committed_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "fouls_won_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": true,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "interceptions_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "long_pass_completion_pct": {
+   "verdict": "inconclusive",
+   "n": 15,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "long_passes_attempted_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "np_shots_on_target_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "np_shots_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "np_xg_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "np_xg_per_shot": {
+   "verdict": "untestable",
+   "n": 2,
+   "underpowered": null,
+   "borderline_seed": null,
+   "below_model_range": null,
+   "extra_seed_verdicts": [
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable"
+   ]
+  },
+  "op_key_passes_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "op_xg_assisted_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": true,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "pass_completion_pct": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "pressures_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": true,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "PASS",
+    "inconclusive",
+    "inconclusive",
+    "PASS"
+   ]
+  },
+  "progressive_carries_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "progressive_passes_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "tackle_success_pct": {
+   "verdict": "untestable",
+   "n": 0,
+   "underpowered": null,
+   "borderline_seed": null,
+   "below_model_range": null,
+   "extra_seed_verdicts": [
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable",
+    "untestable"
+   ]
+  },
+  "tackles_attempted_p90": {
+   "verdict": "PASS",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+   ]
+  },
+  "tackles_won_p90": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": true,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  },
+  "team_pass_share": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "underpowered": false,
+   "borderline_seed": false,
+   "below_model_range": false,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ]
+  }
+ }
+}

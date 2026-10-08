@@ -1525,3 +1525,13 @@ Adds to §13.1; plan 005 M4g3 / M4g3c hold the full spec.
   - Report-only: the verdict stays PASS.
   - Such a PASS cannot by itself support a restore or a "travels with the player" claim. That needs scale (a) to agree (S on local percentiles ≤ 1) or a second season.
   - In user-facing text a negative f̂ reads "≤ 0 (point estimate)".
+- **M4g3b outcome (2026-10-08):** the mover verdicts are in the registry. `REGISTRY_VERSION` 930d0019ee11… → 78ceb0dae425…; measurements `schema_version` 2, with the `movers` block.
+  - **No status change:** 0 of 275 cells changed in any field. The boundary rows, the majority-admitted set and the per-group lists are unchanged (STOP rule `spikes/m4g3_before_after.py`: PASS).
+  - **Verdicts as expected** (`spikes/expected_m4g3_flips.json`, written before the registry code): 9 PASS, 19 inconclusive, 0 FAIL, 6 untestable; 18 underpowered. Borderline (seed-sensitive): `pressures_p90` only (inconclusive on 3 of the 5 committed extra-seed streams `m4g3_draws#k` / `m4g3_boot#k`; CI upper bounds 0.535, 0.486, 0.526, 0.556, 0.460). The M4g3a figure of 2 of 5 came from the stats-reviewer's ad hoc re-run seeds, a different set. Across all 11 runs `pressures_p90` passes on 6, which is why it carries the flag. PASS (below model range): `fouls_won_p90`, `op_xg_assisted_p90`.
+  - **Thresholds** live in `Rules` (`config.MOVER_*`), so a change moves the version. The STOP rule checks that they equal the spike's. The block records `min_movers`, and the registry refuses a block written with another minimum than `Rules.mover_min_n` (code-reviewer, M4g3b).
+  - **Known limit: the `underpowered` flags are the least independently verified numbers in the registry** (code-reviewer, M4g3b).
+    - The reference checks each power with its own simulation (1,000 datasets) only to within 4 combined Monte Carlo SEs.
+    - It skips the label comparison when its own power is within that band of 0.8.
+    - The expected flips derive `underpowered` from the block's own power with the same < 0.8 rule.
+    - So a power near 0.8 is checked for plausibility, not exactness. Today no power is within 0.03 of 0.8 (nearest: `dribbles_attempted_p90` 0.85, `fouls_won_p90` 0.75), so no label depends on this.
+  - **Rebuild:** percentiles and DNA changed only in their stamps (`registry_version`, and the DNA files' `percentiles_parquet_sha256`). Both reference checks pass. The M4e golden pages and the M4g1 validation section changed in the version string only.

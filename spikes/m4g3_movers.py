@@ -10,8 +10,12 @@ Spec (plan 005 M4g3 and ADR 004 §13.7, as amended 2026-10-08):
 - Movers: outfield player-seasons with exactly two stints of ≥ 450 nominal minutes in the same
   position_group, any pool-league pair; stints in date order (first match played). A smaller
   third stint is ignored and listed; a stint outside the pool leagues fails the run.
-- Metrics: every metric that is DNA in some outfield group, every ratio, and the Defending
-  members ball_recoveries_p90, tackles_won_p90. All movers are pooled for every metric.
+- Metrics: the frozen MOVER_METRICS (plan 005 M4g3b): every metric DNA in some outfield group
+  at M4g3a, every ratio, and the Defending members ball_recoveries_p90, tackles_won_p90. The run
+  fails if a DNA metric of the registry snapshot is missing. All movers are pooled per metric.
+- Extra seeds (M4g3b): EXTRA_SEEDS further streams ('m4g3_draws#k' / 'm4g3_boot#k'); verdict,
+  n and CI only. movers_block() writes the numbers for the measurement file (single writer:
+  spikes/m4_decision_measurements.py --write-json); the registry derives verdicts and flags.
 - Values: per-90 = count / minutes_played × 90; ratio = num / (Σ den+ − Σ den−) (as the season
   parquet); team_pass_share = open-play passes / team open-play passes while on. A ratio stint
   or baseline half below the group's min_attempts is excluded (the mover for that metric; the
@@ -46,7 +50,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import math
 import sys
@@ -71,7 +74,20 @@ OUTFIELD = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
 MOVER_FLOOR, GATE, TOL = 450.0, 900.0, 1e-6
 DRAWS = pw.DRAWS
 GAP_FLAG = 0.10
-EXTRA = ("ball_recoveries_p90", "tackles_won_p90")
+EXTRA_SEEDS = 5                  # plan 005 M4g3b: borderline iff any extra seed's verdict differs
+# The frozen metric list (plan 005 M4g3b): the 34 metrics of the M4g3a run, written out so the
+# registry is not read to choose them. The run fails if a DNA metric is missing.
+MOVER_METRICS = (
+    "aerial_win_pct", "aerials_lost_p90", "aerials_won_p90", "ball_recoveries_p90", "blocks_p90",
+    "box_entries_carry_p90", "box_entries_pass_p90", "clearances_p90", "cross_completion_pct",
+    "defensive_duel_success_pct", "dribble_success_pct", "dribbled_past_p90",
+    "dribbles_attempted_p90", "final_third_entries_carry_p90", "final_third_entries_pass_p90",
+    "fouls_committed_p90", "fouls_won_p90", "interceptions_p90", "long_pass_completion_pct",
+    "long_passes_attempted_p90", "np_shots_on_target_p90", "np_shots_p90", "np_xg_p90",
+    "np_xg_per_shot", "op_key_passes_p90", "op_xg_assisted_p90", "pass_completion_pct",
+    "pressures_p90", "progressive_carries_p90", "progressive_passes_p90", "tackle_success_pct",
+    "tackles_attempted_p90", "tackles_won_p90", "team_pass_share",
+)
 RATIOS = {   # m4_decision_measurements.RATIOS_ALL, written out
     "pass_completion_pct": ("passes_completed", ["passes_attempted"],
                             ["passes_unknown_outcome", "passes_injury_clearance"]),
@@ -137,36 +153,218 @@ def cut(cum_nominal: np.ndarray, m1: float, m2: float) -> tuple[int, int]:
 
 # ---------------------------------------------------------------- data
 
-def load(registry_path: Path):
-    season = pl.read_parquet(SEASON_PARQUET).filter(pl.col("season_id") == SEASON_ID)
-    meas = json.loads(MEASUREMENTS.read_text())
-    reg = json.loads(registry_path.read_text())
-    dna_groups: dict[str, list[str]] = defaultdict(list)
-    for g in OUTFIELD:
-        if "dna" not in reg["groups"][g]:
-            fail(f"registry snapshot: group {g} has no 'dna' list")
-        for m in reg["groups"][g]["dna"]:
-            dna_groups[m].append(g)
-    metrics = sorted(set(dna_groups) | set(RATIOS) | set(EXTRA))
+class Ctx:
+    """Everything the per-metric runs share: movers, populations, non-mover halves."""
 
-    dates, results = {}, []
-    for comp in POOL:
-        for mt in load_matches(comp, SEASON_ID):
-            dates[mt["match_id"]] = mt["match_date"]
-            results.append((comp, mt["home_team"]["home_team_id"], mt["away_team"]["away_team_id"],
-                            mt["home_score"], mt["away_score"]))
-    cols = {"minutes_played", "match_duration"}
-    for m in metrics:
-        _, num, pos, neg = spec(m)
-        cols |= {num, *pos, *neg}
-    match = (pl.read_parquet(MATCH_PARQUET, columns=["match_id", *KEY, *sorted(cols)])
-             .filter(pl.col("competition_id").is_in(POOL) & (pl.col("minutes_played") > 0))
-             .with_columns(pl.col("match_id").replace_strict(dates, return_dtype=pl.Utf8)
-                           .alias("match_date"),
-                           (pl.col("minutes_played") * 90.0 / pl.col("match_duration"))
-                           .alias("nominal"))
-             .sort("player_id", "team_id", "match_date", "match_id"))
-    return season, match, meas, metrics, dict(dna_groups), results
+    def __init__(self, meas: dict | None = None) -> None:
+        """meas: the measurements to read min_attempts and r_full from (default: the committed
+        file; the measurement writer passes the values it has just computed)."""
+        self.season = pl.read_parquet(SEASON_PARQUET).filter(pl.col("season_id") == SEASON_ID)
+        self.meas = json.loads(MEASUREMENTS.read_text()) if meas is None else meas
+        dates, self.results = {}, []
+        for comp in POOL:
+            for mt in load_matches(comp, SEASON_ID):
+                dates[mt["match_id"]] = mt["match_date"]
+                self.results.append((comp, mt["home_team"]["home_team_id"],
+                                     mt["away_team"]["away_team_id"],
+                                     mt["home_score"], mt["away_score"]))
+        cols = {"minutes_played", "match_duration"}
+        for m in MOVER_METRICS:
+            _, num, pos, neg = spec(m)
+            cols |= {num, *pos, *neg}
+        match = (pl.read_parquet(MATCH_PARQUET, columns=["match_id", *KEY, *sorted(cols)])
+                 .filter(pl.col("competition_id").is_in(POOL) & (pl.col("minutes_played") > 0))
+                 .with_columns(pl.col("match_id").replace_strict(dates, return_dtype=pl.Utf8)
+                               .alias("match_date"),
+                               (pl.col("minutes_played") * 90.0 / pl.col("match_duration"))
+                               .alias("nominal"))
+                 .sort("player_id", "team_id", "match_date", "match_id"))
+        season = self.season
+
+        # movers
+        st = season.filter((pl.col("minutes_nominal_equiv") >= MOVER_FLOOR - TOL)
+                           & (pl.col("position_group") != "GK"))
+        per = st.group_by("player_id").agg(pl.len().alias("n"),
+                                            pl.col("position_group").n_unique().alias("ng"))
+        mover_ids = per.filter((pl.col("n") == 2) & (pl.col("ng") == 1))["player_id"].to_list()
+        rows_all = season.filter(pl.col("player_id").is_in(mover_ids))
+        stint_dates = {tuple(k): (g["match_date"].min(), g["match_date"].max())
+                       for k, g in match.filter(pl.col("player_id").is_in(mover_ids))
+                       .group_by(list(KEY))}
+        self.movers, self.third = [], []
+        for pid in sorted(mover_ids):
+            rows = rows_all.filter(pl.col("player_id") == pid).to_dicts()
+            big = [r for r in rows if r["minutes_nominal_equiv"] >= MOVER_FLOOR - TOL]
+            self.third += [r for r in rows if r["minutes_nominal_equiv"] < MOVER_FLOOR - TOL]
+            for r in big:
+                if r["competition_id"] not in POOL:
+                    fail(f"mover {r['player_name']} has a stint outside the pool leagues")
+                r["first"], r["last"] = stint_dates[(r["player_id"], r["team_id"], r["competition_id"])]
+            self.movers.append(pw.order_by_date(big))
+
+        # reference populations and non-movers
+        self.gated = season.filter(pl.col("in_percentile_pool") & pl.col("is_outfield")
+                                   & (pl.col("minutes_nominal_equiv") >= GATE - TOL))
+        self.local = (self.gated.sort(["minutes_played", "competition_id", "team_id"],
+                                      descending=[True, False, False])
+                      .unique(subset=["player_id", "competition_id", "position_group"],
+                              keep="first", maintain_order=True))
+        singles = season.group_by("player_id").len().filter(pl.col("len") == 1)["player_id"]
+        nonmovers = self.gated.filter(pl.col("player_id").is_in(singles.implode())).to_dicts()
+        nm_matches = {tuple(k): g for k, g in match.group_by(list(KEY))}
+        self.pop_cache: dict[tuple[str, str], dict] = {}
+
+        # non-mover halves per mover (shared by all metrics and seeds)
+        need = sorted({c for m in MOVER_METRICS for c in (spec(m)[1], *spec(m)[2], *spec(m)[3])})
+        self.halves: list[list[dict]] = []
+        for stints in self.movers:
+            grp = stints[0]["position_group"]
+            m1, m2 = stints[0]["minutes_nominal_equiv"], stints[1]["minutes_nominal_equiv"]
+            cand = []
+            for r in nonmovers:
+                if r["position_group"] != grp or r["minutes_nominal_equiv"] < m1 + m2 - TOL:
+                    continue
+                g = nm_matches[(r["player_id"], r["team_id"], r["competition_id"])]
+                cum = np.concatenate([[0.0], np.cumsum(g["nominal"].to_numpy())])
+                k1, k2 = cut(cum, m1, m2)
+                arr = g.select(need).to_numpy().astype(float)
+                # math.fsum: exactly rounded, so the half values (and Hazen ties) do not depend
+                # on the summation order
+                cand.append({"player_id": r["player_id"], "comp": r["competition_id"],
+                             "h1": {c: math.fsum(arr[:k1, i]) for i, c in enumerate(need)},
+                             "h2": {c: math.fsum(arr[k1:k2, i]) for i, c in enumerate(need)},
+                             "nominal": (float(cum[k1]), float(cum[k2] - cum[k1]))})
+            self.halves.append(cand)
+
+    def min_att(self, metric: str, grp: str) -> int | None:
+        """The group's min_attempts for a ratio (None: not defined for this group, so its
+        movers are excluded for the metric); 0 for per-90s and team_pass_share."""
+        return self.meas["ratios"][metric]["groups"][grp]["min_attempts"] if metric in RATIOS else 0
+
+    def population(self, metric: str, grp: str) -> dict:
+        """per league: sorted values, mean; the group's demeaned SD; the cell's median exposure."""
+        if (metric, grp) in self.pop_cache:
+            return self.pop_cache[(metric, grp)]
+        ma = self.min_att(metric, grp)
+        if ma is None:
+            fail(f"population for {metric} × {grp} requested without a min_attempts")
+        by_league, resid = {}, []
+        for comp in POOL:
+            vals = []
+            for r in self.local.filter((pl.col("competition_id") == comp)
+                                       & (pl.col("position_group") == grp)).to_dicts():
+                v, den = row_value(r, metric)
+                if not math.isnan(v) and den >= ma:
+                    vals.append(v)
+            a = np.sort(np.array(vals))
+            if not len(a):
+                fail(f"empty reference population: {metric} × {grp} × competition {comp}")
+            by_league[comp] = {"sorted": a, "mean": float(a.mean())}
+            resid += list(a - a.mean())
+        cell_rows = self.gated.filter(pl.col("position_group") == grp)
+        cell = [row_value(r, metric)[1] for r in cell_rows.to_dicts()]
+        out = {"league": by_league, "sd": float(np.std(resid, ddof=1)),
+               "median_exposure": float(np.median(cell)) if spec(metric)[0] == "ratio"
+               else float(cell_rows["minutes_nominal_equiv"].median()), "cell_n": len(cell)}
+        self.pop_cache[(metric, grp)] = out
+        return out
+
+    def scales(self, metric: str, grp: str, comp: int, v: float) -> tuple[float, float]:
+        p = self.population(metric, grp)
+        lg = p["league"][comp]
+        return hazen(lg["sorted"], v), (v - lg["mean"]) / p["sd"]
+
+
+def row_value(r: dict, metric: str) -> tuple[float, float]:
+    kind, num, pos, neg = spec(metric)
+    den = sum(r[c] for c in pos) - sum(r[c] for c in neg)
+    return value(kind, r[num], den), den
+
+
+def stream_keys(k: int) -> tuple[str, str]:
+    """The draw and bootstrap stream keys: k = 0 the primary run, k ≥ 1 the extra seeds."""
+    return ("m4g3_draws", "m4g3_boot") if k == 0 else (f"m4g3_draws#{k}", f"m4g3_boot#{k}")
+
+
+def run_metric(ctx: Ctx, metric: str, k: int = 0, b: int = pw.B,
+               power_datasets: int | None = pw.DATASETS) -> dict:
+    """One metric on stream k. power_datasets None skips the low-power label (extra seeds)."""
+    draw_key, boot_key = stream_keys(k)
+    kind = spec(metric)[0]
+    d2, h1s, h2s, absa, absb, base_a, base_b, cross, ids, excl = ([] for _ in range(10))
+    rng_draw = pw.cell_rng(draw_key, metric)
+    for stints, cand in zip(ctx.movers, ctx.halves):
+        grp = stints[0]["position_group"]
+        ma = ctx.min_att(metric, grp)
+        if ma is None:
+            excl.append(f"{stints[0]['player_name']} (no min_attempts for {grp})")
+            continue
+        v = [row_value(s, metric) for s in stints]
+        if any(math.isnan(x) or den < ma for x, den in v):
+            excl.append(stints[0]["player_name"])
+            continue
+        elig = []
+        for c in cand:
+            hv = [row_value(c[h], metric) for h in ("h1", "h2")]
+            if all(not math.isnan(x) and den >= max(ma, 1e-12) for x, den in hv):
+                elig.append((c["comp"], hv[0][0], hv[1][0]))
+        if not elig:
+            excl.append(stints[0]["player_name"] + " (no eligible baseline)")
+            continue
+        pa = [ctx.scales(metric, grp, s["competition_id"], x) for s, (x, _) in zip(stints, v)]
+        pick = rng_draw.integers(0, len(elig), DRAWS)
+        hb = np.array([[ctx.scales(metric, grp, elig[j][0], elig[j][1 + h]) for h in (0, 1)]
+                       for j in pick])                       # (draws, half, scale)
+        d2.append((pa[1][1] - pa[0][1]) ** 2)
+        absa.append(abs(pa[1][0] - pa[0][0]))
+        absb.append(abs(pa[1][1] - pa[0][1]))
+        h1s.append(hb[:, 0, 1])
+        h2s.append(hb[:, 1, 1])
+        base_a.append(float(np.mean(np.abs(hb[:, 1, 0] - hb[:, 0, 0]))))
+        base_b.append(float(np.mean(np.abs(hb[:, 1, 1] - hb[:, 0, 1]))))
+        ids.append(stints[0]["player_name"])
+        # cross-check
+        src = ctx.meas["ratios" if kind == "ratio" else "metrics"].get(metric) if kind != "share" \
+            else {"groups": ctx.meas["team_pass_share"]}
+        cellm = (src or {}).get("groups", {}).get(grp, {})
+        rf = cellm.get("split_half_r_full", cellm.get("r_full"))
+        if rf is not None:
+            med = ctx.population(metric, grp)["median_exposure"]
+            ex = [den if kind == "ratio" else s["minutes_nominal_equiv"]
+                  for s, (_, den) in zip(stints, v)]
+            rr = [sb_step(rf, e / med) for e in ex]
+            if min(rr) > 0:
+                cross.append(math.sqrt(rr[0] * rr[1]))
+    n = len(d2)
+    rec = {"kind": kind, "n": n, "excluded": excl}
+    if n:
+        d2a, h1a, h2a = np.array(d2), np.array(h1s), np.array(h2s)
+        rec |= {"mover_mean_abs_a": float(np.mean(absa)), "mover_mean_abs_b": float(np.mean(absb)),
+                "baseline_mean_abs_a": float(np.mean(base_a)),
+                "baseline_mean_abs_b": float(np.mean(base_b)),
+                "s_mean_a": float(np.mean(absa) / np.mean(base_a)),
+                "s_mean_b": float(np.mean(absb) / np.mean(base_b))}
+    if n >= pw.MIN_MOVERS:
+        # R_m and the low-power label first (ADR 004 §13.7: before f̂)
+        _, _, r_m = pw._f_hat(np.float64(1.0), np.float64(1.0), pw._moments(h1a, h2a).sum(0))
+        rec["r_m"] = float(r_m)
+        if power_datasets is not None:
+            rec["low_power"] = pw.low_power(n, float(r_m), power_datasets, b)
+        res = pw.mover_rule(d2a, h1a, h2a, pw.cell_rng(boot_key, metric), b=b)
+        rec |= {"f_hat": res.f_hat, "s2_rms": res.s2, "s_rms": math.sqrt(res.s2),
+                "ci": [res.ci_lo, res.ci_hi], "verdict": res.verdict,
+                "point_pass": res.point_pass, "boot_inf": res.boot_inf}
+    else:
+        rec["verdict"] = "untestable"
+    if cross:
+        cc = float(np.mean(cross))
+        rec["cross_check"] = {"r_step_down": cc, "n": len(cross)}
+        if "r_m" in rec:
+            rec["cross_check"]["gap"] = rec["r_m"] - cc
+            rec["cross_check"]["gap_flag"] = abs(rec["r_m"] - cc) > GAP_FLAG
+            rec["cross_check"]["f_hat_with_step_down"] = (rec["s2_rms"] - 1) * (1 - cc) / cc
+    rec["movers"] = ids
+    return rec
 
 
 def league_ranks(results) -> dict[tuple[int, int], tuple[int, int]]:
@@ -187,219 +385,54 @@ def league_ranks(results) -> dict[tuple[int, int], tuple[int, int]]:
     return out
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    ap.add_argument("--registry", type=Path, required=True,
-                    help="registry snapshot JSON (tools/registry_snapshot.py)")
-    ap.add_argument("--out", type=Path, default=OUT)
-    ap.add_argument("--b", type=int, default=pw.B)
-    ap.add_argument("--power-datasets", type=int, default=pw.DATASETS)
-    args = ap.parse_args()
-
-    season, match, meas, metrics, dna_groups, results = load(args.registry)
-    ranks = league_ranks(results)
-
-    # movers ---------------------------------------------------------------------------
-    st = season.filter((pl.col("minutes_nominal_equiv") >= MOVER_FLOOR - TOL)
-                       & (pl.col("position_group") != "GK"))
-    per = st.group_by("player_id").agg(pl.len().alias("n"),
-                                        pl.col("position_group").n_unique().alias("ng"))
-    mover_ids = per.filter((pl.col("n") == 2) & (pl.col("ng") == 1))["player_id"].to_list()
-    rows_all = season.filter(pl.col("player_id").is_in(mover_ids))
-    stint_dates = {k: (g["match_date"].min(), g["match_date"].max())
-                   for k, g in match.filter(pl.col("player_id").is_in(mover_ids))
-                   .group_by(list(KEY))}
-    stint_dates = {tuple(k): v for k, v in stint_dates.items()}
-    movers, third = [], []
-    for pid in sorted(mover_ids):
-        rows = rows_all.filter(pl.col("player_id") == pid).to_dicts()
-        big = [r for r in rows if r["minutes_nominal_equiv"] >= MOVER_FLOOR - TOL]
-        third += [r for r in rows if r["minutes_nominal_equiv"] < MOVER_FLOOR - TOL]
-        for r in big:
-            if r["competition_id"] not in POOL:
-                fail(f"mover {r['player_name']} has a stint outside the pool leagues")
-            r["first"], r["last"] = stint_dates[(r["player_id"], r["team_id"], r["competition_id"])]
-        movers.append(pw.order_by_date(big))
-    print(f"movers: {len(movers)} (third stints below {MOVER_FLOOR:.0f}: {len(third)})")
-
-    # reference populations and non-movers ----------------------------------------------
-    gated = season.filter(pl.col("in_percentile_pool") & pl.col("is_outfield")
-                          & (pl.col("minutes_nominal_equiv") >= GATE - TOL))
-    local = (gated.sort(["minutes_played", "competition_id", "team_id"], descending=[True, False, False])
-             .unique(subset=["player_id", "competition_id", "position_group"], keep="first",
-                     maintain_order=True))
-    singles = season.group_by("player_id").len().filter(pl.col("len") == 1)["player_id"]
-    nonmovers = gated.filter(pl.col("player_id").is_in(singles.implode())).to_dicts()
-    nm_matches = {k: g for k, g in match.group_by(list(KEY))}
-    nm_matches = {tuple(k): g for k, g in nm_matches.items()}
-
-    def min_att(metric: str, grp: str) -> int | None:
-        """The group's min_attempts for a ratio (None: not defined for this group, so its
-        movers are excluded for the metric); 0 for per-90s and team_pass_share."""
-        return meas["ratios"][metric]["groups"][grp]["min_attempts"] if metric in RATIOS else 0
-
-    def row_value(r: dict, metric: str) -> tuple[float, float]:
-        kind, num, pos, neg = spec(metric)
-        den = sum(r[c] for c in pos) - sum(r[c] for c in neg)
-        return value(kind, r[num], den), den
-
-    pop_cache: dict[tuple[str, str], dict] = {}
-
-    def population(metric: str, grp: str) -> dict:
-        """per league: sorted values, mean; the group's demeaned SD; the cell's median exposure."""
-        if (metric, grp) in pop_cache:
-            return pop_cache[(metric, grp)]
-        ma = min_att(metric, grp)
-        if ma is None:
-            fail(f"population for {metric} × {grp} requested without a min_attempts")
-        by_league, resid = {}, []
-        for comp in POOL:
-            vals = []
-            for r in local.filter((pl.col("competition_id") == comp)
-                                  & (pl.col("position_group") == grp)).to_dicts():
-                v, den = row_value(r, metric)
-                if not math.isnan(v) and den >= ma:
-                    vals.append(v)
-            a = np.sort(np.array(vals))
-            if not len(a):
-                fail(f"empty reference population: {metric} × {grp} × competition {comp}")
-            by_league[comp] = {"sorted": a, "mean": float(a.mean())}
-            resid += list(a - a.mean())
-        cell = [row_value(r, metric)[1] for r in gated.filter(pl.col("position_group") == grp).to_dicts()]
-        kind = spec(metric)[0]
-        cell_minutes = gated.filter(pl.col("position_group") == grp)["minutes_nominal_equiv"]
-        out = {"league": by_league, "sd": float(np.std(resid, ddof=1)),
-               "median_exposure": float(np.median(cell)) if kind == "ratio"
-               else float(cell_minutes.median()), "cell_n": len(cell)}
-        pop_cache[(metric, grp)] = out
-        return out
-
-    def scales(metric: str, grp: str, comp: int, v: float) -> tuple[float, float]:
-        p = population(metric, grp)
-        lg = p["league"][comp]
-        return hazen(lg["sorted"], v), (v - lg["mean"]) / p["sd"]
-
-    # non-mover halves per mover (shared by all metrics) ---------------------------------
-    # half sums of every needed column, per (mover, eligible non-mover)
-    need = sorted({c for m in metrics for c in (spec(m)[1], *spec(m)[2], *spec(m)[3])})
-    halves: list[list[dict]] = []
-    for stints in movers:
-        grp = stints[0]["position_group"]
-        m1, m2 = stints[0]["minutes_nominal_equiv"], stints[1]["minutes_nominal_equiv"]
-        cand = []
-        for r in nonmovers:
-            if r["position_group"] != grp or r["minutes_nominal_equiv"] < m1 + m2 - TOL:
-                continue
-            g = nm_matches[(r["player_id"], r["team_id"], r["competition_id"])]
-            cum = np.concatenate([[0.0], np.cumsum(g["nominal"].to_numpy())])
-            k1, k2 = cut(cum, m1, m2)
-            arr = g.select(need).to_numpy().astype(float)
-            # math.fsum: exactly rounded, so the half values (and Hazen ties) do not depend
-            # on the summation order
-            cand.append({"player_id": r["player_id"], "comp": r["competition_id"],
-                         "h1": {c: math.fsum(arr[:k1, i]) for i, c in enumerate(need)},
-                         "h2": {c: math.fsum(arr[k1:k2, i]) for i, c in enumerate(need)},
-                         "nominal": (float(cum[k1]), float(cum[k2] - cum[k1]))})
-        halves.append(cand)
-
-    # per metric ------------------------------------------------------------------------
+def compute(b: int = pw.B, power_datasets: int = pw.DATASETS, extra_seeds: int = EXTRA_SEEDS,
+            dna_groups: dict[str, list[str]] | None = None, verbose: bool = True,
+            meas: dict | None = None) -> dict:
+    """The full mover run: the primary stream (k = 0) with the low-power labels, then
+    extra_seeds further streams (verdict, n, CI only). dna_groups (report only) comes from a
+    registry snapshot when the caller has one."""
+    ctx = Ctx(meas)
+    if verbose:
+        print(f"movers: {len(ctx.movers)} (third stints below {MOVER_FLOOR:.0f}: {len(ctx.third)})")
     out_metrics = {}
-    for metric in metrics:
-        kind = spec(metric)[0]
-        d2, h1s, h2s, absa, absb, base_a, base_b, cross, ids, excl = ([] for _ in range(10))
-        rng_draw = pw.cell_rng("m4g3_draws", metric)
-        for stints, cand in zip(movers, halves):
-            grp = stints[0]["position_group"]
-            ma = min_att(metric, grp)
-            if ma is None:
-                excl.append(f"{stints[0]['player_name']} (no min_attempts for {grp})")
-                continue
-            v = [row_value(s, metric) for s in stints]
-            if any(math.isnan(x) or den < ma for x, den in v):
-                excl.append(stints[0]["player_name"])
-                continue
-            elig = []
-            for c in cand:
-                hv = [row_value(c[h], metric) for h in ("h1", "h2")]
-                if all(not math.isnan(x) and den >= max(ma, 1e-12) for x, den in hv):
-                    elig.append((c["comp"], hv[0][0], hv[1][0]))
-            if not elig:
-                excl.append(stints[0]["player_name"] + " (no eligible baseline)")
-                continue
-            pa = [scales(metric, grp, s["competition_id"], x) for s, (x, _) in zip(stints, v)]
-            pick = rng_draw.integers(0, len(elig), DRAWS)
-            hb = np.array([[scales(metric, grp, elig[j][0], elig[j][1 + h]) for h in (0, 1)]
-                           for j in pick])                       # (draws, half, scale)
-            d2.append((pa[1][1] - pa[0][1]) ** 2)
-            absa.append(abs(pa[1][0] - pa[0][0]))
-            absb.append(abs(pa[1][1] - pa[0][1]))
-            h1s.append(hb[:, 0, 1])
-            h2s.append(hb[:, 1, 1])
-            base_a.append(float(np.mean(np.abs(hb[:, 1, 0] - hb[:, 0, 0]))))
-            base_b.append(float(np.mean(np.abs(hb[:, 1, 1] - hb[:, 0, 1]))))
-            ids.append(stints[0]["player_name"])
-            # cross-check
-            src = meas["ratios" if kind == "ratio" else "metrics"].get(metric) if kind != "share" \
-                else {"groups": meas["team_pass_share"]}
-            cellm = (src or {}).get("groups", {}).get(grp, {})
-            rf = cellm.get("split_half_r_full", cellm.get("r_full"))
-            if rf is not None:
-                med = population(metric, grp)["median_exposure"]
-                ex = [den if kind == "ratio" else s["minutes_nominal_equiv"]
-                      for s, (_, den) in zip(stints, v)]
-                rr = [sb_step(rf, e / med) for e in ex]
-                if min(rr) > 0:
-                    cross.append(math.sqrt(rr[0] * rr[1]))
-        n = len(d2)
-        rec = {"kind": kind, "dna_in": dna_groups.get(metric, []), "n": n, "excluded": excl}
-        if n:
-            d2a, h1a, h2a = np.array(d2), np.array(h1s), np.array(h2s)
-            rec |= {"mover_mean_abs_a": float(np.mean(absa)), "mover_mean_abs_b": float(np.mean(absb)),
-                    "baseline_mean_abs_a": float(np.mean(base_a)),
-                    "baseline_mean_abs_b": float(np.mean(base_b)),
-                    "s_mean_a": float(np.mean(absa) / np.mean(base_a)),
-                    "s_mean_b": float(np.mean(absb) / np.mean(base_b))}
-        if n >= pw.MIN_MOVERS:
-            # R_m and the low-power label first (ADR 004 §13.7: before f̂)
-            _, _, r_m = pw._f_hat(np.float64(1.0), np.float64(1.0),
-                                  pw._moments(h1a, h2a).sum(0))
-            rec["r_m"] = float(r_m)
-            rec["low_power"] = pw.low_power(n, float(r_m), args.power_datasets, args.b)
-            res = pw.mover_rule(d2a, h1a, h2a, pw.cell_rng("m4g3_boot", metric), b=args.b)
-            rec |= {"f_hat": res.f_hat, "s2_rms": res.s2, "s_rms": math.sqrt(res.s2),
-                    "ci": [res.ci_lo, res.ci_hi], "verdict": res.verdict,
-                    "point_pass": res.point_pass, "boot_inf": res.boot_inf}
-        else:
-            rec["verdict"] = "untestable"
-        if cross:
-            cc = float(np.mean(cross))
-            rec["cross_check"] = {"r_step_down": cc, "n": len(cross)}
-            if "r_m" in rec:
-                rec["cross_check"]["gap"] = rec["r_m"] - cc
-                rec["cross_check"]["gap_flag"] = abs(rec["r_m"] - cc) > GAP_FLAG
-                rec["cross_check"]["f_hat_with_step_down"] = (rec["s2_rms"] - 1) * (1 - cc) / cc
-        rec["movers"] = ids
+    for metric in MOVER_METRICS:
+        rec = run_metric(ctx, metric, 0, b, power_datasets)
+        if dna_groups is not None:
+            rec = {"kind": rec["kind"], "dna_in": dna_groups.get(metric, []),
+                   **{k: v for k, v in rec.items() if k != "kind"}}
         out_metrics[metric] = rec
-        lp = rec.get("low_power", {})
-        print(f"{metric:32s} n={n:2d} {rec['verdict']:12s} "
-              + (f"f̂={rec['f_hat']:.3f} CI=[{rec['ci'][0]:.3f}, {rec['ci'][1]:.3f}] "
-                 f"R_m={rec['r_m']:.3f} power={lp['power_at_f0']:.2f}{'*' if lp['underpowered'] else ''} "
-                 f"S_rms={rec['s_rms']:.2f} S_a={rec['s_mean_a']:.2f}"
-                 if "f_hat" in rec else ""), flush=True)
+        if verbose:
+            lp = rec.get("low_power", {})
+            print(f"{metric:32s} n={rec['n']:2d} {rec['verdict']:12s} "
+                  + (f"f̂={rec['f_hat']:.3f} CI=[{rec['ci'][0]:.3f}, {rec['ci'][1]:.3f}] "
+                     f"R_m={rec['r_m']:.3f} power={lp['power_at_f0']:.2f}"
+                     f"{'*' if lp['underpowered'] else ''} "
+                     f"S_rms={rec['s_rms']:.2f} S_a={rec['s_mean_a']:.2f}"
+                     if "f_hat" in rec else ""), flush=True)
+    extra: dict[str, list[dict]] = {m: [] for m in MOVER_METRICS}
+    for k in range(1, extra_seeds + 1):
+        for metric in MOVER_METRICS:
+            r = run_metric(ctx, metric, k, b, None)
+            extra[metric].append({"k": k, "n": r["n"], "verdict": r["verdict"],
+                                  **({"ci": r["ci"]} if "ci" in r else {})})
+        if verbose:
+            print(f"extra seed {k}: verdict changes "
+                  f"{[m for m in MOVER_METRICS if extra[m][-1]['verdict'] != out_metrics[m]['verdict']]}",
+                  flush=True)
 
-    # Koné and struggling clubs -------------------------------------------------------------
+    ranks = league_ranks(ctx.results)
     stint_rows = []
-    for stints in movers:
+    for stints in ctx.movers:
         s1, s2 = stints
-        r1 = ranks.get((s1["competition_id"], s1["team_id"]))
-        r2 = ranks.get((s2["competition_id"], s2["team_id"]))
         stint_rows.append({"player": s1["player_name"], "group": s1["position_group"],
-                           "from": s1["team_name"], "from_rank": r1, "to": s2["team_name"],
-                           "to_rank": r2, "m1": s1["minutes_nominal_equiv"],
-                           "m2": s2["minutes_nominal_equiv"],
+                           "from": s1["team_name"],
+                           "from_rank": ranks.get((s1["competition_id"], s1["team_id"])),
+                           "to": s2["team_name"],
+                           "to_rank": ranks.get((s2["competition_id"], s2["team_id"])),
+                           "m1": s1["minutes_nominal_equiv"], "m2": s2["minutes_nominal_equiv"],
                            "cross_league": s1["competition_id"] != s2["competition_id"],
                            "first": [str(s1["first"]), str(s2["first"])]})
-    kone = [s for s in movers if s[0]["player_name"] == KONE]
+    kone = [s for s in ctx.movers if s[0]["player_name"] == KONE]
     if len(kone) != 1:
         fail(f"{KONE}: {len(kone)} movers with that name, expected 1")
     kone_out = []
@@ -408,16 +441,74 @@ def main() -> None:
         vals = [row_value(s, "long_pass_completion_pct") for s in stints]
         kone_out.append({"player": stints[0]["player_name"], "group": grp,
                          "stints": [{"team": s["team_name"], "value": v, "attempts": den,
-                                     "scale_a": scales("long_pass_completion_pct", grp, s["competition_id"], v)[0],
-                                     "scale_b": scales("long_pass_completion_pct", grp, s["competition_id"], v)[1]}
+                                     "scale_a": ctx.scales("long_pass_completion_pct", grp, s["competition_id"], v)[0],
+                                     "scale_b": ctx.scales("long_pass_completion_pct", grp, s["competition_id"], v)[1]}
                                     for s, (v, den) in zip(stints, vals)]})
+    return {"generated_by": "spikes/m4g3_movers.py", "seed": pw.SEED, "draws": DRAWS, "b": b,
+            "movers": stint_rows, "third_stints": [r["player_name"] for r in ctx.third],
+            "kone": kone_out, "metrics": out_metrics, "extra_seeds": extra}
 
+
+def _num(x: float) -> float | str:
+    """JSON-safe number: +inf / −inf as strings (the measurement file rejects the constants)."""
+    if math.isinf(x):
+        return "+inf" if x > 0 else "-inf"
+    if math.isnan(x):
+        fail("NaN in the movers block")
+    return x
+
+
+def movers_block(result: dict) -> dict:
+    """The `movers` block of the measurement file (plan 005 M4g3b): numbers only; the registry
+    derives the verdict and every flag from them with its Rules thresholds."""
+    metrics = {}
+    for m in MOVER_METRICS:
+        r = result["metrics"][m]
+        rec: dict = {"kind": r["kind"], "n": r["n"], "excluded": r["excluded"]}
+        if "f_hat" in r:
+            rec |= {"f_hat": _num(r["f_hat"]), "ci_lo": _num(r["ci"][0]), "ci_hi": _num(r["ci"][1]),
+                    "r_m": r["r_m"], "s2_rms": r["s2_rms"], "boot_inf": r["boot_inf"],
+                    "power_at_f0": r["low_power"]["power_at_f0"], "power_se": r["low_power"]["se"]}
+        if "cross_check" in r:
+            rec["cross_check_r"] = r["cross_check"]["r_step_down"]
+            if "f_hat_with_step_down" in r["cross_check"]:
+                rec["cross_check_f_hat"] = _num(r["cross_check"]["f_hat_with_step_down"])
+        rec["extra_seeds"] = [{"k": e["k"], "n": e["n"],
+                               **({"ci_lo": _num(e["ci"][0]), "ci_hi": _num(e["ci"][1])}
+                                  if "ci" in e else {})}
+                              for e in result["extra_seeds"][m]]
+        metrics[m] = rec
+    return {"spec": "plan 005 M4g3 / M4g3b; ADR 004 §13.7", "seed": result["seed"],
+            "stream_keys": {"primary": list(stream_keys(0)),
+                            "extra": [list(stream_keys(k)) for k in range(1, EXTRA_SEEDS + 1)]},
+            "draws": result["draws"], "b": result["b"], "movers": len(result["movers"]),
+            "min_movers": pw.MIN_MOVERS,
+            "metric_list": list(MOVER_METRICS), "metrics": metrics}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
+    ap.add_argument("--registry", type=Path, required=True,
+                    help="registry snapshot JSON (tools/registry_snapshot.py): dna_in, report only")
+    ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--b", type=int, default=pw.B)
+    ap.add_argument("--power-datasets", type=int, default=pw.DATASETS)
+    ap.add_argument("--extra-seeds", type=int, default=EXTRA_SEEDS)
+    args = ap.parse_args()
+    reg = json.loads(args.registry.read_text())
+    dna_groups: dict[str, list[str]] = defaultdict(list)
+    for g in OUTFIELD:
+        if "dna" not in reg["groups"][g]:
+            fail(f"registry snapshot: group {g} has no 'dna' list")
+        for m in reg["groups"][g]["dna"]:
+            dna_groups[m].append(g)
+    missing = sorted(set(dna_groups) - set(MOVER_METRICS))
+    if missing:
+        fail(f"DNA metrics missing from MOVER_METRICS: {missing}")
+    result = compute(args.b, args.power_datasets, args.extra_seeds, dict(dna_groups))
+    result["registry_version"] = reg.get("registry_version")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps({
-        "generated_by": "spikes/m4g3_movers.py", "seed": pw.SEED, "draws": DRAWS, "b": args.b,
-        "registry_version": json.loads(args.registry.read_text()).get("registry_version"),
-        "movers": stint_rows, "third_stints": [r["player_name"] for r in third],
-        "kone": kone_out, "metrics": out_metrics}, indent=1, default=str))
+    args.out.write_text(json.dumps(result, indent=1, default=str))
     print(f"wrote {args.out}")
 
 

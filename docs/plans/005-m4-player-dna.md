@@ -1370,6 +1370,8 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 - the teammate count after M4g4;
 - the M4g1–M4g5 outcomes.
 
+**Requirement (mover verdicts):** a displayed mover verdict always shows its flags next to it: "underpowered at n", "borderline (seed-sensitive)", "PASS (below model range)". Never a bare "PASS" (user, 2026-10-08, from the M4g3b output review: 4 of the 9 PASS verdicts are underpowered, and `op_xg_assisted_p90` is also below model range). This applies to the write-up, the M4 sign-off text and every mover table.
+
 The stats-reviewer signs it off; any failure goes back to its decision.
 
 ### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
@@ -1403,6 +1405,13 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   - ranks share a rank within 1e-12. The tolerance is not transitive for chains of near-ties. Harmless for display, and the check uses the same rule;
   - `SHOW_PAIRS` (`spikes/m4g_style_map.py`) fails the whole run if a pair is not unique among the plotted rows. A warning would do, since the pairs are display only;
   - `others` (the cross-group search list) holds every row, so a player at two clubs is listed twice. Dedupe by name to shrink each page.
+- **M4g3b reference hardening — GATE: must be done before the next movers-block write (the M4g4 mover re-run on adjusted columns)** (code-reviewer, M4g3b full spike read; user 2026-10-08):
+  1. `spikes/m4g3_movers_reference.py`: check the bootstrap size (`block["b"]` and the output's `b` against `B = 2000`), not take it from the file under check.
+  2. Same file: when `--check-output` and `--check-measurements` are both given, check the block's `power_at_f0` / `power_se` too (against the output JSON and the reference simulation); today the output's value overrides them.
+  3. Same file: check the block's `cross_check_f_hat`, the extra seeds' `k == i + 1` (seeds are paired by position), and that `cross_check_r` is absent when the reference has no cross value.
+  4. `spikes/m4g3_movers.py`: move the Koné illustration out of `compute()` into `main()` (a report-only check must not block the measurement writer).
+  5. `spikes/m4g3_movers.py`: fail on a null count column instead of letting NaN drop a baseline candidate silently.
+  6. `spikes/m4g3_movers_reference.py` `power0` (and check `m4g3_power.low_power`): define the R_m ≤ 0 case (power 0) instead of a math domain error.
 - **M4g3a mover-run follow-ups** (code-reviewer, M4g3a; user 2026-10-08): `spikes/m4g3_movers.py` filters the match parquet by competition only; add a `season_id` filter (today a second season would make `replace_strict` raise, so it is safe but implicit).
 - **M4g3a power follow-ups** (code-reviewer, M4g3a checkpoint fix delta; user 2026-10-08: no more fix rounds before the real run):
   - `spikes/m4g3_power.py` `main()` builds the grid's low-power labels from the grid cells (their own seed keys), not through `low_power`; the JSON labels are a reference, and a real metric's label comes from `low_power` (≈ 1 pp Monte Carlo difference). Call `low_power` in `main()` or say so in the JSON.

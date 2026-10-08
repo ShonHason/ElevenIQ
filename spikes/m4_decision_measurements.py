@@ -34,6 +34,7 @@ import numpy as np
 import polars as pl
 
 import m4g2_multisplit as ms  # sibling spike: the multi-split engine (plan 005 M4g2)
+import m4g3_movers as mv     # sibling spike: the mover engine (plan 005 M4g3b)
 
 # Written out instead of imported from eleveniq (see the module docstring).
 LONG_PASS_THRESHOLD_UNITS = 30.0  # ADR 002 §19
@@ -1154,7 +1155,7 @@ if ARGS.write_json:
                         "ref_n_local": {str(c): lg.filter(pl.col("competition_id") == c).height
                                         for c in POOL_LEAGUES}}
     out = {
-        "schema_version": 1,
+        "schema_version": 2,           # 2: the movers block (plan 005 M4g3b)
         "generated_by": "spikes/m4_decision_measurements.py --write-json",
         "provenance": {
             "source": SOURCE, "season_id": SEASON,
@@ -1187,6 +1188,10 @@ if ARGS.write_json:
                         "mc_se_target": ms.MC_SE_TARGET, "reached_cap": ms_res.reached_cap,
                         "judged_cells_above_target": sorted([c[1], c[2]] for c, _ in ms_over)},
     }
+    # Movers (plan 005 M4g3b): the engine reads min_attempts and r_full from the values written
+    # above (rounded as stored), not from the committed file this run replaces.
+    print("\nmovers (plan 005 M4g3b): primary stream + extra seeds …", flush=True)
+    out["movers"] = mv.movers_block(mv.compute(meas=round_floats(out), verbose=False))
     ARGS.write_json.parent.mkdir(parents=True, exist_ok=True)
     with ARGS.write_json.open("w") as f:
         json.dump(round_floats(out), f, indent=1, sort_keys=True, allow_nan=False, ensure_ascii=False)

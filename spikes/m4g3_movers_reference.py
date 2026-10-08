@@ -11,8 +11,17 @@ spikes/m4g3_movers.py and spikes/m4g3_power.py:
 - low power: its own simulation (different stream, 1,000 datasets); a label must agree unless
   either estimate is within 4 combined SEs of 0.8, and the powers within 4 combined SEs.
 
+- the five extra seeds (plan 005 M4g3b: 'm4g3_draws#k' / 'm4g3_boot#k', k = 1–5), in the
+  output's extra_seeds and in the measurement file's movers block;
+- --write-expected (plan 005 M4g3b, before any registry code): derives each metric's verdict and
+  flags with its own reading of the ADR 004 §13.7 rule from the checked movers block, asserts that
+  the new measurement file changes no section other than movers, and writes
+  spikes/expected_m4g3_flips.json (no cell changes; one mover verdict per metric).
+
   .venv/bin/python spikes/m4g3_movers_reference.py --check-output data/interim/m4g3_movers.json \
-      --registry data/interim/m4g3_registry.json
+      --registry data/interim/m4g3b_snapshot/registry.json
+  .venv/bin/python spikes/m4g3_movers_reference.py --check-measurements NEW_MEASUREMENTS.json \
+      --registry data/interim/m4g3b_snapshot/registry.json --write-expected
 
 Fails on any mismatch beyond TOL. No eleveniq imports (tests/test_spikes_independent.py).
 """
@@ -41,6 +50,8 @@ SEED, DRAWS, B, MIN_N, THRESHOLD, LOW = 20261008, 200, 2000, 12, 0.5, 0.8
 FLOOR, GATE, EPS = 450.0, 900.0, 1e-6
 TOL = 1e-9
 POWER_DATASETS, POWER_SEED = 1000, 7
+EXTRA = 5                       # plan 005 M4g3b: extra seeds k = 1..5
+EXPECTED = Path(__file__).resolve().parent / "expected_m4g3_flips.json"
 DEN = {  # ratio / share: (numerator, den+, den−); stored value column = metric name
     "pass_completion_pct": ("passes_completed", ("passes_attempted",),
                             ("passes_unknown_outcome", "passes_injury_clearance")),
@@ -157,13 +168,26 @@ def close(a, b) -> bool:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    ap.add_argument("--check-output", type=Path, required=True)
-    ap.add_argument("--registry", type=Path, required=True)
+    ap.add_argument("--check-output", type=Path, help="spikes/m4g3_movers.py output JSON")
+    ap.add_argument("--check-measurements", type=Path,
+                    help="a measurement file whose movers block to check (plan 005 M4g3b)")
+    ap.add_argument("--registry", type=Path, required=True,
+                    help="registry snapshot taken BEFORE the measurement change")
+    ap.add_argument("--write-expected", action="store_true",
+                    help="write spikes/expected_m4g3_flips.json (needs --check-measurements)")
     args = ap.parse_args()
-    got = json.loads(args.check_output.read_text())
-    meas = json.loads(MEASUREMENTS.read_text())
+    if not (args.check_output or args.check_measurements):
+        fail("nothing to check: give --check-output and/or --check-measurements")
+    if args.write_expected and not args.check_measurements:
+        fail("--write-expected needs --check-measurements")
+    got = json.loads(args.check_output.read_text()) if args.check_output else None
+    block_file = json.loads(args.check_measurements.read_text()) if args.check_measurements else None
+    block = block_file["movers"] if block_file else None
+    # min_attempts and r_full from the file under check (its other sections must equal the
+    # committed ones for the expected flips: checked below), else the committed file
+    meas = block_file if block_file else json.loads(MEASUREMENTS.read_text())
     reg = json.loads(args.registry.read_text())
-    b = got["b"]
+    b = (got or block)["b"]
     errors: list[str] = []
 
     def chk(where: str, a, e) -> None:
@@ -175,8 +199,15 @@ def main() -> None:
         fail("registry snapshot: a group has no 'dna' list")
     metrics = sorted({m for g in GROUPS for m in reg["groups"][g]["dna"]}
                      | (set(DEN) - {"team_pass_share"}) | {"ball_recoveries_p90", "tackles_won_p90"})
-    if sorted(got["metrics"]) != metrics:
+    if got and sorted(got["metrics"]) != metrics:
         fail(f"metric set differs: {sorted(set(got['metrics']) ^ set(metrics))}")
+    if block and sorted(block["metric_list"]) != metrics:
+        fail(f"movers block metric list differs: {sorted(set(block['metric_list']) ^ set(metrics))}")
+    if block and (block["seed"] != SEED or block["draws"] != DRAWS or block.get("min_movers") != MIN_N
+                  or block["stream_keys"]["primary"] != ["m4g3_draws", "m4g3_boot"]
+                  or block["stream_keys"]["extra"] != [[f"m4g3_draws#{k}", f"m4g3_boot#{k}"]
+                                                       for k in range(1, EXTRA + 1)]):
+        fail("movers block seed / draws / min_movers / stream keys differ from the written spec")
 
     season = pl.read_parquet(SEASON_PARQUET).filter(pl.col("season_id") == SEASON)
     srows = season.to_dicts()                                # parquet row order
@@ -224,9 +255,11 @@ def main() -> None:
                 ms_ = by_key[(r["player_id"], r["team_id"], r["competition_id"])]
                 r["first"], r["last"] = ms_[0]["date"], ms_[-1]["date"]
             movers.append(sorted(big, key=lambda r: (r["first"], r["last"], r["team_id"])))
-    if len(got["movers"]) != len(movers):
+    if block and block["movers"] != len(movers):
+        fail(f"movers block: {block['movers']} movers != {len(movers)}")
+    if got and len(got["movers"]) != len(movers):
         fail(f"movers {len(got['movers'])} != {len(movers)}")
-    for i, (o, st) in enumerate(zip(got["movers"], movers)):
+    for i, (o, st) in enumerate(zip(got["movers"] if got else [], movers)):
         s1, s2 = st
         chk(f"mover {i} name", o["player"], s1["player_name"])
         chk(f"mover {i} to", o["to"], s2["team_name"])
@@ -304,9 +337,10 @@ def main() -> None:
             cl.append((r["competition_id"], h))
         cands.append(cl)
 
-    for metric in metrics:
-        o = got["metrics"][metric]
-        rng = stream("m4g3_draws", metric)
+    def ref_metric(metric: str, k: int) -> dict:
+        """One metric on stream k (0: primary; k ≥ 1: 'm4g3_draws#k' / 'm4g3_boot#k')."""
+        sfx = "" if k == 0 else f"#{k}"
+        rng = stream("m4g3_draws" + sfx, metric)
         d2, H1, H2, absa, absb, ba, bb, cross = [], [], [], [], [], [], [], []
         for st, cl in zip(movers, cands):
             grp = st[0]["position_group"]
@@ -345,41 +379,99 @@ def main() -> None:
                 rr = [(e / med) * rf / (1 + (e / med - 1) * rf) for e in ex]
                 if min(rr) > 0:
                     cross.append(math.sqrt(rr[0] * rr[1]))
-        n = len(d2)
-        chk(f"{metric} n", o["n"], n)
-        if n:
-            chk(f"{metric} mover_mean_abs_a", o["mover_mean_abs_a"], float(np.mean(absa)))
-            chk(f"{metric} mover_mean_abs_b", o["mover_mean_abs_b"], float(np.mean(absb)))
-            chk(f"{metric} baseline_mean_abs_a", o["baseline_mean_abs_a"], float(np.mean(ba)))
-            chk(f"{metric} baseline_mean_abs_b", o["baseline_mean_abs_b"], float(np.mean(bb)))
-        if n < MIN_N:
-            chk(f"{metric} verdict", o["verdict"], "untestable")
-            continue
-        res = rule(np.array(d2), np.array(H1), np.array(H2), stream("m4g3_boot", metric), b)
-        for k in ("r_m", "f_hat", "s2_rms", "verdict", "point_pass", "boot_inf"):
-            chk(f"{metric} {k}", o[k], res[k])
-        chk(f"{metric} ci_lo", o["ci"][0], res["ci"][0])
-        chk(f"{metric} ci_hi", o["ci"][1], res["ci"][1])
-        if cross:
-            cc = float(np.mean(cross))
-            chk(f"{metric} cross r", o["cross_check"]["r_step_down"], cc)
-            chk(f"{metric} cross f", o["cross_check"]["f_hat_with_step_down"],
-                (res["s2_rms"] - 1) * (1 - cc) / cc)
-        # low power: independent simulation, tolerance
-        lp = o["low_power"]
-        mine = power0(n, res["r_m"], np.random.default_rng([POWER_SEED, zlib.crc32(metric.encode())]))
-        se = math.sqrt(lp["se"] ** 2 + mine * (1 - mine) / POWER_DATASETS)
-        if abs(lp["power_at_f0"] - mine) > 4 * max(se, 1e-3):
-            errors.append(f"{metric} power {lp['power_at_f0']:.3f} vs reference {mine:.3f}")
-        elif (mine < LOW) != lp["underpowered"] and abs(mine - LOW) > 4 * max(se, 1e-3):
-            errors.append(f"{metric} underpowered label differs (reference power {mine:.3f})")
-        print(f"{metric:32s} ok  verdict={res['verdict']:12s} power {lp['power_at_f0']:.3f} / ref {mine:.3f}",
-              flush=True)
+        out = {"n": len(d2), "absa": absa, "absb": absb, "ba": ba, "bb": bb, "res": None,
+               "cross": float(np.mean(cross)) if cross else None}
+        if len(d2) >= MIN_N:
+            out["res"] = rule(np.array(d2), np.array(H1), np.array(H2), stream("m4g3_boot" + sfx, metric), b)
+        return out
 
-    if len(got["kone"]) != 1 or got["kone"][0]["player"] != "Lamine Koné":
+    def num(x) -> float:
+        return {"+inf": math.inf, "-inf": -math.inf}.get(x, x) if isinstance(x, str) else x
+
+    def verdict_of(n: int, lo: float | None, hi: float | None) -> str:
+        if n < MIN_N:
+            return "untestable"
+        return "PASS" if hi < THRESHOLD else "FAIL" if lo > THRESHOLD else "inconclusive"
+
+    expected: dict[str, dict] = {}
+    for metric in metrics:
+        r0 = ref_metric(metric, 0)
+        n, res = r0["n"], r0["res"]
+        extras = [ref_metric(metric, k) for k in range(1, EXTRA + 1)]
+        if got:
+            o = got["metrics"][metric]
+            chk(f"{metric} n", o["n"], n)
+            if n:
+                chk(f"{metric} mover_mean_abs_a", o["mover_mean_abs_a"], float(np.mean(r0["absa"])))
+                chk(f"{metric} mover_mean_abs_b", o["mover_mean_abs_b"], float(np.mean(r0["absb"])))
+                chk(f"{metric} baseline_mean_abs_a", o["baseline_mean_abs_a"], float(np.mean(r0["ba"])))
+                chk(f"{metric} baseline_mean_abs_b", o["baseline_mean_abs_b"], float(np.mean(r0["bb"])))
+            if res is None:
+                chk(f"{metric} verdict", o["verdict"], "untestable")
+            else:
+                for key in ("r_m", "f_hat", "s2_rms", "verdict", "point_pass", "boot_inf"):
+                    chk(f"{metric} {key}", o[key], res[key])
+                chk(f"{metric} ci_lo", o["ci"][0], res["ci"][0])
+                chk(f"{metric} ci_hi", o["ci"][1], res["ci"][1])
+                if r0["cross"] is not None:
+                    chk(f"{metric} cross r", o["cross_check"]["r_step_down"], r0["cross"])
+                    chk(f"{metric} cross f", o["cross_check"]["f_hat_with_step_down"],
+                        (res["s2_rms"] - 1) * (1 - r0["cross"]) / r0["cross"])
+            for e, x in zip(got.get("extra_seeds", {}).get(metric, []), extras):
+                chk(f"{metric} seed {e['k']} n", e["n"], x["n"])
+                chk(f"{metric} seed {e['k']} verdict", e["verdict"],
+                    x["res"]["verdict"] if x["res"] else "untestable")
+                if x["res"]:
+                    chk(f"{metric} seed {e['k']} ci_lo", e["ci"][0], x["res"]["ci"][0])
+                    chk(f"{metric} seed {e['k']} ci_hi", e["ci"][1], x["res"]["ci"][1])
+        power = se_out = None
+        if block:
+            bm = block["metrics"][metric]
+            chk(f"block {metric} n", bm["n"], n)
+            if res is not None:
+                for key, want in (("f_hat", res["f_hat"]), ("ci_lo", res["ci"][0]),
+                                  ("ci_hi", res["ci"][1]), ("r_m", res["r_m"]),
+                                  ("s2_rms", res["s2_rms"]), ("boot_inf", res["boot_inf"])):
+                    chk(f"block {metric} {key}", num(bm[key]), want)
+                power, se_out = bm["power_at_f0"], bm["power_se"]
+            elif any(key in bm for key in ("f_hat", "power_at_f0")):
+                errors.append(f"block {metric}: untestable but carries f_hat / power")
+            if r0["cross"] is not None:
+                chk(f"block {metric} cross_check_r", bm["cross_check_r"], r0["cross"])
+            if len(bm["extra_seeds"]) != EXTRA:
+                errors.append(f"block {metric}: {len(bm['extra_seeds'])} extra seeds, expected {EXTRA}")
+            for e, x in zip(bm["extra_seeds"], extras):
+                chk(f"block {metric} seed {e['k']} n", e["n"], x["n"])
+                if x["res"]:
+                    chk(f"block {metric} seed {e['k']} ci_lo", num(e["ci_lo"]), x["res"]["ci"][0])
+                    chk(f"block {metric} seed {e['k']} ci_hi", num(e["ci_hi"]), x["res"]["ci"][1])
+        if got and res is not None:
+            power, se_out = got["metrics"][metric]["low_power"]["power_at_f0"], \
+                got["metrics"][metric]["low_power"]["se"]
+        # low power: independent simulation, tolerance
+        if res is not None:
+            mine = power0(n, res["r_m"], np.random.default_rng([POWER_SEED, zlib.crc32(metric.encode())]))
+            se = math.sqrt(se_out ** 2 + mine * (1 - mine) / POWER_DATASETS)
+            if abs(power - mine) > 4 * max(se, 1e-3):
+                errors.append(f"{metric} power {power:.3f} vs reference {mine:.3f}")
+            elif (mine < LOW) != (power < LOW) and abs(mine - LOW) > 4 * max(se, 1e-3):
+                errors.append(f"{metric} underpowered label differs (reference power {mine:.3f})")
+        # expected verdict and flags (ADR 004 §13.7 rule, derived here; plan 005 M4g3b)
+        v0 = verdict_of(n, *(res["ci"] if res else (None, None)))
+        vk = [verdict_of(x["n"], *(x["res"]["ci"] if x["res"] else (None, None))) for x in extras]
+        expected[metric] = {
+            "verdict": v0, "n": n,
+            "underpowered": None if res is None else power < LOW,
+            "borderline_seed": None if res is None else any(v != v0 for v in vk),
+            "below_model_range": None if res is None else (v0 == "PASS" and res["ci"][1] < 0),
+            "extra_seed_verdicts": vk,
+        }
+        print(f"{metric:32s} ok  {v0:12s} seeds {vk}", flush=True)
+
+    kone = got["kone"][0] if got else None
+    if got and (len(got["kone"]) != 1 or kone["player"] != "Lamine Koné"):
         fail(f"kone block: {[k['player'] for k in got['kone']]}")
-    kone = got["kone"][0]
-    for st in movers:
+    for st in movers if got else []:
         if st[0]["player_name"] == kone["player"]:
             for o, s in zip(kone["stints"], st):
                 v = s["long_pass_completion_pct"]
@@ -390,7 +482,31 @@ def main() -> None:
     if errors:
         print("\n".join(errors[:50]), file=sys.stderr)
         fail(f"{len(errors)} mismatches")
-    print(f"OK: {len(metrics)} metrics, {len(movers)} movers, every field within {TOL:g}")
+    print(f"OK: {len(metrics)} metrics, {len(movers)} movers, {EXTRA} extra seeds, every field within {TOL:g}")
+    if args.write_expected:
+        committed = json.loads(MEASUREMENTS.read_text())
+        others = sorted(k for k in set(committed) | set(block_file)
+                        if k not in ("movers", "schema_version", "generated_by")
+                        and committed.get(k) != block_file.get(k))
+        if others:
+            fail(f"the new measurement file changes sections other than movers: {others}")
+        tally: dict[str, int] = defaultdict(int)
+        for e in expected.values():
+            tally[e["verdict"]] += 1
+        EXPECTED.write_text(json.dumps({
+            "description": "M4g3b expected registry changes (plan 005 M4g3b), written by "
+                           "spikes/m4g3_movers_reference.py --write-expected BEFORE any registry code: "
+                           "no cell changes; one mover verdict per metric with its flags.",
+            "snapshot_registry_version": reg.get("registry_version"),
+            "status_changes": [], "note_changes": [], "reason_changes": [],
+            "rules": {"threshold": THRESHOLD, "min_movers": MIN_N, "low_power": LOW,
+                      "extra_seeds": EXTRA},
+            "summary": {**dict(sorted(tally.items())),
+                        "underpowered": sum(bool(e["underpowered"]) for e in expected.values()),
+                        "borderline_seed": sorted(m for m, e in expected.items() if e["borderline_seed"]),
+                        "below_model_range": sorted(m for m, e in expected.items() if e["below_model_range"])},
+            "mover_verdicts": expected}, indent=1, ensure_ascii=False) + "\n")
+        print(f"wrote {EXPECTED}")
 
 
 if __name__ == "__main__":

@@ -218,6 +218,14 @@ BOUNDARY_MARGIN: float = 0.02
 # error of ≈ 29/√80 ≈ 3.2 pts, so a margin under 3 pts is within sampling noise.
 D9_BOUNDARY_MARGIN_PTS: float = 3.0
 
+# ADR 004 §13.1, §13.7 (plan 005 M4g3b): the mover rule. A mover verdict is PASS iff the paired
+# bootstrap CI upper bound of f̂ < MOVER_F_THRESHOLD, FAIL iff its lower bound > it, otherwise
+# inconclusive; fewer than MOVER_MIN_N movers is untestable. P(PASS | f = 0) < MOVER_LOW_POWER
+# labels a verdict "underpowered at n". Report only: no status depends on a verdict (M4g3b).
+MOVER_F_THRESHOLD: float = 0.5
+MOVER_MIN_N: int = 12
+MOVER_LOW_POWER: float = 0.8
+
 # ADR 004 §12 (user, 2026-10-06): the DNA vector uses one percentile basis, league-local,
 # for every row. 29 of 101 DNA cells have no global percentile (D9) and 51 are within
 # noise of flipping, so a global or per-cell basis would not be stable.

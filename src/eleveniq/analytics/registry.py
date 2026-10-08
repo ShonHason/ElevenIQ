@@ -25,6 +25,10 @@ Steps per metric x group (ADR 004 §10.3), first match wins; overrides last:
   6. team_pass_share (D12b, DM-CM and CB only);
   7. otherwise DNA, with a lower-reliability note when r < LOW_RELIABILITY_BELOW.
 
+Mover verdicts (ADR 004 §13.7, plan 005 M4g3b): one per metric, pooled over the groups, derived
+from the measurements' movers block with the Rules mover thresholds. Report only: no status,
+note or reason depends on them (Derivation.movers, mover()).
+
 M4d (percentiles), M4f (DNA) and M6 (rarity) read REGISTRY through cell(),
 dna_metrics(), display_metrics() and signature_traits(), and stamp REGISTRY_VERSION.
 Everything here is computed within MEASUREMENT_SOURCE only (CLAUDE.md).
@@ -33,7 +37,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, replace
+import math
+from dataclasses import asdict, dataclass, field, replace
 from importlib import resources
 from typing import Any, Literal, Mapping, Sequence
 
@@ -162,6 +167,9 @@ class Rules:
     signature_min_count_floor: int = config.SIGNATURE_TRAIT_MIN_COUNT_FLOOR
     boundary_margin: float = config.BOUNDARY_MARGIN
     d9_boundary_margin_pts: float = config.D9_BOUNDARY_MARGIN_PTS
+    mover_f_threshold: float = config.MOVER_F_THRESHOLD
+    mover_min_n: int = config.MOVER_MIN_N
+    mover_low_power: float = config.MOVER_LOW_POWER
 
 
 # ── Derived table ───────────────────────────────────────────────────────────────
@@ -215,6 +223,29 @@ class MajorityAdmitted:
     proxies: tuple[MajorityProxy, ...]
 
 
+MoverVerdictName = Literal["PASS", "FAIL", "inconclusive", "untestable"]
+
+
+@dataclass(frozen=True)
+class MoverVerdict:
+    """A metric's mover verdict (ADR 004 §13.7), pooled over the groups. Report only.
+
+    Untestable (n < Rules.mover_min_n): f_hat, ci, r_m, power and the three flags are None.
+    f_hat and the CI bounds may be +inf (R_m ≤ 0: no stable between-player signal)."""
+    column: str
+    verdict: MoverVerdictName
+    n: int
+    f_hat: float | None = None
+    ci: tuple[float, float] | None = None
+    r_m: float | None = None
+    power_at_f0: float | None = None
+    power_se: float | None = None
+    underpowered: bool | None = None          # "underpowered at n": P(PASS | f = 0) < mover_low_power
+    borderline_seed: bool | None = None       # "borderline (seed-sensitive)": an extra seed's verdict differs
+    below_model_range: bool | None = None     # "PASS (below model range)": PASS with CI upper bound < 0
+    extra_seed_verdicts: tuple[MoverVerdictName, ...] = ()
+
+
 @dataclass(frozen=True)
 class Derivation:
     cells: Mapping[tuple[str, str], Cell]
@@ -222,12 +253,19 @@ class Derivation:
     source: str
     version: str
     majority_admitted: tuple[MajorityAdmitted, ...] = ()
+    movers: Mapping[str, MoverVerdict] = field(default_factory=dict)
 
     def cell(self, column: str, group: str) -> Cell:
         try:
             return self.cells[(column, group)]
         except KeyError:
             raise KeyError(f"no registry cell for {column} × {group}") from None
+
+    def mover(self, column: str) -> MoverVerdict:
+        try:
+            return self.movers[column]
+        except KeyError:
+            raise KeyError(f"no mover verdict for {column}") from None
 
     def _with(self, group: str, status: str) -> tuple[str, ...]:
         if group not in GROUPS:
@@ -774,8 +812,108 @@ def _measurement(meas: Mapping[str, Any], spec: MetricSpec, grp: str) -> Mapping
     return meas[section].get(spec.column, {}).get("groups", {}).get(grp)
 
 
+def _mover_key(record: Mapping[str, Any], key: str, where: str) -> Any:
+    """record[key], or a RegistryRuleError naming where the key is missing."""
+    if not isinstance(record, Mapping) or key not in record:
+        raise RegistryRuleError(f"movers {where}: missing {key!r}")
+    return record[key]
+
+
+def _mover_number(record: Mapping[str, Any], key: str, where: str, inf_ok: bool) -> float:
+    """A movers-block number. "+inf" is allowed where inf_ok (f̂ and its CI bounds)."""
+    x = _mover_key(record, key, where)
+    if inf_ok and x == "+inf":
+        return math.inf
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x):
+        raise RegistryRuleError(f"movers {where}.{key}: {x!r} is not a finite number")
+    return float(x)
+
+
+def _mover_verdict(lo: float, hi: float, rules: Rules) -> MoverVerdictName:
+    """A testable metric's verdict from its CI bounds (ADR 004 §13.7)."""
+    if hi < rules.mover_f_threshold:
+        return "PASS"
+    if lo > rules.mover_f_threshold:
+        return "FAIL"
+    return "inconclusive"
+
+
+def _movers(meas: Mapping[str, Any], specs: Sequence[MetricSpec], rules: Rules,
+            cells: Mapping[tuple[str, str], Cell]) -> dict[str, MoverVerdict]:
+    """ADR 004 §13.7 / plan 005 M4g3b: the verdict and flags of every metric in the movers
+    block, from its numbers and the Rules thresholds. Raises RegistryRuleError on a missing
+    key, a block written with another minimum n than Rules.mover_min_n, a block that does not
+    cover its own metric list, a metric without a spec, a DNA metric without a verdict, or a
+    non-finite number."""
+    block = meas.get("movers")
+    if not isinstance(block, Mapping):
+        raise RegistryRuleError("measurements must hold the movers block (plan 005 M4g3b)")
+    min_n = _mover_key(block, "min_movers", "block")
+    if min_n != rules.mover_min_n:
+        raise RegistryRuleError(f"movers block written with min_movers {min_n!r}, but "
+                                f"Rules.mover_min_n is {rules.mover_min_n}: re-run the measurements")
+    listed = list(_mover_key(block, "metric_list", "block"))
+    measured = _mover_key(block, "metrics", "block")
+    if sorted(listed) != sorted(measured):
+        raise RegistryRuleError(f"movers block: metric_list and metrics differ: "
+                                f"{sorted(set(listed) ^ set(measured))}")
+    known = {s.column for s in specs}
+    unknown = sorted(set(listed) - known)
+    if unknown:
+        raise RegistryRuleError(f"movers block: {unknown} have no registry spec")
+    dna = sorted({col for (col, _), c in cells.items() if c.status == "dna"} - set(listed))
+    if dna:
+        raise RegistryRuleError(f"movers block: DNA metrics without a verdict: {dna}")
+    n_extra = len(_mover_key(_mover_key(block, "stream_keys", "block"), "extra", "block.stream_keys"))
+    out: dict[str, MoverVerdict] = {}
+    for col in sorted(listed):
+        m = measured[col]
+        n = _mover_key(m, "n", col)
+        if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+            raise RegistryRuleError(f"movers {col}.n: {n!r} is not a count")
+        seeds = _mover_key(m, "extra_seeds", col)
+        if len(seeds) != n_extra or any(_mover_key(e, "n", f"{col}.extra_seeds") != n for e in seeds):
+            raise RegistryRuleError(f"movers {col}: {len(seeds)} extra seeds (expected {n_extra}), "
+                                    f"each with the primary n {n}")
+        if n < rules.mover_min_n:
+            if "f_hat" in m or any("ci_hi" in e for e in seeds):
+                raise RegistryRuleError(f"movers {col}: untestable (n {n}) but carries f̂")
+            out[col] = MoverVerdict(col, "untestable", n,
+                                    extra_seed_verdicts=("untestable",) * n_extra)
+            continue
+        lo = _mover_number(m, "ci_lo", col, True)
+        hi = _mover_number(m, "ci_hi", col, True)
+        verdict = _mover_verdict(lo, hi, rules)
+        extra = tuple(_mover_verdict(_mover_number(e, "ci_lo", f"{col}.extra_seeds[{e.get('k')}]", True),
+                                     _mover_number(e, "ci_hi", f"{col}.extra_seeds[{e.get('k')}]", True),
+                                     rules)
+                      for e in seeds)
+        power = _mover_number(m, "power_at_f0", col, False)
+        out[col] = MoverVerdict(
+            col, verdict, n,
+            f_hat=_mover_number(m, "f_hat", col, True), ci=(lo, hi),
+            r_m=_mover_number(m, "r_m", col, False),
+            power_at_f0=power, power_se=_mover_number(m, "power_se", col, False),
+            underpowered=power < rules.mover_low_power,
+            borderline_seed=any(v != verdict for v in extra),
+            below_model_range=verdict == "PASS" and hi < 0,
+            extra_seed_verdicts=extra)
+    return out
+
+
+def _inf_as_text(x: Any) -> Any:
+    """+inf / -inf as "+inf" / "-inf", the movers block's spelling (also in tools/registry_snapshot)."""
+    if isinstance(x, float) and math.isinf(x):
+        return "+inf" if x > 0 else "-inf"
+    if isinstance(x, (list, tuple)):
+        return [_inf_as_text(v) for v in x]
+    if isinstance(x, dict):
+        return {k: _inf_as_text(v) for k, v in x.items()}
+    return x
+
+
 def _version(cells: Mapping[tuple[str, str], Cell], meas: Mapping[str, Any], rules: Rules,
-             specs: Sequence[MetricSpec]) -> str:
+             specs: Sequence[MetricSpec], movers: Mapping[str, MoverVerdict]) -> str:
     """sha256 of the measurements, the rules, every spec field and the resolved cells. The
     spike rounds every stored float to 9 decimals, so reruns on the same data write identical
     bytes and the version changes only when a measurement, a rule, a spec (e.g. a direction or
@@ -785,6 +923,7 @@ def _version(cells: Mapping[tuple[str, str], Cell], meas: Mapping[str, Any], rul
         "rules": asdict(rules),
         "specs": [asdict(s) for s in sorted(specs, key=lambda s: s.column)],
         "cells": [asdict(cells[k]) for k in sorted(cells)],
+        "movers": [_inf_as_text(asdict(movers[c])) for c in sorted(movers)],
     }
     blob = json.dumps(canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -885,8 +1024,10 @@ def derive(specs: Sequence[MetricSpec] = SPECS,
     admitted = tuple(sorted((a for a in judge.majority_admitted
                              if cells[(a.column, a.group)].status == "dna"),
                             key=lambda a: (GROUPS.index(a.group), a.column)))
+    movers = _movers(meas, specs, rules, cells)
     return Derivation(cells=cells, boundary=resolved, source=source,
-                      version=_version(cells, meas, rules, specs), majority_admitted=admitted)
+                      version=_version(cells, meas, rules, specs, movers),
+                      majority_admitted=admitted, movers=movers)
 
 
 # ── Resolved at import ──────────────────────────────────────────────────────────

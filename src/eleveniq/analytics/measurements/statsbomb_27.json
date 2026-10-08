@@ -15082,6 +15082,1714 @@
    }
   }
  },
+ "movers": {
+  "b": 2000,
+  "draws": 200,
+  "metric_list": [
+   "aerial_win_pct",
+   "aerials_lost_p90",
+   "aerials_won_p90",
+   "ball_recoveries_p90",
+   "blocks_p90",
+   "box_entries_carry_p90",
+   "box_entries_pass_p90",
+   "clearances_p90",
+   "cross_completion_pct",
+   "defensive_duel_success_pct",
+   "dribble_success_pct",
+   "dribbled_past_p90",
+   "dribbles_attempted_p90",
+   "final_third_entries_carry_p90",
+   "final_third_entries_pass_p90",
+   "fouls_committed_p90",
+   "fouls_won_p90",
+   "interceptions_p90",
+   "long_pass_completion_pct",
+   "long_passes_attempted_p90",
+   "np_shots_on_target_p90",
+   "np_shots_p90",
+   "np_xg_p90",
+   "np_xg_per_shot",
+   "op_key_passes_p90",
+   "op_xg_assisted_p90",
+   "pass_completion_pct",
+   "pressures_p90",
+   "progressive_carries_p90",
+   "progressive_passes_p90",
+   "tackle_success_pct",
+   "tackles_attempted_p90",
+   "tackles_won_p90",
+   "team_pass_share"
+  ],
+  "metrics": {
+   "aerial_win_pct": {
+    "cross_check_r": 0.744171767,
+    "excluded": [
+     "Jonjo Shelvey",
+     "Milan Biševac",
+     "Wahbi Khazri",
+     "Nordin Amrabat",
+     "Jonathan Martins-Pereira",
+     "Gabriel Moisés Antunes da Silva",
+     "Emil Hallfreðsson",
+     "Stephan El Shaarawy",
+     "Ervin Zukanović",
+     "Jimmy Cabot",
+     "Diego Perotti",
+     "Luca Rigoni",
+     "Steven Naismith",
+     "Lamine Koné",
+     "Augusto Matías Fernández",
+     "Abdelhamid El Kaoutari",
+     "Mario Suárez Mata",
+     "Mauro Matías Zárate",
+     "Luca Marrone",
+     "Modibo Diakité"
+    ],
+    "extra_seeds": [
+     {
+      "k": 1,
+      "n": 4
+     },
+     {
+      "k": 2,
+      "n": 4
+     },
+     {
+      "k": 3,
+      "n": 4
+     },
+     {
+      "k": 4,
+      "n": 4
+     },
+     {
+      "k": 5,
+      "n": 4
+     }
+    ],
+    "kind": "ratio",
+    "n": 4
+   },
+   "aerials_lost_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.579975732,
+    "ci_lo": -0.364831086,
+    "cross_check_f_hat": 0.048673466,
+    "cross_check_r": 0.608839196,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.55873352,
+      "ci_lo": -0.330081733,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.667546749,
+      "ci_lo": -0.299267744,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.579562407,
+      "ci_lo": -0.359936088,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.52526203,
+      "ci_lo": -0.38716496,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.579895626,
+      "ci_lo": -0.323241746,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.066672449,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.542,
+    "power_se": 0.011140826,
+    "r_m": 0.531901029,
+    "s2_rms": 1.075759928
+   },
+   "aerials_won_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.175639445,
+    "ci_lo": -0.166675817,
+    "cross_check_f_hat": -0.004204342,
+    "cross_check_r": 0.77774265,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.171444533,
+      "ci_lo": -0.181438236,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.164899435,
+      "ci_lo": -0.182235521,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.172474664,
+      "ci_lo": -0.154633929,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.182486358,
+      "ci_lo": -0.185559827,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.171604175,
+      "ci_lo": -0.178307318,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -0.004476481,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.974,
+    "power_se": 0.00355837,
+    "r_m": 0.766712533,
+    "s2_rms": 0.985287792
+   },
+   "ball_recoveries_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.02601428,
+    "ci_lo": -0.205440122,
+    "cross_check_f_hat": 0.324286608,
+    "cross_check_r": 0.578514255,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.911045993,
+      "ci_lo": -0.156980212,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.922813451,
+      "ci_lo": -0.194058297,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.004642882,
+      "ci_lo": -0.223885612,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.928198552,
+      "ci_lo": -0.212151352,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.918835488,
+      "ci_lo": -0.211307658,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.30825262,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.639,
+    "power_se": 0.010739623,
+    "r_m": 0.590827026,
+    "s2_rms": 1.445102659
+   },
+   "blocks_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.289230316,
+    "ci_lo": -0.404864706,
+    "cross_check_f_hat": 0.410376586,
+    "cross_check_r": 0.400992153,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.304748761,
+      "ci_lo": -0.483030735,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.409945896,
+      "ci_lo": -0.512491197,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.290853241,
+      "ci_lo": -0.447404108,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.354013632,
+      "ci_lo": -0.390409659,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.436716945,
+      "ci_lo": -0.576683571,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.389796962,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.355,
+    "power_se": 0.010699883,
+    "r_m": 0.41341065,
+    "s2_rms": 1.274717255
+   },
+   "box_entries_carry_p90": {
+    "boot_inf": 0,
+    "ci_hi": 3.312242216,
+    "ci_lo": -0.378608035,
+    "cross_check_f_hat": 0.722099619,
+    "cross_check_r": 0.573141665,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 2.59169185,
+      "ci_lo": -0.295326609,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.480295381,
+      "ci_lo": -0.415307203,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.018353035,
+      "ci_lo": -0.240129591,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.679673457,
+      "ci_lo": -0.213156087,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.701553219,
+      "ci_lo": -0.289191743,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.988989575,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.4635,
+    "power_se": 0.01115051,
+    "r_m": 0.495040175,
+    "s2_rms": 1.969561433
+   },
+   "box_entries_pass_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.205888741,
+    "ci_lo": -0.334925298,
+    "cross_check_f_hat": 0.186004383,
+    "cross_check_r": 0.613182779,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.175557658,
+      "ci_lo": -0.385117908,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.199525685,
+      "ci_lo": -0.324020014,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.031004762,
+      "ci_lo": -0.417123028,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.012601602,
+      "ci_lo": -0.37922409,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.22424006,
+      "ci_lo": -0.383450238,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.190424512,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.7055,
+    "power_se": 0.010192393,
+    "r_m": 0.607597645,
+    "s2_rms": 1.294854206
+   },
+   "clearances_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.033085567,
+    "ci_lo": -0.118731541,
+    "cross_check_f_hat": 0.394414904,
+    "cross_check_r": 0.572933239,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.081485321,
+      "ci_lo": -0.078996935,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.063872154,
+      "ci_lo": -0.060137789,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.041638493,
+      "ci_lo": -0.062792132,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.106409878,
+      "ci_lo": -0.044964857,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.022243627,
+      "ci_lo": -0.111736176,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.424154813,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.5645,
+    "power_se": 0.011086924,
+    "r_m": 0.555059252,
+    "s2_rms": 1.529128999
+   },
+   "cross_completion_pct": {
+    "excluded": [
+     "Jonjo Shelvey",
+     "Milan Biševac (no min_attempts for CB)",
+     "Wahbi Khazri",
+     "Nordin Amrabat",
+     "Jonathan Martins-Pereira",
+     "Gabriel Moisés Antunes da Silva",
+     "Emil Hallfreðsson",
+     "Alberto Paloschi",
+     "Stephan El Shaarawy",
+     "Fabio Quagliarella",
+     "Ervin Zukanović (no min_attempts for CB)",
+     "Jimmy Cabot",
+     "Diego Perotti",
+     "Luca Rigoni",
+     "Marco Borriello",
+     "Steven Naismith",
+     "Steven Fletcher",
+     "Lamine Koné (no min_attempts for CB)",
+     "Augusto Matías Fernández",
+     "Abdelhamid El Kaoutari (no min_attempts for CB)",
+     "Mario Suárez Mata",
+     "Mauro Matías Zárate",
+     "Luca Marrone",
+     "Modibo Diakité (no min_attempts for CB)"
+    ],
+    "extra_seeds": [
+     {
+      "k": 1,
+      "n": 0
+     },
+     {
+      "k": 2,
+      "n": 0
+     },
+     {
+      "k": 3,
+      "n": 0
+     },
+     {
+      "k": 4,
+      "n": 0
+     },
+     {
+      "k": 5,
+      "n": 0
+     }
+    ],
+    "kind": "ratio",
+    "n": 0
+   },
+   "defensive_duel_success_pct": {
+    "excluded": [
+     "Jonjo Shelvey",
+     "Milan Biševac",
+     "Wahbi Khazri",
+     "Nordin Amrabat",
+     "Jonathan Martins-Pereira",
+     "Gabriel Moisés Antunes da Silva",
+     "Emil Hallfreðsson",
+     "Alberto Paloschi",
+     "Stephan El Shaarawy",
+     "Fabio Quagliarella",
+     "Ervin Zukanović",
+     "Jimmy Cabot",
+     "Diego Perotti",
+     "Luca Rigoni",
+     "Marco Borriello",
+     "Steven Naismith",
+     "Steven Fletcher",
+     "Lamine Koné",
+     "Augusto Matías Fernández",
+     "Abdelhamid El Kaoutari",
+     "Mario Suárez Mata",
+     "Mauro Matías Zárate",
+     "Luca Marrone",
+     "Modibo Diakité"
+    ],
+    "extra_seeds": [
+     {
+      "k": 1,
+      "n": 0
+     },
+     {
+      "k": 2,
+      "n": 0
+     },
+     {
+      "k": 3,
+      "n": 0
+     },
+     {
+      "k": 4,
+      "n": 0
+     },
+     {
+      "k": 5,
+      "n": 0
+     }
+    ],
+    "kind": "ratio",
+    "n": 0
+   },
+   "dribble_success_pct": {
+    "excluded": [
+     "Jonjo Shelvey",
+     "Milan Biševac",
+     "Wahbi Khazri",
+     "Nordin Amrabat",
+     "Jonathan Martins-Pereira",
+     "Gabriel Moisés Antunes da Silva",
+     "Emil Hallfreðsson",
+     "Alberto Paloschi",
+     "Stephan El Shaarawy",
+     "Fabio Quagliarella",
+     "Ervin Zukanović",
+     "Jimmy Cabot",
+     "Diego Perotti",
+     "Luca Rigoni",
+     "Marco Borriello",
+     "Steven Naismith",
+     "Steven Fletcher",
+     "Lamine Koné",
+     "Augusto Matías Fernández",
+     "Abdelhamid El Kaoutari",
+     "Mario Suárez Mata",
+     "Mauro Matías Zárate",
+     "Luca Marrone",
+     "Modibo Diakité"
+    ],
+    "extra_seeds": [
+     {
+      "k": 1,
+      "n": 0
+     },
+     {
+      "k": 2,
+      "n": 0
+     },
+     {
+      "k": 3,
+      "n": 0
+     },
+     {
+      "k": 4,
+      "n": 0
+     },
+     {
+      "k": 5,
+      "n": 0
+     }
+    ],
+    "kind": "ratio",
+    "n": 0
+   },
+   "dribbled_past_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.403487333,
+    "ci_lo": -0.405738333,
+    "cross_check_f_hat": 0.387371686,
+    "cross_check_r": 0.495680352,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.356415564,
+      "ci_lo": -0.447655513,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.461699926,
+      "ci_lo": -0.368179949,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.392169011,
+      "ci_lo": -0.479475093,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.416618992,
+      "ci_lo": -0.438743692,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.317249398,
+      "ci_lo": -0.401999464,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.404804491,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.4445,
+    "power_se": 0.01111125,
+    "r_m": 0.484680153,
+    "s2_rms": 1.380735779
+   },
+   "dribbles_attempted_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.188460987,
+    "ci_lo": -0.401085696,
+    "cross_check_f_hat": -0.108821113,
+    "cross_check_r": 0.710842753,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.183860141,
+      "ci_lo": -0.398426316,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.180017628,
+      "ci_lo": -0.349558643,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.190253271,
+      "ci_lo": -0.338963222,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.203547543,
+      "ci_lo": -0.405425794,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.194780884,
+      "ci_lo": -0.394349381,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -0.121556094,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.8515,
+    "power_se": 0.007951344,
+    "r_m": 0.687575786,
+    "s2_rms": 0.732482238
+   },
+   "final_third_entries_carry_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.197359728,
+    "ci_lo": -0.204491391,
+    "cross_check_f_hat": -0.023749438,
+    "cross_check_r": 0.703384707,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.210420369,
+      "ci_lo": -0.217695546,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.183448409,
+      "ci_lo": -0.223915641,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.185285465,
+      "ci_lo": -0.207827488,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.182259055,
+      "ci_lo": -0.237711483,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.185349135,
+      "ci_lo": -0.247041599,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -0.023773727,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.8895,
+    "power_se": 0.007010341,
+    "r_m": 0.703171399,
+    "s2_rms": 0.943681287
+   },
+   "final_third_entries_pass_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.842474028,
+    "ci_lo": -0.184618218,
+    "cross_check_f_hat": 0.25624283,
+    "cross_check_r": 0.719980899,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.874762457,
+      "ci_lo": -0.195031354,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.823929122,
+      "ci_lo": -0.162114572,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.865641847,
+      "ci_lo": -0.170455116,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.876741395,
+      "ci_lo": -0.173655871,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.793797496,
+      "ci_lo": -0.208440334,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.272385306,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.904,
+    "power_se": 0.00658726,
+    "r_m": 0.707500376,
+    "s2_rms": 1.658847708
+   },
+   "fouls_committed_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.943108751,
+    "ci_lo": -0.475247255,
+    "cross_check_f_hat": 0.100488906,
+    "cross_check_r": 0.555645621,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.873764875,
+      "ci_lo": -0.425994465,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.903282919,
+      "ci_lo": -0.415444684,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.86269255,
+      "ci_lo": -0.429666219,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.840923115,
+      "ci_lo": -0.432294316,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.847075156,
+      "ci_lo": -0.425854596,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.121187183,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.497,
+    "power_se": 0.011180139,
+    "r_m": 0.509053845,
+    "s2_rms": 1.12565696
+   },
+   "fouls_won_p90": {
+    "boot_inf": 0,
+    "ci_hi": -0.032402005,
+    "ci_lo": -0.37584286,
+    "cross_check_f_hat": -0.208189381,
+    "cross_check_r": 0.632173967,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": -0.028051419,
+      "ci_lo": -0.394518558,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.046073848,
+      "ci_lo": -0.348069569,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.04556467,
+      "ci_lo": -0.361770073,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.051093675,
+      "ci_lo": -0.392801457,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.042894742,
+      "ci_lo": -0.388708031,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -0.199793355,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.7465,
+    "power_se": 0.009727223,
+    "r_m": 0.641692826,
+    "s2_rms": 0.642189798
+   },
+   "interceptions_p90": {
+    "boot_inf": 0,
+    "ci_hi": 2.067755946,
+    "ci_lo": -0.245793745,
+    "cross_check_f_hat": 0.607398955,
+    "cross_check_r": 0.401628746,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.853211066,
+      "ci_lo": -0.226643535,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.179198569,
+      "ci_lo": -0.30319369,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.396207411,
+      "ci_lo": -0.225606624,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.412348158,
+      "ci_lo": -0.277417492,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 2.310384817,
+      "ci_lo": -0.323335156,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.760422968,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.281,
+    "power_se": 0.010050846,
+    "r_m": 0.34901488,
+    "s2_rms": 1.407688168
+   },
+   "long_pass_completion_pct": {
+    "boot_inf": 0,
+    "ci_hi": 2.051202778,
+    "ci_lo": 0.058605429,
+    "cross_check_f_hat": 1.118890819,
+    "cross_check_r": 0.602525042,
+    "excluded": [
+     "Gabriel Moisés Antunes da Silva",
+     "Alberto Paloschi",
+     "Stephan El Shaarawy",
+     "Fabio Quagliarella",
+     "Ervin Zukanović",
+     "Marco Borriello",
+     "Steven Naismith",
+     "Steven Fletcher",
+     "Mauro Matías Zárate"
+    ],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.91128717,
+      "ci_lo": 0.038331391,
+      "k": 1,
+      "n": 15
+     },
+     {
+      "ci_hi": 1.932421842,
+      "ci_lo": -0.000355809,
+      "k": 2,
+      "n": 15
+     },
+     {
+      "ci_hi": 1.923144436,
+      "ci_lo": 0.052780969,
+      "k": 3,
+      "n": 15
+     },
+     {
+      "ci_hi": 1.86624741,
+      "ci_lo": 0.063171021,
+      "k": 4,
+      "n": 15
+     },
+     {
+      "ci_hi": 2.000592959,
+      "ci_lo": 0.082116245,
+      "k": 5,
+      "n": 15
+     }
+    ],
+    "f_hat": 0.931238372,
+    "kind": "ratio",
+    "n": 15,
+    "power_at_f0": 0.6665,
+    "power_se": 0.010542242,
+    "r_m": 0.6455591,
+    "s2_rms": 2.696106194
+   },
+   "long_passes_attempted_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.316225637,
+    "ci_lo": -0.07991648,
+    "cross_check_f_hat": 0.073358908,
+    "cross_check_r": 0.80183366,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.294550657,
+      "ci_lo": -0.08061504,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.305580519,
+      "ci_lo": -0.077462667,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.301813961,
+      "ci_lo": -0.079997017,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.320743425,
+      "ci_lo": -0.072716628,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.295613016,
+      "ci_lo": -0.090634737,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.093530221,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.961,
+    "power_se": 0.004328914,
+    "r_m": 0.760399998,
+    "s2_rms": 1.296829631
+   },
+   "np_shots_on_target_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.002533885,
+    "ci_lo": -0.471490545,
+    "cross_check_f_hat": 0.279391787,
+    "cross_check_r": 0.40290157,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.864587692,
+      "ci_lo": -0.449178303,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.930183266,
+      "ci_lo": -0.416483922,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.98469713,
+      "ci_lo": -0.524236327,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.870226113,
+      "ci_lo": -0.373438548,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.924353276,
+      "ci_lo": -0.475851261,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.243508719,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.3805,
+    "power_se": 0.010856329,
+    "r_m": 0.43636511,
+    "s2_rms": 1.188524009
+   },
+   "np_shots_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.080683772,
+    "ci_lo": -0.424423185,
+    "cross_check_f_hat": -0.172264477,
+    "cross_check_r": 0.599501383,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.088877963,
+      "ci_lo": -0.456174192,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.133296224,
+      "ci_lo": -0.400710281,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.123633811,
+      "ci_lo": -0.442818831,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.090178387,
+      "ci_lo": -0.420412607,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.084711172,
+      "ci_lo": -0.509363855,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -0.167672696,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.71,
+    "power_se": 0.010146428,
+    "r_m": 0.605970394,
+    "s2_rms": 0.742139453
+   },
+   "np_xg_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.709809833,
+    "ci_lo": -0.617544309,
+    "cross_check_f_hat": 0.002973738,
+    "cross_check_r": 0.447018778,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.642132698,
+      "ci_lo": -0.624034659,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.731072196,
+      "ci_lo": -0.620579729,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.650436956,
+      "ci_lo": -0.714799204,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.728333997,
+      "ci_lo": -0.617858846,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.654211223,
+      "ci_lo": -0.627118675,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.003015996,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.3845,
+    "power_se": 0.010877954,
+    "r_m": 0.44353342,
+    "s2_rms": 1.002403909
+   },
+   "np_xg_per_shot": {
+    "cross_check_r": 0.532062513,
+    "excluded": [
+     "Jonjo Shelvey",
+     "Milan Biševac",
+     "Wahbi Khazri",
+     "Nordin Amrabat",
+     "Jonathan Martins-Pereira",
+     "Gabriel Moisés Antunes da Silva",
+     "Emil Hallfreðsson",
+     "Alberto Paloschi",
+     "Stephan El Shaarawy",
+     "Ervin Zukanović",
+     "Jimmy Cabot",
+     "Diego Perotti",
+     "Luca Rigoni",
+     "Marco Borriello",
+     "Steven Naismith",
+     "Steven Fletcher",
+     "Lamine Koné",
+     "Augusto Matías Fernández",
+     "Abdelhamid El Kaoutari",
+     "Mario Suárez Mata",
+     "Luca Marrone",
+     "Modibo Diakité"
+    ],
+    "extra_seeds": [
+     {
+      "k": 1,
+      "n": 2
+     },
+     {
+      "k": 2,
+      "n": 2
+     },
+     {
+      "k": 3,
+      "n": 2
+     },
+     {
+      "k": 4,
+      "n": 2
+     },
+     {
+      "k": 5,
+      "n": 2
+     }
+    ],
+    "kind": "ratio",
+    "n": 2
+   },
+   "op_key_passes_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.84576359,
+    "ci_lo": -0.94478433,
+    "cross_check_f_hat": -0.125647253,
+    "cross_check_r": 0.430683513,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.847662944,
+      "ci_lo": -0.780754026,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.830374306,
+      "ci_lo": -0.861139053,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.923565085,
+      "ci_lo": -0.875502993,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.887621874,
+      "ci_lo": -0.869429457,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.833580491,
+      "ci_lo": -0.929855958,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -0.140491075,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.3465,
+    "power_se": 0.010640436,
+    "r_m": 0.403541931,
+    "s2_rms": 0.904948826
+   },
+   "op_xg_assisted_p90": {
+    "boot_inf": 0,
+    "ci_hi": -0.57930319,
+    "ci_lo": -2.821561292,
+    "cross_check_f_hat": -1.089189025,
+    "cross_check_r": 0.333213759,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": -0.591389612,
+      "ci_lo": -2.612796329,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.473459285,
+      "ci_lo": -2.016450812,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.729159263,
+      "ci_lo": -2.955343236,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.489460961,
+      "ci_lo": -2.598652224,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": -0.456142858,
+      "ci_lo": -2.051356744,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -1.38377935,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.2235,
+    "power_se": 0.00931525,
+    "r_m": 0.282302228,
+    "s2_rms": 0.455698472
+   },
+   "pass_completion_pct": {
+    "boot_inf": 0,
+    "ci_hi": 0.948157306,
+    "ci_lo": 0.034190378,
+    "cross_check_f_hat": 0.396528137,
+    "cross_check_r": 0.800599697,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.979913122,
+      "ci_lo": 0.008199111,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.990374573,
+      "ci_lo": 0.013393192,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.95374041,
+      "ci_lo": 0.008702932,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.952395816,
+      "ci_lo": 0.022250951,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.973645327,
+      "ci_lo": 0.025565134,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.418341509,
+    "kind": "ratio",
+    "n": 24,
+    "power_at_f0": 0.9875,
+    "power_se": 0.002484326,
+    "r_m": 0.791913051,
+    "s2_rms": 2.592075344
+   },
+   "pressures_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.470744037,
+    "ci_lo": -0.250791196,
+    "cross_check_f_hat": 0.036340226,
+    "cross_check_r": 0.767895255,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.534500553,
+      "ci_lo": -0.236064359,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.485530077,
+      "ci_lo": -0.247578844,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.525517224,
+      "ci_lo": -0.242420412,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.555575781,
+      "ci_lo": -0.258273654,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.460251873,
+      "ci_lo": -0.235558216,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.043868264,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.9455,
+    "power_se": 0.005075911,
+    "r_m": 0.732667486,
+    "s2_rms": 1.120227991
+   },
+   "progressive_carries_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.738776586,
+    "ci_lo": -0.105126546,
+    "cross_check_f_hat": 0.20432511,
+    "cross_check_r": 0.810178882,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.701163548,
+      "ci_lo": -0.104746901,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.705053173,
+      "ci_lo": -0.134266014,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.719745381,
+      "ci_lo": -0.11174939,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.677190804,
+      "ci_lo": -0.105999571,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.726231288,
+      "ci_lo": -0.12494533,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.251154068,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.9755,
+    "power_se": 0.003456859,
+    "r_m": 0.776401675,
+    "s2_rms": 1.872083629
+   },
+   "progressive_passes_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.040595621,
+    "ci_lo": -0.152635926,
+    "cross_check_f_hat": 0.248769957,
+    "cross_check_r": 0.764011546,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.039765397,
+      "ci_lo": -0.162759168,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.108729432,
+      "ci_lo": -0.15443585,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.074447459,
+      "ci_lo": -0.160456303,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.142811685,
+      "ci_lo": -0.147551193,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.135123145,
+      "ci_lo": -0.142737303,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.318975075,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.9175,
+    "power_se": 0.006151981,
+    "r_m": 0.716306895,
+    "s2_rms": 1.805391604
+   },
+   "tackle_success_pct": {
+    "excluded": [
+     "Jonjo Shelvey",
+     "Milan Biševac (no min_attempts for CB)",
+     "Wahbi Khazri",
+     "Nordin Amrabat",
+     "Jonathan Martins-Pereira",
+     "Gabriel Moisés Antunes da Silva",
+     "Emil Hallfreðsson",
+     "Alberto Paloschi",
+     "Stephan El Shaarawy",
+     "Fabio Quagliarella",
+     "Ervin Zukanović (no min_attempts for CB)",
+     "Jimmy Cabot",
+     "Diego Perotti",
+     "Luca Rigoni",
+     "Marco Borriello",
+     "Steven Naismith",
+     "Steven Fletcher",
+     "Lamine Koné (no min_attempts for CB)",
+     "Augusto Matías Fernández",
+     "Abdelhamid El Kaoutari (no min_attempts for CB)",
+     "Mario Suárez Mata",
+     "Mauro Matías Zárate",
+     "Luca Marrone",
+     "Modibo Diakité (no min_attempts for CB)"
+    ],
+    "extra_seeds": [
+     {
+      "k": 1,
+      "n": 0
+     },
+     {
+      "k": 2,
+      "n": 0
+     },
+     {
+      "k": 3,
+      "n": 0
+     },
+     {
+      "k": 4,
+      "n": 0
+     },
+     {
+      "k": 5,
+      "n": 0
+     }
+    ],
+    "kind": "ratio",
+    "n": 0
+   },
+   "tackles_attempted_p90": {
+    "boot_inf": 0,
+    "ci_hi": 0.439851892,
+    "ci_lo": -0.450639238,
+    "cross_check_f_hat": -0.038877228,
+    "cross_check_r": 0.582376714,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 0.44358171,
+      "ci_lo": -0.471921568,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.427942766,
+      "ci_lo": -0.418404434,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.42745508,
+      "ci_lo": -0.421507246,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.392098697,
+      "ci_lo": -0.418065385,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.430233919,
+      "ci_lo": -0.43789966,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": -0.041392888,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.5875,
+    "power_se": 0.01100781,
+    "r_m": 0.567052967,
+    "s2_rms": 0.945785608
+   },
+   "tackles_won_p90": {
+    "boot_inf": 0,
+    "ci_hi": 1.229937116,
+    "ci_lo": -0.640885984,
+    "cross_check_f_hat": 0.121651478,
+    "cross_check_r": 0.493117631,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.157352439,
+      "ci_lo": -0.582762327,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.216520008,
+      "ci_lo": -0.556214119,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.377268211,
+      "ci_lo": -0.617016143,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.144776864,
+      "ci_lo": -0.590088702,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.219279745,
+      "ci_lo": -0.537698172,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.123266733,
+    "kind": "per90",
+    "n": 24,
+    "power_at_f0": 0.456,
+    "power_se": 0.011136965,
+    "r_m": 0.489821014,
+    "s2_rms": 1.118347948
+   },
+   "team_pass_share": {
+    "boot_inf": 0,
+    "ci_hi": 1.040008802,
+    "ci_lo": 0.039299684,
+    "cross_check_f_hat": 0.43541128,
+    "cross_check_r": 0.784976194,
+    "excluded": [],
+    "extra_seeds": [
+     {
+      "ci_hi": 1.011670406,
+      "ci_lo": 0.034529654,
+      "k": 1,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.954163542,
+      "ci_lo": 0.030577061,
+      "k": 2,
+      "n": 24
+     },
+     {
+      "ci_hi": 0.993302813,
+      "ci_lo": 0.043003382,
+      "k": 3,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.006360766,
+      "ci_lo": 0.0362976,
+      "k": 4,
+      "n": 24
+     },
+     {
+      "ci_hi": 1.035672407,
+      "ci_lo": 0.035019991,
+      "k": 5,
+      "n": 24
+     }
+    ],
+    "f_hat": 0.424962677,
+    "kind": "share",
+    "n": 24,
+    "power_at_f0": 0.989,
+    "power_se": 0.002332274,
+    "r_m": 0.789047637,
+    "s2_rms": 2.589533251
+   }
+  },
+  "min_movers": 12,
+  "movers": 24,
+  "seed": 20261008,
+  "spec": "plan 005 M4g3 / M4g3b; ADR 004 §13.7",
+  "stream_keys": {
+   "extra": [
+    [
+     "m4g3_draws#1",
+     "m4g3_boot#1"
+    ],
+    [
+     "m4g3_draws#2",
+     "m4g3_boot#2"
+    ],
+    [
+     "m4g3_draws#3",
+     "m4g3_boot#3"
+    ],
+    [
+     "m4g3_draws#4",
+     "m4g3_boot#4"
+    ],
+    [
+     "m4g3_draws#5",
+     "m4g3_boot#5"
+    ]
+   ],
+   "primary": [
+    "m4g3_draws",
+    "m4g3_boot"
+   ]
+  }
+ },
  "population": {
   "collinear_report_floor": 0.7,
   "gated": "in_percentile_pool ∧ is_outfield ∧ meets_min_minutes (recomputed: minutes_nominal_equiv ≥ 900 − 1e-06, asserted equal on every row)",
@@ -17493,7 +19201,7 @@
   "reached_cap": true,
   "seed": 20261007
  },
- "schema_version": 1,
+ "schema_version": 2,
  "team_pass_share": {
   "CB": {
    "league_mean_global_pct": {
