@@ -1446,3 +1446,24 @@ Buckets select on role and stability as well as minutes. No status change follow
   - **Near the gate:** 29 of 99 DNA metric × group cells fall below 0.6 in the 900–1350 minute bucket. Profiles near the gate are noisier than the pooled r suggests, which is a UI / M5 note.
   - **`defensive_duel_success_pct` produces no percentile anywhere** (min_attempts 93–562).
   - **Collinear-pair noise:** its 18 DM-CM pairs come from 3 rows. A minimum-n floor on the collinear-pair list would stop noise pairs from creating D17 conflicts on a new source.
+
+### 13.7 M4g3 pre-registration: movers (user decisions 2026-10-08, before any mover change is computed)
+Adds to §13.1; plan 005 M4g3 / M4g3c hold the full spec.
+- **R_m is the matched-halves correlation**, as pre-registered (averaged over 200 draws per mover).
+  - **Why not the M4g2 multi-split r_full:** it is a full-season, Spearman-Brown value over random halves. It overstates the reliability of a stint-length half, which lowers f̂ and biases the rule towards PASS.
+  - r_full, stepped down by Spearman-Brown to the movers' median stint minutes, is reported next to R_m as a cross-check only.
+- **"Inconclusive is not a pass" stands.** The effective PASS rule is the CI upper bound < 0.5, which is stricter than the point rule behind the M4g0 power figures.
+  - Before the real run, the spike simulates the effective rule's power (f = 0, 0.25, 0.5, 0.75; R_m 0.7; n = 24 and n = 15). The figures are recorded here before the results.
+  - **If power is low, Defending and Passing may stay withheld for 2015/16. The rule is not relaxed after the results are seen.**
+- **Known beforehand:**
+  - M4g3 changes no `registry_status`, note or `score_status`. Passing stays `pending_mover_stability` until M4g5.
+  - The verdict is per metric (movers are pooled), the same in every group.
+  - `defensive_duel_success_pct` is `untestable`: 0 of 24 movers meet `min_attempts` on both stints. Defending's testable directional members are `ball_recoveries_p90` and `tackles_won_p90`, as M4g4 adjusts them.
+  - Also `untestable`: `aerial_win_pct` (4 movers), `np_xg_per_shot` (2). Tested: `pass_completion_pct` (24), `long_pass_completion_pct` (15).
+- **Counts (2015/16, re-run):** 29 movers at 450 nominal minutes per stint; 24 in one group (AM-Winger 7, DM-CM 6, CB 5, ST 4, FB-WB 2), 10 of them cross-league; 5 in different groups. At 900: 6 movers, 5 in one group.
+- **Registry (M4g3b):** the verdicts enter the measurements and the registry with no status effect. `spikes/expected_m4g3_flips.json` is written before any registry code, and the before/after STOP rule covers the verdicts.
+- **Movers on the style maps (M4g3c, display only):** a combined dot per same-group mover, the nominal-minutes-weighted average of the stint map inputs.
+  - It is never part of the PCA fit, neighbours, populations or ranks.
+  - Its hover shows no percentile wording: an average of local percentiles is not a percentile.
+  - It cannot be selected in compare mode.
+  - A true season row from summed counts across stints is backlog and needs its own ADR.

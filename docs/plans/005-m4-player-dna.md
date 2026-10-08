@@ -1150,6 +1150,41 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
     0.33 was considered, but at this n it cannot be told apart from 0.5.
   - Applied to every current DNA metric and, later, to each M4g4 / M4g5 candidate.
 - **Koné illustration** (prediction recorded in the M4g item list): `long_pass_completion_pct` 0.595 → 0.319, on both scales.
+- **User decisions (2026-10-08, before any mover change is computed; ADR 004 §13.7):**
+  - **R_m stays the matched-halves correlation** (averaged over the 200 draws per mover), as above. The M4g2 multi-split r_full is not used: it is a full-season, Spearman-Brown value over random halves, so it overstates the reliability of a stint-length half and pushes f̂ down (towards PASS). It is reported next to R_m as a cross-check only, stepped down by Spearman-Brown to the movers' median stint minutes.
+  - **"Inconclusive is not a pass" stands.** The effective PASS rule is therefore the CI upper bound < 0.5, stricter than the point rule the M4g0 power figures describe. Before the real run, the spike simulates the effective rule's power (value = player + team + noise; f = 0, 0.25, 0.5, 0.75; R_m 0.7; n = 24 and n = 15) and the figures go into the ADR. If power is low, Defending and Passing may stay withheld for 2015/16; the rule is not relaxed after the results are seen.
+  - **Known beforehand:**
+    - M4g3 changes no `registry_status`, note or `score_status`. Passing stays `pending_mover_stability` until M4g5.
+    - The verdict is per metric (pooled), the same in every group.
+    - `defensive_duel_success_pct` is `untestable`: 0 of 24 movers meet `min_attempts` on both stints. Defending's testable directional members are `ball_recoveries_p90` and `tackles_won_p90` (as M4g4 adjusts them).
+    - Also `untestable`: `aerial_win_pct` (4), `np_xg_per_shot` (2). Tested: `pass_completion_pct` (24), `long_pass_completion_pct` (15).
+    - At a 900-minute floor there are 5 same-group movers (all metrics untestable); the floor stays 450.
+  - **Counts re-run 2026-10-08:** 29 movers at 450, 24 same group, 5 in different groups; 10 of the 24 are cross-league (the "12" above counts all 29). No mover has a third stint ≥ 450.
+  - **The test is a function**, so M4g4 and M4g5 call it again on adjusted or new columns.
+- **Chunks:**
+  - **M4g3a (spikes + docs):** `spikes/m4g3_movers.py` (measurements, power simulation, Koné, the list of second stints at struggling clubs) → `docs/reviews/m4g3-movers.md`; `spikes/m4g3_movers_reference.py` (no `eleveniq` imports, `--check-output`, same RNG streams). Before code, the stats-reviewer reviews the R_m cross-check, the power simulation and the pre-stated outcomes. `/finish-chunk`: code-reviewer, stats-reviewer (output); qa-tester skipped (no src/).
+  - **M4g3b (registry):** the reference writes `spikes/expected_m4g3_flips.json` before any registry code (0 status, 0 note changes; one `mover_verdict` per metric). The mover block enters `statsbomb_27.json`; the registry exposes the verdicts with no status effect; `REGISTRY_VERSION` changes. STOP rule: the before/after script, extended to verdicts. Rebuild percentiles and DNA (only stamps change; both reference checks pass). `/finish-chunk`: full tier.
+  - **Order (user, 2026-10-08):** M4g3c first, then M4g3a → M4g3b.
+
+### M4g3c — Movers on the style maps (display only; user, 2026-10-08)
+- **Scope:** spikes only (`spikes/m4g_movers_display.py`, wired into `m4g_style_map.py` / `m4g_style_page.py`). No change to the PCA fit, percentiles, DNA, neighbours, cohorts or `src/`.
+- **Combined dot:** for a player with 2+ stints with a complete DNA row in the same position group, the nominal-minutes-weighted average of the stint map inputs (local percentile / 100 × weight), projected with the existing PCA. It lies on the segment between the stint dots (checked: equals w₁·dot₁ + w₂·dot₂ within 1e-9).
+  - Label: "season profile, weighted by minutes (display only)".
+  - Never in the PCA fit, neighbour lists, percentile populations or ranks; the check asserts the PCA input is unchanged.
+  - **2015/16:** Perotti (Genoa / Roma), Quagliarella (Torino / Sampdoria), Shelvey (Swansea / Newcastle), Koné (Lorient / Sunderland), Khazri (Bordeaux / Sunderland).
+- **Default view:** the combined dot replaces the stint dots. A click expands it: the stint dots (team-coloured) appear, joined by an arrow in date order (first match date). Click or Esc collapses. A search for the player lands on the combined dot.
+- **Combined-dot hover (user, 2026-10-08):** "Played for", the map position and "click to see each stint". **No `pct_words`:** an average of local percentiles is not a percentile, and for cross-league movers it mixes two leagues' cohorts.
+- **Compare mode:** the combined dot is not selectable; expand it, then pick a stint.
+- **Expanded panel:** minutes and weight per team; the M4f `pair_distance` between the stints (4 decimals); the 3 metrics with the largest local-percentile change (ties by metric name), in `pct_words` per stint, with "each against its own league" for cross-league movers.
+- **"Played for"** on every hover card and the panel: each stint in date order — team · league · minutes · month range (e.g. "Aug–Jan") — plus the main positions in plain words from `m4g_common.position_minutes` and the fine-role rule (≥ 0.7 → "mostly right winger", else the two largest roles).
+  - Stints under 900 min: "no profile (under 900 min)".
+  - Bundesliga (PARTIAL) stints: listed, marked "partial coverage — minutes undercounted" (user, 2026-10-08).
+  - Match dates come from the raw match files.
+- **One profiled stint only:** that stint's dot, with "also played N min for Team X — not enough for a profile" (52 player-seasons in 2015/16).
+- **Stints in different groups:** each on its own map, with "also on the X map" (Doucouré: AM-Winger / DM-CM).
+- **Checks:** every hover and panel number is re-derived with separate code and traced (the M4g1b pattern: Python re-derivation, the page's renderer in node with a sha1 comparison, the digit-trace rule).
+- **Backlog (needs an ADR):** a true season row from summed counts across stints.
+- `/finish-chunk`: code-reviewer; qa-tester skipped (spikes only); stats-reviewer skipped (no metric, cohort or registry change).
 
 ### M4g4 — Possession and Defending (pipeline column, spike first)
 - **Exposure:**
