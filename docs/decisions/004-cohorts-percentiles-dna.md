@@ -1178,8 +1178,9 @@ Fixed before any M4g measurement. The stats-reviewer reviewed the specs before a
 - **Mover stability:**
   - **Sample:** two stints of ≥ 450 nominal minutes in the same group (24 movers in 2015/16), pooled across groups.
   - **Baseline:** a within-team date split of non-movers, trimmed to the movers' minutes, with `min_attempts` applied to both.
-  - **PASS iff f̂ = (Ŝ² − 1)(1 − R_m) / R_m ≤ 0.5** (SD-unit scale, RMS form of S; R_m = the correlation of the matched non-mover halves): at least half of the stable differences between players travel with the player.
+  - **Threshold f̂ = (Ŝ² − 1)(1 − R_m) / R_m vs 0.5** (SD-unit scale, RMS form of S; R_m = the correlation of the matched non-mover halves): at least half of the stable differences between players travel with the player.
   - **Labels:** a paired bootstrap CI containing 0.5 → "inconclusive at n"; fewer than 12 movers → `untestable`, not a pass.
+  - **Amended in §13.7:** the verdict comes from the CI, not the point estimate: PASS iff the CI upper bound < 0.5, FAIL iff the lower bound > 0.5, otherwise inconclusive. The point rule f̂ ≤ 0.5 is reported for comparison only.
 
 ### 13.2 Defending
 - **`dribbled_past_p90` → `style`.** It rises with engagement: ρ with `tackles_attempted_p90` is 0.48–0.55 by group. As `lower_better` it would score Wes Morgan 55 and Mascherano 32 on Defending.
@@ -1449,17 +1450,30 @@ Buckets select on role and stability as well as minutes. No status change follow
 
 ### 13.7 M4g3 pre-registration: movers (user decisions 2026-10-08, before any mover change is computed)
 Adds to §13.1; plan 005 M4g3 / M4g3c hold the full spec.
-- **R_m is the matched-halves correlation**, as pre-registered (averaged over 200 draws per mover).
+- **R_m is the matched-halves correlation**, as pre-registered: one Pearson over the matched halves pooled over all n × 200 draws (user, after the M4g3a pre-code review; it replaces "averaged over 200 draws per mover"). It is recomputed in each bootstrap resample from the resampled movers' draws.
   - **Why not the M4g2 multi-split r_full:** it is a full-season, Spearman-Brown value over random halves. It overstates the reliability of a stint-length half, which lowers f̂ and biases the rule towards PASS.
-  - r_full, stepped down by Spearman-Brown to the movers' median stint minutes, is reported next to R_m as a cross-check only.
-- **"Inconclusive is not a pass" stands.** The effective PASS rule is the CI upper bound < 0.5, which is stricter than the point rule behind the M4g0 power figures.
+  - **Cross-check (report only):** r_full stepped down by Spearman-Brown per mover, √(r(m1) · r(m2)), averaged over the metric's movers after `min_attempts`. k is minutes ÷ the cell's median minutes for per-90s, attempts ÷ the cell's median attempts for ratios; the cell median is recomputed from the parquet. A gap |R_m − cross-check| > 0.10 gets one explanatory sentence and nothing else. Expected direction: R_m below the step-down (date-ordered halves).
+- **"Inconclusive is not a pass" stands.** Three outcomes, from a two-sided 95% percentile paired-bootstrap CI of f̂ (user, after the M4g3a pre-code review):
+  - PASS iff the CI upper bound (97.5th percentile) < 0.5;
+  - FAIL iff the CI lower bound (2.5th percentile) > 0.5;
+  - otherwise "inconclusive at n".
   - Before the real run, the spike simulates the effective rule's power (f = 0, 0.25, 0.5, 0.75; R_m 0.7; n = 24 and n = 15). The figures are recorded here before the results.
   - **If power is low, Defending and Passing may stay withheld for 2015/16. The rule is not relaxed after the results are seen.**
+- **Low power (user, 2026-10-08):** computed per metric at its own n and its R_m, written out before f̂ is computed. P(PASS | f = 0) < 0.8 → the label "underpowered at n". It is a label only: it never changes PASS / FAIL / inconclusive.
 - **Known beforehand:**
   - M4g3 changes no `registry_status`, note or `score_status`. Passing stays `pending_mover_stability` until M4g5.
   - The verdict is per metric (movers are pooled), the same in every group.
   - `defensive_duel_success_pct` is `untestable`: 0 of 24 movers meet `min_attempts` on both stints. Defending's testable directional members are `ball_recoveries_p90` and `tackles_won_p90`, as M4g4 adjusts them.
   - Also `untestable`: `aerial_win_pct` (4 movers), `np_xg_per_shot` (2). Tested: `pass_completion_pct` (24), `long_pass_completion_pct` (15).
+- **Pre-stated outcomes (user, 2026-10-08, before the real run):**
+  - **Passing reason text** (`pending_mover_stability`, shown on the compare page) stays unchanged until M4g5. After M4g3 it means "pending the xPass decision".
+  - **ST Passing** rests on `pass_completion_pct` alone and is visible today:
+    - FAIL → ST Passing is withheld in M4g5;
+    - inconclusive → it stays visible, with a note;
+    - the asymmetry is deliberate: a restore needs a PASS, a withholding needs a FAIL.
+  - **A FAIL on any current DNA metric** changes nothing automatically. It is listed for the M4 sign-off decision, alongside family weighting.
+  - **Defending restore** uses only the M4g4 re-run on the adjusted columns. The M4g3 verdicts on the unadjusted `ball_recoveries_p90` and `tackles_won_p90` are information only. The verdict is pooled, so its part in the per-group restore is the same in every group; `untestable` is not a pass (`defensive_duel_success_pct`).
+  - **M4g4 note:** the restore rule's statuses naming the failed test (failed / inconclusive / underpowered / untestable) need new strings in `dna.WITHHELD_STATUSES` and tests. Nothing changes in M4g3.
 - **Counts (2015/16, re-run):** 29 movers at 450 nominal minutes per stint; 24 in one group (AM-Winger 7, DM-CM 6, CB 5, ST 4, FB-WB 2), 10 of them cross-league; 5 in different groups. At 900: 6 movers, 5 in one group.
 - **Registry (M4g3b):** the verdicts enter the measurements and the registry with no status effect. `spikes/expected_m4g3_flips.json` is written before any registry code, and the before/after STOP rule covers the verdicts.
 - **Movers on the style maps (M4g3c, display only):** a combined dot per same-group mover, the nominal-minutes-weighted average of the stint map inputs.
@@ -1467,3 +1481,27 @@ Adds to §13.1; plan 005 M4g3 / M4g3c hold the full spec.
   - Its hover shows no percentile wording: an average of local percentiles is not a percentile.
   - It cannot be selected in compare mode.
   - A true season row from summed counts across stints is backlog and needs its own ADR.
+- **Power of the effective rule (M4g3a, 2026-10-08, simulated before the real mover run).** `spikes/m4g3_power.py` → `data/interim/m4g3_power.json`; 2,000 simulated datasets per cell (MC SE ≤ 1.1 pp), B = 2,000, 200 draws per mover, seed 20261008.
+  - **Rule as simulated:** the three-outcome rule and pooled R_m above. The same function (`mover_rule`) makes the real decision.
+  - **Model:** value = player + team + noise in SD units; a mover's two teams are independent draws; homogeneous noise; one pool of 250 non-movers.
+  - **P(PASS) under the effective rule** (point rule f̂ ≤ 0.5 in brackets):
+
+    | n | R_m | f = 0 | f = 0.25 | f = 0.5 | f = 0.75 | f = 1 |
+    |---|---|---|---|---|---|---|
+    | 24 | 0.7 | 0.90 (1.00) | 0.37 (0.89) | 0.10 (0.55) | 0.03 (0.25) | 0.01 (0.10) |
+    | 15 | 0.7 | 0.78 (0.99) | 0.34 (0.85) | 0.13 (0.56) | 0.05 (0.31) | 0.02 (0.17) |
+    | 24 | 0.5 | 0.48 (0.93) | 0.23 (0.78) | 0.09 (0.56) | 0.05 (0.35) | 0.02 (0.20) |
+    | 15 | 0.5 | 0.42 (0.89) | 0.26 (0.75) | 0.12 (0.54) | 0.06 (0.38) | 0.03 (0.26) |
+
+  - **Low power at f = 0 on this grid:** every cell except n = 24 at R_m 0.7 is below 0.8. The real labels come from `power_at_f0` at each metric's own n and R_m.
+  - **Re-run (2026-10-08, after the checkpoint review):** each cell is now seeded from its parameters, not its grid position. The largest change from the first run is 0.029 (n = 24, R_m 0.7, f = 0: 0.87 → 0.90, 3 combined SEs); the table above is the re-run.
+  - **P(FAIL)** is low on the main grid: at f = 1 it is 0.23 (n = 24, R_m 0.7) and 0.08–0.15 in the other main cells (the R_m 0.85 sensitivity reaches 0.38). Most clearly team-driven metrics come out "inconclusive", not FAIL.
+    - So "inconclusive" is not evidence of stability. This matters for ST Passing: its withholding needs a FAIL, which the simulation says is unlikely even for a fully team-driven metric.
+  - **At the threshold (f = 0.5) the rule passes 9–13%**, against a nominal 2.5%. With 15–24 movers the percentile CI is too narrow on the upper side (Δ² is skewed). This is a property of the rule, accepted by the user before the real run (2026-10-08): no recalibration. The interval is not a calibrated 95% CI. BCa was considered and not adopted: it costs power at f = 0 and still passes about 6–10%.
+  - **Sensitivity (report only):**
+    - t(5) noise, R_m 0.7: f = 0 → 0.80 (n = 24), 0.74 (n = 15).
+    - R_m 0.85: f = 0 → 1.00 (n = 24), 0.99 (n = 15); f = 0.25 → 0.55, 0.48.
+    - The 24 real movers' minutes, each drawing from its own eligible pool (30–238 non-movers): within about 2 pp of the homogeneous figures (f = 0: 0.88 at R_m 0.7, 0.46 at 0.5); stints in date order.
+  - **Validation of the simulator:** the point rule gives 0.54–0.56 at f = 0.5 (f̂ is a ratio of sums with a skewed numerator, so it is only approximately unbiased), and the figures agree with the stats-reviewer's independent re-simulation within 3 combined SEs. The M4g0 point-rule figures (0.6% / 8% / 16% / 21%) differ by up to 5 pp: their setup (R_m fixed or estimated, pool modelled or not) was not recorded.
+  - **Expected reliability of the tested metrics** (r_full stepped down to the movers' stint minutes, stats-reviewer): `ball_recoveries_p90` 0.58, `tackles_won_p90` 0.49. At R_m ≈ 0.5, a purely individual metric passes about half the time.
+  - **Limit:** the model treats the two teams as independent draws. Real moves are not random (many second stints are at struggling clubs), and the model cannot represent that.

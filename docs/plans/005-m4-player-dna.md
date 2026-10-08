@@ -470,7 +470,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
   - minute-bucket reliability (report only);
   - `dribbled_past_p90` → `style`, and the defensive duel success candidate;
   - the Defending restore rule;
-  - the mover PASS rule, f̂ ≤ 0.5;
+  - the mover PASS rule, f̂ ≤ 0.5 (amended in M4g3a, ADR 004 §13.7: PASS iff the CI upper bound < 0.5; the point rule is comparison only);
   - the xPass leakage decision (start-based features).
 - **Multi-split reliability averaging** (stats-reviewer, user 2026-10-04): r_full averaged over many random match splits instead of one odd/even split, applied to all metrics at once (never to single boundary cells). Then re-derive the registry. It addresses the cells decided by < 0.001 at the 0.6 cut-off, e.g. CB `interceptions` 0.599849 and ST `np_xg` 0.599369 (ADR 004 §10.11).
 - **"Majority of leagues above the trigger" possession rule** (stats-reviewer M4c2b review, user 2026-10-04): evaluate a trigger that fires when most pool leagues' within-league |ρ| ≥ 0.4 (with the sign test), next to the current mean rule. Apply it to all metrics at once, never to single cells, then re-derive the registry and report every status change. It addresses ST `np_shots_on_target` (3 of 4 leagues above 0.4, mean 0.395) and ST `np_shots` (2 of 4, mean 0.372), where Serie A masks the others (ADR 004 §10.10).
@@ -1138,7 +1138,7 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - **Decision quantity:** the team share of the stable between-player variance, f̂ = (Ŝ² − 1) · (1 − R_m) / R_m, on scale (b) with the RMS form of S. Scale (a) is reported only.
     - f = 0: the value follows the player;
     - f = 1: a mover simply takes on his new team's level.
-  - **PASS iff f̂ ≤ 0.5** (point estimate), i.e. S ≤ S*_m = √(1 + 0.5 · R_m / (1 − R_m)): at least half of the stable differences between players travel with the player.
+  - **PASS iff f̂ ≤ 0.5** (point estimate; **amended in M4g3a**, ADR 004 §13.7: PASS iff the CI upper bound < 0.5, FAIL iff the lower bound > 0.5, else inconclusive; the point rule is comparison only), i.e. S ≤ S*_m = √(1 + 0.5 · R_m / (1 − R_m)): at least half of the stable differences between players travel with the player.
   - The paired bootstrap CI is reported. When it contains 0.5 the result is labelled "inconclusive at n".
   - Fewer than 12 eligible movers → `untestable`, which is not a pass (the §11.3 precedent).
   - **Why not a fixed S:** with value = player + team + noise, S² ≈ 1 + σ²_team / σ²_noise. A fixed S would fail reliable ratios on small team effects and pass noisy per-90s with large ones.
@@ -1151,7 +1151,7 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - Applied to every current DNA metric and, later, to each M4g4 / M4g5 candidate.
 - **Koné illustration** (prediction recorded in the M4g item list): `long_pass_completion_pct` 0.595 → 0.319, on both scales.
 - **User decisions (2026-10-08, before any mover change is computed; ADR 004 §13.7):**
-  - **R_m stays the matched-halves correlation** (averaged over the 200 draws per mover), as above. The M4g2 multi-split r_full is not used: it is a full-season, Spearman-Brown value over random halves, so it overstates the reliability of a stint-length half and pushes f̂ down (towards PASS). It is reported next to R_m as a cross-check only, stepped down by Spearman-Brown to the movers' median stint minutes.
+  - **R_m stays the matched-halves correlation** (pooled over all n × 200 draws, recomputed per bootstrap resample; amended after the M4g3a pre-code review, ADR 004 §13.7), as above. The M4g2 multi-split r_full is not used: it is a full-season, Spearman-Brown value over random halves, so it overstates the reliability of a stint-length half and pushes f̂ down (towards PASS). It is reported next to R_m as a cross-check only, stepped down by Spearman-Brown to the movers' median stint minutes.
   - **"Inconclusive is not a pass" stands.** The effective PASS rule is therefore the CI upper bound < 0.5, stricter than the point rule the M4g0 power figures describe. Before the real run, the spike simulates the effective rule's power (value = player + team + noise; f = 0, 0.25, 0.5, 0.75; R_m 0.7; n = 24 and n = 15) and the figures go into the ADR. If power is low, Defending and Passing may stay withheld for 2015/16; the rule is not relaxed after the results are seen.
   - **Known beforehand:**
     - M4g3 changes no `registry_status`, note or `score_status`. Passing stays `pending_mover_stability` until M4g5.
@@ -1351,6 +1351,8 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   - ranks share a rank within 1e-12. The tolerance is not transitive for chains of near-ties. Harmless for display, and the check uses the same rule;
   - `SHOW_PAIRS` (`spikes/m4g_style_map.py`) fails the whole run if a pair is not unique among the plotted rows. A warning would do, since the pairs are display only;
   - `others` (the cross-group search list) holds every row, so a player at two clubs is listed twice. Dedupe by name to shrink each page.
+- **M4g3a power follow-ups** (code-reviewer, M4g3a checkpoint fix delta; user 2026-10-08: no more fix rounds before the real run):
+  - `spikes/m4g3_power.py` `main()` builds the grid's low-power labels from the grid cells (their own seed keys), not through `low_power`; the JSON labels are a reference, and a real metric's label comes from `low_power` (≈ 1 pp Monte Carlo difference). Call `low_power` in `main()` or say so in the JSON.
 - **M4g3c movers-display follow-ups** (code-reviewer, M4g3c; user 2026-10-08):
   - tests of the check's failure paths (`m4g_movers_display.check_page` fails on a tampered span), and of `for_map` edge cases: more than 3 plotted stints, colour slots, a one-profile player getting "Played for" without a combined dot;
   - `panel` / `rank_both` with 3 stints, and stint order for same-day starts or a player returning to a club: today the order is (first, last, key), so "date order" is not guaranteed for those;
