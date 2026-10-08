@@ -1163,8 +1163,57 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - **The test is a function**, so M4g4 and M4g5 call it again on adjusted or new columns.
 - **Chunks:**
   - **M4g3a (spikes + docs):** `spikes/m4g3_movers.py` (measurements, power simulation, Koné, the list of second stints at struggling clubs) → `docs/reviews/m4g3-movers.md`; `spikes/m4g3_movers_reference.py` (no `eleveniq` imports, `--check-output`, same RNG streams). Before code, the stats-reviewer reviews the R_m cross-check, the power simulation and the pre-stated outcomes. `/finish-chunk`: code-reviewer, stats-reviewer (output); qa-tester skipped (no src/).
-  - **M4g3b (registry):** the reference writes `spikes/expected_m4g3_flips.json` before any registry code (0 status, 0 note changes; one `mover_verdict` per metric). The mover block enters `statsbomb_27.json`; the registry exposes the verdicts with no status effect; `REGISTRY_VERSION` changes. STOP rule: the before/after script, extended to verdicts. Rebuild percentiles and DNA (only stamps change; both reference checks pass). `/finish-chunk`: full tier.
+  - **M4g3b (registry):** spec in "M4g3b — Mover verdicts in the registry" below. Summary: the reference writes `spikes/expected_m4g3_flips.json` before any registry code (0 status, 0 note changes; one `mover_verdict` per metric). The mover block enters `statsbomb_27.json`; the registry exposes the verdicts with no status effect; `REGISTRY_VERSION` changes. STOP rule: the before/after script, extended to verdicts. Rebuild percentiles and DNA (only stamps change; both reference checks pass). `/finish-chunk`: full tier.
   - **Order (user, 2026-10-08):** M4g3c first, then M4g3a → M4g3b.
+
+### M4g3b — Mover verdicts in the registry (spec; user, 2026-10-08)
+No status effect: no `registry_status`, note, reason or `score_status` depends on a mover verdict.
+
+- **Principle: measurements store numbers; the registry applies thresholds** (as every registry rule).
+  - **Stored per metric** (new `movers` block in `statsbomb_27.json`):
+    - n and the excluded movers;
+    - f̂, CI bounds, R_m, Ŝ², `boot_inf`;
+    - P(PASS | f = 0) and its SE;
+    - the CI bounds on 5 extra seeds;
+    - the cross-check R and its f̂ (report only).
+  - **Derived in the registry:** the verdict (PASS / FAIL / inconclusive / untestable), `underpowered`, `borderline (seed-sensitive)`, `PASS (below model range)`.
+  - **Thresholds live in the registry's `Rules`** (`mover_f_threshold = 0.5`, `mover_min_n = 12`, `mover_low_power = 0.8`), which is hashed into `REGISTRY_VERSION`, so changing one changes the version. The spike's copies (`m4g3_power.THRESHOLD`, `MIN_MOVERS`, `LOW_POWER`) are checked equal to `Rules` by the STOP rule (code-reviewer, M4g3b spec).
+  - **Untestable metrics** (n < 12): verdict `untestable`; `underpowered`, `borderline_seed` and `below_model_range` are `None` (not computed; `power_at_f0` = 0 must not read as underpowered).
+- **Step 1: measurement side (spikes):**
+  - **Refactor first (a change to the reviewed M4g3a spike):** the engine moves out of `main()` into an importable function taking the stream key, and the metric list becomes the written-out `MOVER_METRICS`. The primary-stream output must equal the committed M4g3a output (`data/interim/m4g3_movers.json`, every field) and the reference must pass before anything else changes.
+  - **Frozen metric list:** `MOVER_METRICS` is written out in `spikes/m4g3_movers.py` (the 34 metrics of M4g3a), not read from a registry snapshot (that would be circular once the verdicts live in the registry). The STOP rule checks that every DNA metric of every group is in the list.
+  - **Seed sensitivity, a rule, not a name** (user, 2026-10-08):
+    - the primary stream plus 5 extra seeds, keys `'m4g3_draws#k'` / `'m4g3_boot#k'`, k = 1–5;
+    - each extra seed's verdict uses the same rule (threshold 0.5 on the CI bounds; n < 12 untestable);
+    - `borderline (seed-sensitive)` iff any extra seed's verdict differs from the primary verdict;
+    - the reference reproduces all six streams.
+  - **Single writer** (user, 2026-10-08): `spikes/m4_decision_measurements.py --write-json` imports the mover engine and writes the `movers` block, as it embeds the M4g2 multi-split engine. The block records the frozen list and the seeds; `schema_version` is bumped.
+  - **Reference:** `spikes/m4g3_movers_reference.py --check-output` also checks the measurement file's `movers` block, all six seeds, within 1e-9.
+- **Step 2: expected flips, before any registry code:** `spikes/m4g3_movers_reference.py --write-expected` writes `spikes/expected_m4g3_flips.json` from the new measurements and the current registry snapshot, deriving the §13.7 rule itself (no registry code).
+  - **Content:** 0 status changes; 0 note or reason changes; one `mover_verdict` per metric with its verdict and four flags.
+  - **Pre-stated from M4g3a:**
+    - 9 PASS, 19 inconclusive, 0 FAIL, 6 untestable, 18 underpowered;
+    - `below_model_range` on `op_xg_assisted_p90` and `fouls_won_p90`;
+    - `borderline` on `pressures_p90`: expected, not guaranteed. The five extra seeds are new streams, not the stats-reviewer's. Others may be flagged; the rule decides, not a list of names.
+    - If `pressures_p90` is not flagged, or other metrics are, the checkpoint stops and reports to the user (investigate or amend); it is not accepted silently.
+- **Step 3: registry:**
+  - `MoverVerdict`, one per metric (pooled; the same in every group): verdict, f̂, CI, R_m, n, `power_at_f0` + SE, `underpowered`, `borderline_seed`, `below_model_range`.
+  - `Derivation.movers` with a `mover(column)` accessor. `Cell` is unchanged.
+  - **Validation:** the block covers the frozen list; an unknown metric, or a non-finite value (other than f̂ = +∞), raises `RegistryRuleError`.
+  - `REGISTRY_VERSION` changes: the measurements are already hashed, and the verdicts are added explicitly.
+  - `tools/registry_snapshot.py` dumps the verdicts.
+- **Step 4: STOP rule:** `spikes/m4g3_before_after.py` (generalised from `m4g2_before_after.py`) stops on:
+  - any cell change of any kind;
+  - a verdict or flag different from `expected_m4g3_flips.json`;
+  - a DNA metric missing from the verdicts.
+- **Step 5: rebuild:**
+  - percentiles, then DNA; only the `registry_version` stamps may change (a frame comparison asserts it);
+  - `m4d_percentiles_reference.py` and `m4f_dna_reference.py` pass;
+  - the M4e golden pages carry the version: `--update-golden` may change only the version-stamp lines (footer and `data-src`), and the commit calls out its diff summary;
+  - style maps re-run (stamps; display only).
+- **Step 6: docs and review:**
+  - ADR 004 §13.7 outcome line: the new version, 0 status changes, verdicts as expected.
+  - Full `/finish-chunk`: qa-tester (src/ logic), stats-reviewer (output only; method reviewed before code), code-reviewer, integration tests (rebuild).
 
 ### M4g3c — Movers on the style maps (display only; user, 2026-10-08)
 - **Scope:** spikes only (`spikes/m4g_movers_display.py`, wired into `m4g_style_map.py` / `m4g_style_page.py`). No change to the PCA fit, percentiles, DNA, neighbours, cohorts or `src/`.
