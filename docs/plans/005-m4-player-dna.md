@@ -449,7 +449,7 @@ Dimensions (brief §3): Passing, Progression, Creation, Carrying, Defending, Goa
 - **Sensitivity check with and without `np_shots_on_target`** (stats-reviewer M4c2b review, user 2026-10-04): it correlates 0.79–0.80 with `np_shots` in AM-Winger and ST and halves its weight inside Goal threat. Run the equal vs family weight check both ways and report the top-10 neighbour overlap for AM-Winger and ST.
 - **Exclude second-group rows** (M4d2 stats review, user 2026-10-06): M4f and M6 read only `cohort_role = "primary"` rows. D5 second-group percentiles are skewed as expected (9.0% of local values ≥ 95; the 0/100 cells cluster in AM-Winger xG-assisted metrics) and are display-only.
 - **Pre-registration (M4f/M4g, user 2026-10-06): defensive volumes and opponent possession.** Analysis by the stats-reviewer in the M4e `/finish-chunk` (2015/16, pool leagues; opponent open-play passes while on, proxied from team match passes × minutes share, checked against the exact `team_open_play_passes_while_on`: median ratio 0.999).
-  - **Findings.** Opponent open-play passes per match range from 299 (Barcelona) to 534–543 (Caen, Carpi), median 440. Team per-match defensive counts barely move with possession (Barcelona's 45.7 recoveries per match sit inside La Liga's 43.9–50.9). The elasticity of the per-90 to opponent passes is well below 1 in most cells: DM-CM interceptions 0.52, recoveries 0.11, tackles 0.09, pressures 0.35; CB recoveries −0.68; AM-Winger interceptions ≈ 1.0. D12's pooled ρ does hide a tail (DM-CM interceptions: top-5%-possession band mean local percentile 33.6, against ≈ 44 implied by ρ −0.13), but that band is 15 rows from 4 teams, and without Barcelona it is 43.4. The clearest tail is `pressures` for high-possession attackers (≈ 25th percentile; `style`, so uncoloured).
+  - **Findings.** Opponent open-play passes per match range from 299 (Barcelona) to 534–543 (Caen, Carpi), median 440. **Corrected in M4g4a (2026-10-08):** Carpi 534.2, Angers 523.6, Caen 519.0 (D12 open-play opponent passes per match; the original "534–543 (Caen, Carpi)" is not reproduced by any tested definition; M4g4a outcome below). Team per-match defensive counts barely move with possession (Barcelona's 45.7 recoveries per match sit inside La Liga's 43.9–50.9). The elasticity of the per-90 to opponent passes is well below 1 in most cells: DM-CM interceptions 0.52, recoveries 0.11, tackles 0.09, pressures 0.35; CB recoveries −0.68; AM-Winger interceptions ≈ 1.0. D12's pooled ρ does hide a tail (DM-CM interceptions: top-5%-possession band mean local percentile 33.6, against ≈ 44 implied by ρ −0.13), but that band is 15 rows from 4 teams, and without Barcelona it is 43.4. The clearest tail is `pressures` for high-possession attackers (≈ 25th percentile; `style`, so uncoloured).
   - **Rejected: the user's first proposal, a rate per 1,000 opponent passes.** It assumes an elasticity of 1 and over-corrects: within-league ρ(possession, adjusted) becomes +0.40 for DM-CM recoveries and +0.57 for CB recoveries (both would trigger D12 the other way); top-possession DM-CMs move from a mean local percentile of 48.9 to 69.0 on recoveries (Busquets 17 → 83, Iniesta 44 → 95; Kanté 99 → 88).
   - **To pre-register before M4g sees results (not implemented):**
     - exposure: opponent open-play passes while on, exact from the ADR 002 §31 timeline (the D12b machinery mirrored onto the opponent), stored as numerator and denominator;
@@ -1323,7 +1323,7 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
   - **β̂ is the fixed all-4-league pipeline fit** for the mover run and for criterion (3); it is not re-fitted per half or split.
   - **Pooled per candidate:** for each (metric, candidate), all 24 movers are adjusted, each with its own group's parameters for that candidate, and one verdict is computed. A group's restore uses the verdict of its selected candidate.
   - **Streams (exact):** `m4g3_power.cell_rng("m4g4_draws", metric, candidate)` and `cell_rng("m4g4_boot", metric, candidate)`. The extra streams replace the first key with `"m4g4_draws#k"` / `"m4g4_boot#k"`, k = 1–5. Candidate tokens: `"beta_hat"`, `"team_share"`, `"beta_1"`.
-  - **Scope:** mover runs for `ball_recoveries_p90` (the only directional member) under all three non-zero candidates, whatever each group selects; a verdict for a candidate a group did not select is report-only. Style members get no mover runs (D4 = C). `power_at_f0` is computed per (metric, candidate) at that candidate's R_m.
+  - **Scope:** mover runs for `ball_recoveries_p90` (the only directional member) under all three non-zero candidates, whatever each group selects; a verdict for a candidate a group did not select is labelled **"report only, not used for any restore"** everywhere it appears: the review doc, the registry fields (a `used_for_restore` flag, false for an unselected candidate) and every page (user, 2026-10-08). Style members get no mover runs (D4 = C). `power_at_f0` is computed per (metric, candidate) at that candidate's R_m.
   - **Scales:** (a) and (b) use the adjusted season column's own reference population (league × group of the adjusted values).
   - **β = 0 leaves the column unchanged, so it reuses the M4g3b verdict and is not re-run.** A re-run on new streams would be seed-shopping. Its `s2_rms_a` (D7) is back-filled from the M4g3 halves on the M4g3 primary streams, like the other 34 entries.
 - **D4 = C. Adjusted columns in the vector:** every Defending DNA member (style or directional) whose selected candidate passes (1)–(3) enters the vector adjusted. The mover rule gates the score only. A member whose selected candidate is β = 0, or which no candidate passes, stays raw.
@@ -1386,6 +1386,23 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
   - `spikes/m4g_opponent_exposure.py` (independent recount; 7–11 credited defenders per pass; the 0.999 proxy agreement re-checked);
   - `spikes/m4g4_power.py` (the table above).
   - the M4g3b movers block gains `s2_rms_a` (D7) for the 34 metrics, with the reference checking it, before the M4g4c write.
+    - **STOP rule (user, 2026-10-08):** the 34 M4g3b mover entries must be identical in every existing field, with `s2_rms_a` as the only added key, and no verdict or flag may change (asserted).
+    - **Known beforehand:** the measurements are hashed into `REGISTRY_VERSION`, so this write moves the version (78ceb0dae425… → new). Percentiles and DNA then change in their stamps only, as in M4g3b.
+  - **Outcome (2026-10-08):**
+    - **Exposure recount** (`spikes/m4g_opponent_exposure.py`, all 5 competition-seasons, 1,346,205 open-play passes; corrected from 1,348,207 after the stats-reviewer's raw recount):
+      - the own-team recount equals the pipeline's `team_open_play_passes_while_on` on 43,044 of 43,044 player-match rows (0 missing either side);
+      - every opponent pass is credited to 8–11 defenders (11: 1,278,242; 10: 65,322; 9: 2,640; 8: 1);
+      - the 8 is Chievo 5–1 Frosinone (3879835), period 2, 71:41, a pass by Bizzarri (Chievo GK): Frosinone were down to 9 (Ajeti red 16:45, Chibsah second yellow 51:43) and Gucher was off for treatment from 71:31 to 71:42. Correct.
+    - **Proxy agreement re-checked:** on the 1,233 gated pool rows, exact / proxy has median 1.0013 (own team; 1 / 1.0013 = 0.9987 is the M4e 0.999, which was proxy / exact) and 1.0011 (opponent), 5–95% 0.98–1.02, range 0.90–1.06. Per player-match the 1st–99th percentile is 0.50–1.35 (opponent) and 0.48–1.36 (own team), so the exact column is worth building.
+    - **M4e "534–543 (Caen, Carpi)" is not reproduced.** On the D12 open-play definition, opponent passes per match are Carpi 534.2, Angers 523.6, Caen 519.0 (Barcelona 298.9, median 439.9: both M4e anchors reproduced).
+      - Caen is 461.9 untyped + 53.8 Recovery + 3.2 Interception passes per match; Carpi 474.7 + 56.7 + 2.8.
+      - No tested definition (all passes, open play without Unknown / Injury Clearance, open play plus set pieces, untyped only; per match and per 90) gives Caen ≈ 534 and Carpi ≈ 543, and Angers sits between them on every one.
+      - The M4e method was the stats-reviewer's ad hoc run and was not recorded. The pipeline definition is D12's, so the recount stands and the M4e note is corrected here: the top of the range is Carpi 534.2.
+    - **Power:** `spikes/m4g4_power.py` reproduces the table above exactly (same seeds).
+    - **`s2_rms_a` write:** the STOP rule (`spikes/m4g4a_movers_before_after.py`) passed: every existing field identical, `s2_rms_a` added to the 28 testable metrics only, 0 cell, verdict or flag changes. `REGISTRY_VERSION` 78ceb0dae425… → 86b6389f389f…. The reference reproduces `s2_rms_a` within 1e-9.
+      - Rebuild: percentiles and DNA changed in their stamps only (frame comparison); both reference checks pass; the two golden pages and the M4g1 validation section changed in the version string only.
+      - **Observation (report only):** both "PASS (below model range)" metrics have √`s2_rms_a` ≤ 1: `fouls_won_p90` 0.818, `op_xg_assisted_p90` 0.964. So scale (a) agrees for both under D7's RMS form, while §13.7's mean-|Δ| form gave 1.05 for `op_xg_assisted_p90`. Neither is a Defending member, so no restore depends on it.
+      - **For M4g4d (stats-reviewer, M4g4a output review):** the D7 gate √`s2_rms_a` ≤ 1 is a point estimate with no uncertainty, and S² at n = 24 is noisy. The RMS and mean-|Δ| forms can fall on opposite sides of 1 (`op_xg_assisted_p90` 0.964 vs 1.05), and scale (a) differs from scale (b) on some PASS metrics (`aerials_won_p90` 1.25 vs 0.99). If an adjusted `ball_recoveries_p90` reaches the D7 exception, report √`s2_rms_a` next to the mean-|Δ| form and flag any case where the two forms fall on opposite sides of 1.
 - **M4g4b — pipeline columns:**
   - `opponent_open_play_passes_while_on` and `team_<action>_while_on` for the Defending actions, per match and season;
   - every existing column byte-identical; `--force` rebuild and integration tests.
@@ -1404,7 +1421,7 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 
 **Expected before/after:**
 - 0 changes to `registry_status`, note or reason on any existing cell.
-- The 34 M4g3b mover entries are unchanged apart from the new `s2_rms_a` field.
+- The 34 M4g3b mover entries are identical in every existing field; `s2_rms_a` is the only added key, and no verdict or flag changes (asserted; added in M4g4a, which also moves `REGISTRY_VERSION`).
 - 5 Defending `score_status` rows leave `pending_possession_adjustment`, to the values in the expected file.
 - **C5 (user, 2026-10-08):**
   - D17 is re-checked on the adjusted columns, report only: a shared team factor raises the ρ between adjusted columns (e.g. `tackles_attempted` vs `dribbled_past`, 0.48–0.55 today).
@@ -1415,7 +1432,7 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 **STOP rule (`spikes/m4g4_before_after.py`)** stops on:
 - any unlisted cell change;
 - a Defending status or vector column different from `expected_m4g4_flips.json`;
-- any change to an existing M4g3b mover verdict or flag;
+- any change to an existing M4g3b mover field, verdict or flag, or any added key other than `s2_rms_a`;
 - `Rules` thresholds not equal to the spike's copies.
 
 **Process:** the stats-reviewer reviewed this spec before any M4g4 code (2026-10-08, APPROVE WITH CONDITIONS, folded in above). M4g4-0 did not wait on the method.

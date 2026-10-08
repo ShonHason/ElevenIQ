@@ -27,6 +27,9 @@ Hardening (plan 005 M4g4-0, the M4g3b backlog gate): the bootstrap size is check
 taken from the file under check; with both files given, each one's power is checked (and the two
 must agree); the block's cross_check_f_hat, the extra seeds' k (paired by position) and the
 absence of cross-check fields without a reference cross value are checked; R_m ≤ 0 has power 0.
+s2_rms_a (plan 005 M4g4a, D7): Ŝ² on scale (a), Σ Δa² / Σ base_a (base_a = a mover's mean over
+draws of the squared local-percentile half difference), checked in the output and the block,
+present iff the metric is testable.
 
 Fails on any mismatch beyond TOL. No eleveniq imports (tests/test_spikes_independent.py).
 """
@@ -205,15 +208,16 @@ def block_metric_errors(metric: str, bm: dict, n: int, res: dict | None, cross: 
     cmp(errors, f"{w} n", bm["n"], n)
     if res is not None:
         for key, want in (("f_hat", res["f_hat"]), ("ci_lo", res["ci"][0]), ("ci_hi", res["ci"][1]),
-                          ("r_m", res["r_m"]), ("s2_rms", res["s2_rms"]), ("boot_inf", res["boot_inf"])):
+                          ("r_m", res["r_m"]), ("s2_rms", res["s2_rms"]), ("boot_inf", res["boot_inf"]),
+                          ("s2_rms_a", res["s2_rms_a"])):
             if key not in bm:
                 errors.append(f"{w}: {key} missing")
             else:
                 cmp(errors, f"{w} {key}", num(bm[key]), want)
         if "power_at_f0" not in bm or "power_se" not in bm:
             errors.append(f"{w}: power_at_f0 / power_se missing")
-    elif any(key in bm for key in ("f_hat", "power_at_f0")):
-        errors.append(f"{w}: untestable but carries f_hat / power")
+    elif any(key in bm for key in ("f_hat", "power_at_f0", "s2_rms_a")):
+        errors.append(f"{w}: untestable but carries f_hat / power / s2_rms_a")
     if cross is None:
         errors += [f"{w}: {key} present without a reference cross-check value"
                    for key in ("cross_check_r", "cross_check_f_hat") if key in bm]
@@ -441,6 +445,7 @@ def main() -> None:
         sfx = "" if k == 0 else f"#{k}"
         rng = stream("m4g3_draws" + sfx, metric)
         d2, H1, H2, absa, absb, ba, bb, cross = [], [], [], [], [], [], [], []
+        d2a, b2a = [], []
         for st, cl in zip(movers, cands):
             grp = st[0]["position_group"]
             ma = ma_of(metric, grp)
@@ -466,6 +471,8 @@ def main() -> None:
             H2.append([x[1][1] for x in ha])
             ba.append(sum(abs(x[1][0] - x[0][0]) for x in ha) / DRAWS)
             bb.append(sum(abs(x[1][1] - x[0][1]) for x in ha) / DRAWS)
+            d2a.append((p[1][0] - p[0][0]) ** 2)
+            b2a.append(sum((x[1][0] - x[0][0]) ** 2 for x in ha) / DRAWS)
             if metric == "team_pass_share":
                 cm = meas["team_pass_share"].get(grp, {})
             else:
@@ -482,6 +489,7 @@ def main() -> None:
                "cross": float(np.mean(cross)) if cross else None}
         if len(d2) >= MIN_N:
             out["res"] = rule(np.array(d2), np.array(H1), np.array(H2), stream("m4g3_boot" + sfx, metric), b)
+            out["res"]["s2_rms_a"] = sum(d2a) / sum(b2a)
         return out
 
     def verdict_of(n: int, lo: float | None, hi: float | None) -> str:
@@ -505,7 +513,7 @@ def main() -> None:
             if res is None:
                 chk(f"{metric} verdict", o["verdict"], "untestable")
             else:
-                for key in ("r_m", "f_hat", "s2_rms", "verdict", "point_pass", "boot_inf"):
+                for key in ("r_m", "f_hat", "s2_rms", "verdict", "point_pass", "boot_inf", "s2_rms_a"):
                     chk(f"{metric} {key}", o[key], res[key])
                 chk(f"{metric} ci_lo", o["ci"][0], res["ci"][0])
                 chk(f"{metric} ci_hi", o["ci"][1], res["ci"][1])

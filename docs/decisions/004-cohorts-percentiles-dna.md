@@ -1558,7 +1558,7 @@ Adds to §13.1 and §13.2; plan 005 "M4g4 plan" holds the full spec, the power t
   - each half is adjusted with its own exposure, using the fixed all-4-league β̂, as are criterion (3)'s split halves;
   - one pooled verdict per (metric, candidate), each mover adjusted with its own group's parameters;
   - streams `cell_rng("m4g4_draws" | "m4g4_boot" [+ "#k", k = 1–5], metric, candidate)`, candidate tokens `beta_hat` / `team_share` / `beta_1`;
-  - mover runs for `ball_recoveries_p90` under all three non-zero candidates; a verdict for a candidate a group did not select is report-only;
+  - mover runs for `ball_recoveries_p90` under all three non-zero candidates; a verdict for a candidate a group did not select is labelled "report only, not used for any restore" in the review doc, the registry fields and every page;
   - scales (a) and (b) use the adjusted column's own reference population;
   - **β = 0 reuses the M4g3b verdict and is not re-run** (an unchanged column; a re-run on new streams would be seed-shopping).
 - **Vector (D4 = C):** every Defending DNA member (style or directional) whose selected candidate passes (1)–(3) enters the vector adjusted. The mover rule gates only the score. β = 0, or no passing candidate, leaves the raw column. Weights stay as §12.6.
@@ -1568,7 +1568,7 @@ Adds to §13.1 and §13.2; plan 005 "M4g4 plan" holds the full spec, the power t
   - With one directional member per group, the status is that member's.
 - **Restore support (D6, D7):**
   - **D6:** a restore needs PASS on all six streams (PASS ∧ ¬`borderline_seed`); simulated cost 3–4 points of power at f = 0.
-  - **D7:** "PASS (below model range)" restores only through the §13.7 exception, applied via a stored `s2_rms_a` (RMS S² on local percentiles), which the movers block gains for every metric: √`s2_rms_a` ≤ 1. The β = 0 reuse back-fills it from the M4g3 primary streams.
+  - **D7:** "PASS (below model range)" restores only through the §13.7 exception, applied via a stored `s2_rms_a` (RMS S² on local percentiles), which the movers block gains for every testable metric (28 of 34 in 2015/16): √`s2_rms_a` ≤ 1. The β = 0 reuse back-fills it from the M4g3 primary streams. **STOP rule:** the 34 M4g3b entries stay identical in every existing field, with `s2_rms_a` as the only added key, and no verdict or flag changes. The write moves `REGISTRY_VERSION` (the measurements are hashed); percentiles and DNA change in their stamps only.
 - **The 8 majority-triggered allow-listed cells (§13.6): M4g4 decides nothing for them.**
   - M4g4's exposure (opponent passing) was never pre-registered for on-ball progression, and their M4g3 verdicts are all inconclusive.
   - They stay DNA and move to the M4 sign-off list, next to family weighting and the FAIL list. M4g5 informs the two `long_pass_completion_pct` cells.
@@ -1584,3 +1584,8 @@ Adds to §13.1 and §13.2; plan 005 "M4g4 plan" holds the full spec, the power t
   - **compare pairs (C4):** the M4g1b expectation (Busquets–Kanté 0.1431, Carrick–Busquets 0.1134) is "not tested" iff neither DM-CM `interceptions_p90` nor `ball_recoveries_p90` is adjusted. Other DM-CM adjustments (pressures, blocks, clearances, fouls committed all fail β = 0 on (1)) are reported alongside.
 - **Known beforehand:** 0 changes to `registry_status`, note or reason on any existing cell. `spikes/expected_m4g4_flips.json` is written by an independent reference before any registry code, and `spikes/m4g4_before_after.py` is the STOP rule.
 - **M4g4-0 (`5886a06`):** the M4g3b reference-hardening gate is done. The committed outputs are reproduced byte-identically, and the reference passes on them.
+- **M4g4a outcome (2026-10-08; plan 005 holds the figures):**
+  - the independent own-team recount equals the pipeline's `team_open_play_passes_while_on` on all 43,044 player-match rows; every opponent open-play pass is credited to 8–11 defenders (one 8: two Frosinone dismissals plus a treatment window);
+  - the proxy agreement holds (exact / proxy median 1.0013 own, 1.0011 opponent, on gated pool rows), but single rows differ by up to 10%;
+  - the M4e range "534–543 (Caen, Carpi)" is not reproduced: on D12's definition Carpi is 534.2 and Caen 519.0;
+  - `s2_rms_a` joined the movers block under the STOP rule (0 cell, verdict or flag changes); `REGISTRY_VERSION` 78ceb0dae425… → 86b6389f389f…; percentiles and DNA changed in their stamps only.

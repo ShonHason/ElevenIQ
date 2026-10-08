@@ -38,6 +38,9 @@ Spec (plan 005 M4g3 and ADR 004 §13.7, as amended 2026-10-08):
   recomputed per resample, two-sided 95% percentile CI; PASS / FAIL / inconclusive; fewer than
   12 movers → untestable).
 - Low power (written before f̂): m4g3_power.low_power at the metric's own n and R_m.
+- s2_rms_a (plan 005 M4g4a, ADR 004 §13.8 D7): Ŝ² in RMS form on scale (a), Σ Δa² / Σ base_a with
+  base_a = a mover's mean over draws of (h2a − h1a)², for testable metrics only. Report only
+  here; the registry's "below model range" exception reads it from M4g4d on.
 - A null in any count column of either parquet fails the run (a NaN half would otherwise drop
   a baseline candidate silently; plan 005 M4g4-0).
 - The Koné illustration is report only: main() adds it, so compute() (and the measurement
@@ -307,6 +310,7 @@ def run_metric(ctx: Ctx, metric: str, k: int = 0, b: int = pw.B,
     draw_key, boot_key = stream_keys(k)
     kind = spec(metric)[0]
     d2, h1s, h2s, absa, absb, base_a, base_b, cross, ids, excl = ([] for _ in range(10))
+    d2_a, base2_a = [], []                                  # scale (a), RMS form (D7)
     rng_draw = pw.cell_rng(draw_key, metric)
     for stints, cand in zip(ctx.movers, ctx.halves):
         grp = stints[0]["position_group"]
@@ -337,6 +341,8 @@ def run_metric(ctx: Ctx, metric: str, k: int = 0, b: int = pw.B,
         h2s.append(hb[:, 1, 1])
         base_a.append(float(np.mean(np.abs(hb[:, 1, 0] - hb[:, 0, 0]))))
         base_b.append(float(np.mean(np.abs(hb[:, 1, 1] - hb[:, 0, 1]))))
+        d2_a.append((pa[1][0] - pa[0][0]) ** 2)
+        base2_a.append(float(np.mean((hb[:, 1, 0] - hb[:, 0, 0]) ** 2)))
         ids.append(stints[0]["player_name"])
         # cross-check
         src = ctx.meas["ratios" if kind == "ratio" else "metrics"].get(metric) if kind != "share" \
@@ -367,6 +373,7 @@ def run_metric(ctx: Ctx, metric: str, k: int = 0, b: int = pw.B,
             rec["low_power"] = pw.low_power(n, float(r_m), power_datasets, b)
         res = pw.mover_rule(d2a, h1a, h2a, pw.cell_rng(boot_key, metric), b=b)
         rec |= {"f_hat": res.f_hat, "s2_rms": res.s2, "s_rms": math.sqrt(res.s2),
+                "s2_rms_a": math.fsum(d2_a) / math.fsum(base2_a),
                 "ci": [res.ci_lo, res.ci_hi], "verdict": res.verdict,
                 "point_pass": res.point_pass, "boot_inf": res.boot_inf}
     else:
@@ -503,7 +510,8 @@ def movers_block(result: dict) -> dict:
         if "f_hat" in r:
             rec |= {"f_hat": _num(r["f_hat"]), "ci_lo": _num(r["ci"][0]), "ci_hi": _num(r["ci"][1]),
                     "r_m": r["r_m"], "s2_rms": r["s2_rms"], "boot_inf": r["boot_inf"],
-                    "power_at_f0": r["low_power"]["power_at_f0"], "power_se": r["low_power"]["se"]}
+                    "power_at_f0": r["low_power"]["power_at_f0"], "power_se": r["low_power"]["se"],
+                    "s2_rms_a": r["s2_rms_a"]}
         if "cross_check" in r:
             rec["cross_check_r"] = r["cross_check"]["r_step_down"]
             if "f_hat_with_step_down" in r["cross_check"]:

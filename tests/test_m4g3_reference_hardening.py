@@ -27,14 +27,14 @@ import m4g3_movers as mv  # noqa: E402
 import m4g3_movers_reference as ref  # noqa: E402
 import m4g3_power as pw  # noqa: E402
 
-RES = {"f_hat": 0.3, "ci": [-0.2, 1.0], "r_m": 0.59, "s2_rms": 1.44, "boot_inf": 0}
+RES = {"f_hat": 0.3, "ci": [-0.2, 1.0], "r_m": 0.59, "s2_rms": 1.44, "boot_inf": 0, "s2_rms_a": 1.2}
 CROSS = 0.58
 EXTRAS = [{"n": 24, "res": {"ci": [-0.1, 0.9]}} for _ in range(ref.EXTRA)]
 
 
 def good_block_metric() -> dict:
     return {"n": 24, "f_hat": 0.3, "ci_lo": -0.2, "ci_hi": 1.0, "r_m": 0.59, "s2_rms": 1.44,
-            "boot_inf": 0, "power_at_f0": 0.6, "power_se": 0.01, "cross_check_r": CROSS,
+            "boot_inf": 0, "s2_rms_a": 1.2, "power_at_f0": 0.6, "power_se": 0.01, "cross_check_r": CROSS,
             "cross_check_f_hat": (1.44 - 1) * (1 - CROSS) / CROSS,
             "extra_seeds": [{"k": i + 1, "n": 24, "ci_lo": -0.1, "ci_hi": 0.9}
                             for i in range(ref.EXTRA)]}
@@ -200,3 +200,18 @@ def test_ctx_fails_on_a_null_in_either_parquet(target, monkeypatch):
     monkeypatch.setattr(mv.pl, "read_parquet", tampered)
     with pytest.raises(SystemExit):
         mv.Ctx()
+
+
+# s2_rms_a (plan 005 M4g4a, ADR 004 §13.8 D7)
+def test_missing_or_wrong_s2_rms_a_fails():
+    bm = good_block_metric()
+    bm["s2_rms_a"] = 1.3
+    assert ref.block_metric_errors("m", bm, 24, RES, CROSS, EXTRAS)
+    del bm["s2_rms_a"]
+    assert any("s2_rms_a missing" in e for e in ref.block_metric_errors("m", bm, 24, RES, CROSS, EXTRAS))
+
+
+def test_untestable_metric_carrying_s2_rms_a_fails():
+    bm = {"n": 4, "s2_rms_a": 1.0, "extra_seeds": [{"k": i + 1, "n": 4} for i in range(ref.EXTRA)]}
+    extras = [{"n": 4, "res": None} for _ in range(ref.EXTRA)]
+    assert any("s2_rms_a" in e for e in ref.block_metric_errors("m", bm, 4, None, None, extras))

@@ -213,3 +213,22 @@ class TestSnapshotMovers:
         assert set(snap["movers"]) == set(d.movers)
         assert snap["movers"][_COL]["ci"] == [0.8, "+inf"]
         json.dumps(snap, allow_nan=False)      # raises on a bare inf/nan
+
+
+class TestCommittedS2RmsA:
+    """ADR 004 §13.8 D7: s2_rms_a (RMS S^2 on local percentiles) is stored for testable metrics only."""
+
+    def test_present_iff_testable_and_finite_positive(self):
+        block = load_measurements()["movers"]
+        for name, rec in block["metrics"].items():
+            testable = rec["n"] >= block["min_movers"]
+            assert ("s2_rms_a" in rec) == testable, name
+            assert ("f_hat" in rec) == testable, name
+            if testable:
+                assert 0 < rec["s2_rms_a"] < 100, name
+
+    def test_documented_below_model_range_values(self):
+        # plan 005 M4g4a outcome: sqrt(s2_rms_a) 0.818 and 0.964, both <= 1
+        mm = load_measurements()["movers"]["metrics"]
+        assert mm["fouls_won_p90"]["s2_rms_a"] ** 0.5 == pytest.approx(0.818, abs=1e-3)
+        assert mm["op_xg_assisted_p90"]["s2_rms_a"] ** 0.5 == pytest.approx(0.964, abs=1e-3)
