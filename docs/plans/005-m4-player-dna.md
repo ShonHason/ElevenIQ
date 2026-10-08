@@ -1351,6 +1351,14 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   - ranks share a rank within 1e-12. The tolerance is not transitive for chains of near-ties. Harmless for display, and the check uses the same rule;
   - `SHOW_PAIRS` (`spikes/m4g_style_map.py`) fails the whole run if a pair is not unique among the plotted rows. A warning would do, since the pairs are display only;
   - `others` (the cross-group search list) holds every row, so a player at two clubs is listed twice. Dedupe by name to shrink each page.
+- **M4g3c movers-display follow-ups** (code-reviewer, M4g3c; user 2026-10-08):
+  - tests of the check's failure paths (`m4g_movers_display.check_page` fails on a tampered span), and of `for_map` edge cases: more than 3 plotted stints, colour slots, a one-profile player getting "Played for" without a combined dot;
+  - `panel` / `rank_both` with 3 stints, and stint order for same-day starts or a player returning to a club: today the order is (first, last, key), so "date order" is not guaranteed for those;
+  - `stint_dates_from_matches` loops over every player-match row in Python; filter the frame to the wanted keys first, and fail clearly on an unknown match id;
+  - the unused `teams` key in the mover dict;
+  - combined dots ignore the role toggles, so a player whose stints are all filtered out still shows his dot;
+  - `extra_static` in `m4g_style_page.check_page` has a default; make it required so a caller cannot skip the movers' fixed wording;
+  - `test_combined_lies_on_the_segment` builds scores with the same linear map `combined` uses: it checks the weights, not the projection independently.
 - **History mode: one player across seasons** (user, 2026-10-07; record only, not built). Show a player's path over seasons on the style map. Prerequisites:
   - full-league, multi-season data from one source (StatsBomb Open Data has one full-league season here, 2015/16);
   - an ADR on aligning maps across seasons. Each season's PCA has its own axes, so positions are not comparable without a fixed projection or an alignment rule.

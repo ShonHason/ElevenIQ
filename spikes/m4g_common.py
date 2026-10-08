@@ -59,9 +59,10 @@ def fail(msg: str) -> None:
     raise SpikeError(1)
 
 
-def position_minutes(keys: set[tuple]) -> dict[tuple, Counter]:
+def position_minutes(keys: set[tuple], comps: tuple[tuple[int, int], ...] = POOL
+                     ) -> dict[tuple, Counter]:
     """(player_id, team_id, competition_id) -> lineup position -> minutes, for the given season
-    keys, every position counted."""
+    keys, every position counted, over the given (competition_id, season_id) pairs."""
     wanted = {(k[0], k[1], k[2]) for k in keys}
     # The §31 implementation reads the module-level POSITION_GROUP; mapping each position to
     # itself makes its "group minutes" per-position minutes. Swapped and restored here rather
@@ -71,7 +72,7 @@ def position_minutes(keys: set[tuple]) -> dict[tuple, Counter]:
     out: dict[tuple, Counter] = defaultdict(Counter)
     vcm.POSITION_GROUP = {name: name for name in groups}   # each position its own "group"
     try:
-        for comp, season in POOL:
+        for comp, season in comps:
             for m in load_matches(comp, season):
                 mid = m["match_id"]
                 with open(DATA_ROOT / "events" / f"{mid}.json") as f:

@@ -14,6 +14,9 @@ Page (self-contained HTML, inline SVG and JS, no network):
   behind a "Details" toggle, open once a card is pinned by a click;
 - an explainer panel: how to read the map, what each axis end means (its three strongest
   metrics), how much of the variance is shown, and what the colours mean.
+- movers (M4g3c; facts and check in m4g_movers_display): a combined dot per player with 2+
+  stints on this map; a click expands it (stint dots with team rings, an arrow in date order, a
+  panel), a second click or Esc collapses; "#mv=<name>" in the URL opens one on load;
 - compare mode (M4g1b; facts, renderer and check in m4g_compare): click A, then B, of this
   group; both ringed (B dashed) with a line between them; Esc or "Clear" resets. The panel
   is rendered by m4g_compare.JS from facts computed in Python. A search that finds nobody here
@@ -77,9 +80,11 @@ STATIC_TEXT = ("PC1", "PC2", ROLE_RULE, SLOT_RULE, *SLOT_WORDS.values())
 
 CSS = """
 :root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a65;--line:#e3e1da;--card:#ffffff;
---s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--mix:#8d8b83;--neu:#2a78d6}
+--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--mix:#8d8b83;--neu:#2a78d6;
+--t1:#4a3aa7;--t2:#e87ba4;--t3:#008300}
 @media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#ecebe6;--muted:#a3a19a;--line:#33322e;
---card:#1f1f1c;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--mix:#86847c;--neu:#3987e5}}
+--card:#1f1f1c;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--mix:#86847c;--neu:#3987e5;
+--t1:#9085e9;--t2:#d55181;--t3:#008300}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
 font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px 16px 64px}
 main{max-width:1100px;margin:0 auto}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
@@ -101,10 +106,10 @@ svg.map{width:100%;height:auto;background:var(--card);border:1px solid var(--lin
 touch-action:none;cursor:grab;display:block}
 svg text{fill:var(--fg);font-size:12px}svg .axis{stroke:var(--line)}svg .end{fill:var(--muted);font-size:12px;font-weight:600}
 svg text.lbl,svg text.end,svg text.nm{paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round}
-svg text.nm{font-size:11px}svg text,.face{pointer-events:none}
+svg text.nm{font-size:11px}svg text{pointer-events:none}
 .mk{stroke:var(--card);stroke-width:1}.c1{fill:var(--s1)}.c2{fill:var(--s2)}.c3{fill:var(--s3)}.c4{fill:var(--s4)}
 .cmix{fill:none;stroke:var(--mix);stroke-width:1.5}.cneu{fill:var(--neu);opacity:.45}
-.face{fill:none;stroke:var(--fg);stroke-width:2}.hitbox{fill:transparent;stroke:none;pointer-events:all}
+.hitbox{fill:transparent;stroke:none;pointer-events:all}
 g[data-i]{cursor:pointer}g.dim{opacity:.1}g.hit .mk,g.hit .cmix{stroke:var(--fg);stroke-width:2.5}
 svg.key{width:14px;height:14px;flex:none;background:none;border:0}
 .tip{position:fixed;z-index:10;max-width:380px;background:var(--card);color:var(--fg);border:1px solid var(--line);
@@ -120,6 +125,12 @@ svg text.nm.sel{font-weight:700;font-size:12px}
 line-height:20px;font-weight:700;margin-left:8px}.cmp .tag.b{border-style:dashed}
 .cmp h3{font-size:14px;margin:14px 0 4px}.cmp ul{margin:4px 0;padding-left:18px}.cmp li{margin:3px 0}
 .tip.pinned{pointer-events:auto}.tip ul{margin:2px 0 6px;padding-left:16px}.tip li{margin:2px 0}
+.mvo{fill:var(--card);stroke:var(--fg);stroke-width:2}.mvi{fill:var(--fg)}g.hit .mvo{stroke-width:3.5}
+.mvring{fill:none;stroke-width:2.5}.mvring.t1{stroke:var(--t1)}.mvring.t2{stroke:var(--t2)}.mvring.t3{stroke:var(--t3)}
+svg .mvline{fill:none;stroke:var(--fg);stroke-width:1.75;pointer-events:none}svg .mvah{fill:var(--fg)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:50%;border:2.5px solid var(--line);margin-right:5px;
+vertical-align:-1px}.sw.t1{border-color:var(--t1)}.sw.t2{border-color:var(--t2)}.sw.t3{border-color:var(--t3)}
+.pf{margin-top:6px}.pf ol{list-style:none;padding:0;margin:2px 0}.pf li{margin:2px 0}
 .tip .ax{margin-top:8px;font-weight:600}.tip .x{position:absolute;top:4px;right:6px;border:0;background:none;
 color:var(--muted);font-size:16px;cursor:pointer}.tip details{margin-top:6px}.tip summary{cursor:pointer;color:var(--muted)}
 """
@@ -133,21 +144,58 @@ let k=1,tx=0,ty=0,pinned=null,hits=null,cmpOn=false,A=null,B=null;const hidden=n
 const line=document.getElementById('cmpline'),panel=document.getElementById('cmp'),
 cbtn=document.getElementById('cmpbtn'),cclr=document.getElementById('cmpclr'),cmsg=document.getElementById('cmpmsg');
 const gOf=i=>G.find(g=>+g.dataset.i===i);
+const MV=D.mv,MG=[...svg.querySelectorAll('g[data-m]')],fold=new Set(),mvl=document.getElementById('mvline'),
+mvp=document.getElementById('mvp'),MV_SEP=120,MV_SEP_TO=160;let open=null;for(const m of MV)for(const i of m.st)fold.add(i);
+const off=i=>i>=0&&(hidden.has(i)||fold.has(i));
+const XY=i=>i<0?MV[-i-1].xy:D.xy[i],mOf=i=>MG.find(g=>+g.dataset.m===-i-1);
+function vis(g){g.style.display=off(+g.dataset.i)?'none':''}for(const g of G)vis(g);
 const norm=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
-function sx(i){return D.xy[i][0]*k+tx}function sy(i){return D.xy[i][1]*k+ty}
+function sx(i){return XY(i)[0]*k+tx}function sy(i){return XY(i)[1]*k+ty}
 function apply(){for(const g of G){const i=+g.dataset.i;
 g.setAttribute('transform','translate('+sx(i).toFixed(1)+' '+sy(i).toFixed(1)+')');}
+for(const g of MG){const i=-(+g.dataset.m)-1;
+g.setAttribute('transform','translate('+sx(i).toFixed(1)+' '+sy(i).toFixed(1)+')');}drawMv();
 const ox=D.o[0]*k+tx,oy=D.o[1]*k+ty;ax.setAttribute('y1',oy);ax.setAttribute('y2',oy);
 ay.setAttribute('x1',ox);ay.setAttribute('x2',ox);drawLine();labels();if(pinned!==null)place(pinned);}
 function drawLine(){if(A===null||B===null){line.setAttribute('visibility','hidden');return}
 line.setAttribute('x1',sx(A));line.setAttribute('y1',sy(A));line.setAttribute('x2',sx(B));
 line.setAttribute('y2',sy(B));line.setAttribute('visibility','visible')}
+function side(t,dx,dy){const d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d,r=14+6*Math.abs(uy);
+t.setAttribute('x',(ux*r).toFixed(1));t.setAttribute('y',(uy*r+4).toFixed(1));
+t.setAttribute('text-anchor',ux>0.35?'start':ux<-0.35?'end':'middle')}
+function drawMv(){if(open===null){mvl.setAttribute('visibility','hidden');return}
+{const st=MV[open].st,c=MV[open].xy,u=XY(st[0]),v=XY(st[st.length-1]);
+for(const i of st){const p=XY(i);side(gOf(i).querySelector('.mvt'),p[0]-c[0],p[1]-c[1])}
+let nx=-(v[1]-u[1]),ny=v[0]-u[0];if(ny<0){nx=-nx;ny=-ny}side(mOf(-open-1).querySelector('.mvn'),nx,ny)}
+const P=MV[open].st.map(i=>[sx(i),sy(i)]),n=P.length,cut=(a,b,r)=>{const d=Math.hypot(b[0]-a[0],b[1]-a[1])||1;
+return[a[0]+(b[0]-a[0])*r/d,a[1]+(b[1]-a[1])*r/d]};
+P[0]=cut(P[0],P[1],11);P[n-1]=cut(P[n-1],P[n-2],12);
+mvl.setAttribute('points',P.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' '));mvl.setAttribute('visibility','visible')}
+function fit(ix){const xs=ix.map(i=>XY(i)[0]),ys=ix.map(i=>XY(i)[1]);
+const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+centreOn((x0+x1)/2,(y0+y1)/2,Math.min(k,0.85*Math.min(W/(x1-x0+60),H/(y1-y0+60))))}
+function redim(){const st=open===null?null:MV[open].st,on=!st&&!!hits&&hits.length>0;
+for(const g of G){const i=+g.dataset.i;
+g.classList.toggle('dim',i!==A&&i!==B&&(st?!st.includes(i):on&&!hits.includes(i)))}
+for(const g of MG){const i=-(+g.dataset.m)-1;g.classList.toggle('dim',st?-i-1!==open:on&&!hits.includes(i))}}
+function foldMv(){const st=MV[open].st,t=mOf(-open-1).querySelector('.mvn');open=null;
+t.setAttribute('x','0');t.setAttribute('y','20');t.setAttribute('text-anchor','middle');mvp.hidden=true;mvp.innerHTML='';
+if(st.some(i=>i===A||i===B))clearCmp();if(pinned!==null&&st.includes(pinned))unpin();
+for(const i of st){fold.add(i);vis(gOf(i))}redim();apply()}
+function toggleMv(j){const was=open;if(open!==null)foldMv();if(was===j){if(cmpOn)say('');return}open=j;
+for(const i of MV[j].st){fold.delete(i);const g=gOf(i);vis(g);g.parentNode.appendChild(g)}
+mvp.innerHTML=MV[j].panel;mvp.hidden=false;redim();
+if(cmpOn)say('Pick one of '+MV[j].name+"'s clubs (the ringed dots).");
+const st=MV[j].st,u=st[0],v=st[st.length-1],sep=Math.hypot(sx(u)-sx(v),sy(u)-sy(v));
+if(sep<MV_SEP)centreOn((XY(u)[0]+XY(v)[0])/2,(XY(u)[1]+XY(v)[1])/2,Math.min(40,k*MV_SEP_TO/Math.max(sep,1)));
+else if(!st.every(inView))fit(st);else apply();
+mvp.scrollIntoView({block:'nearest',behavior:'smooth'})}
 function selLabels(){for(const[i,t]of[[A,'A'],[B,'B']]){if(i===null)continue;
 const s=document.createElementNS('http://www.w3.org/2000/svg','text');s.setAttribute('class','nm sel');
 s.setAttribute('x',(sx(i)-14).toFixed(1));s.setAttribute('y',(sy(i)+4).toFixed(1));s.setAttribute('text-anchor','end');
 s.textContent=t+' · '+D.short[i];NM.appendChild(s)}}
-function labels(){NM.textContent='';selLabels();if(k<D.labelZoom)return;const occ=[];
-const order=G.map(g=>+g.dataset.i).filter(i=>!hidden.has(i)&&!D.face[i]&&i!==A&&i!==B&&(!hits||!hits.length||hits.includes(i)));
+function labels(){NM.textContent='';selLabels();if(k<D.labelZoom||open!==null)return;const occ=[];
+const order=G.map(g=>+g.dataset.i).filter(i=>!off(i)&&i!==A&&i!==B&&(!hits||!hits.length||hits.includes(i)));
 for(const i of order){const x=sx(i),y=sy(i);if(x<0||x>W||y<0||y>H)continue;
 const w=D.short[i].length*6.2+6,r=[x+9,y-9,x+9+w,y+5];if(r[2]>W)continue;
 if(occ.some(o=>r[0]<o[2]&&r[2]>o[0]&&r[1]<o[3]&&r[3]>o[1]))continue;occ.push(r);
@@ -159,12 +207,12 @@ function setView(nk,cx,cy,f){k=Math.min(40,Math.max(1,nk));tx=cx-(cx-tx)*f;ty=cy
 if(k===1){tx=0;ty=0}apply()}
 function zoomAt(x,y,f){const nk=Math.min(40,Math.max(1,k*f));setView(nk,x,y,nk/k)}
 function centreOn(bx,by,nk){k=Math.min(40,Math.max(1,nk));tx=W/2-bx*k;ty=H/2-by*k;apply()}
-function card(i,pin){tip.innerHTML=D.tips[i]+(pin?'<button class="x" aria-label="Close">×</button>':'');
+function card(i,pin){tip.innerHTML=(i<0?MV[-i-1].tip:D.tips[i])+(pin?'<button class="x" aria-label="Close">×</button>':'');
 tip.classList.toggle('pinned',pin);tip.hidden=false}
 function at(x,y){const r=tip.getBoundingClientRect();let L=x+14,T=y+14;
 if(L+r.width>innerWidth-8)L=Math.max(8,x-14-r.width);if(T+r.height>innerHeight-8)T=Math.max(8,y-14-r.height);
 tip.style.left=L+'px';tip.style.top=T+'px'}
-function place(i){const r=G.find(g=>+g.dataset.i===i).getBoundingClientRect();at(r.right,r.bottom)}
+function place(i){const r=(i<0?mOf(i):gOf(i)).getBoundingClientRect();at(r.right,r.bottom)}
 function pin(i){pinned=i;card(i,true);place(i)}
 function unpin(){pinned=null;tip.hidden=true}
 function say(t){cmsg.textContent=t}
@@ -188,8 +236,8 @@ say(cmpOn?'Click a player (A), then a second '+D.cmp.one+' (B).':'')}
 cbtn.addEventListener('click',()=>{cmpOn=!cmpOn;cbtn.setAttribute('aria-pressed',String(cmpOn));
 cclr.hidden=!cmpOn;unpin();clearCmp()});
 cclr.addEventListener('click',clearCmp);
-function pick(e){const el=document.elementFromPoint(e.clientX,e.clientY);const g=el&&el.closest('g[data-i]');
-return g&&!hidden.has(+g.dataset.i)?+g.dataset.i:null}
+function pick(e){const el=document.elementFromPoint(e.clientX,e.clientY);const g=el&&el.closest('g[data-i],g[data-m]');
+if(!g)return null;if(g.dataset.m!==undefined)return -(+g.dataset.m)-1;return off(+g.dataset.i)?null:+g.dataset.i}
 svg.addEventListener('wheel',e=>{e.preventDefault();const p=pt(e);zoomAt(p.x,p.y,Math.exp(-e.deltaY*0.0015))},{passive:false});
 const P=new Map();let drag=null,pinch=null,moved=false;
 svg.addEventListener('pointerdown',e=>{try{svg.setPointerCapture(e.pointerId)}catch(_){}P.set(e.pointerId,pt(e));moved=false;
@@ -205,23 +253,26 @@ if(moved){if(k>1){tx=drag.tx+dx;ty=drag.ty+dy;apply()}if(pinned===null)tip.hidde
 if(pinned!==null||e.pointerType!=='mouse')return;const i=pick(e);
 if(i===null){tip.hidden=true;return}card(i,false);at(e.clientX,e.clientY)});
 svg.addEventListener('pointerup',e=>{P.delete(e.pointerId);if(P.size<2)pinch=null;
-if(P.size===0){drag=null;if(!moved){const i=pick(e);if(cmpOn){if(i!==null)choose(i)}
+if(P.size===0){drag=null;if(!moved){const i=pick(e);if(i!==null&&i<0){unpin();toggleMv(-i-1)}else if(cmpOn){if(i!==null)choose(i)}
 else if(i===null)unpin();else pin(i)}}});
 svg.addEventListener('pointerleave',()=>{if(pinned===null)tip.hidden=true});
 tip.addEventListener('click',e=>{if(e.target.closest('.x'))unpin()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){unpin();if(cmpOn)clearCmp()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){unpin();if(open!==null)foldMv();if(cmpOn)clearCmp()}});
 document.getElementById('reset').addEventListener('click',()=>{unpin();k=1;tx=0;ty=0;apply()});
 const q=document.getElementById('q'),cnt=document.getElementById('cnt');
 function search(){const v=norm(q.value.trim());unpin();hits=[];
-for(const g of G){const i=+g.dataset.i,h=!!v&&!hidden.has(i)&&norm(D.names[i]).includes(v);
-g.classList.toggle('hit',h);g.classList.toggle('dim',!!v&&!h&&i!==A&&i!==B);if(h)hits.push(i)}
-for(const i of hits){const g=G.find(x=>+x.dataset.i===i);g.parentNode.appendChild(g)}
+for(const g of G){const i=+g.dataset.i,h=!!v&&!off(i)&&norm(D.names[i]).includes(v);
+g.classList.toggle('hit',h);
+g.classList.toggle('dim',!!v&&!h&&i!==A&&i!==B&&!(open!==null&&MV[open].st.includes(i)));if(h)hits.push(i)}
+for(const g of MG){const i=-(+g.dataset.m)-1,h=!!v&&norm(MV[-i-1].name).includes(v);
+g.classList.toggle('hit',h);g.classList.toggle('dim',!!v&&!h);if(h)hits.push(i)}
+for(const i of hits){const g=i<0?mOf(i):gOf(i);g.parentNode.appendChild(g)}
 cnt.textContent=v?(hits.length===1?'1 match':hits.length+' matches'):'';
 if(!hits.length){if(!v){k=1;tx=0;ty=0;apply()}else cnt.textContent=elsewhere(v);return}
-const xs=hits.map(i=>D.xy[i][0]),ys=hits.map(i=>D.xy[i][1]);
+const xs=hits.map(i=>XY(i)[0]),ys=hits.map(i=>XY(i)[1]);
 const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
 const nk=hits.length===1?Math.max(k,4):Math.min(40,0.85*Math.min(W/(x1-x0+60),H/(y1-y0+60)));
-centreOn((x0+x1)/2,(y0+y1)/2,nk);if(hits.length===1){if(cmpOn)choose(hits[0]);else pin(hits[0])}}
+centreOn((x0+x1)/2,(y0+y1)/2,nk);if(hits.length===1){if(cmpOn&&hits[0]>=0)choose(hits[0]);else pin(hits[0])}}
 function elsewhere(v){const u=D.unplotted.filter(x=>norm(x).includes(v)),o=D.others.filter(x=>norm(x[0]).includes(v));
 if(u.length)return 'No match on the map. '+u[0]+' is in this group but not plotted (a metric below its minimum).';
 if(o.length)return 'No match here. '+o[0][0]+' is in '+o[0][1]+' (open '+o[0][2]+'). Compare works within one position group.';
@@ -229,10 +280,12 @@ return 'No match'}
 q.addEventListener('input',search);
 for(const c of document.querySelectorAll('input[data-role]'))c.addEventListener('change',()=>{
 const role=c.dataset.role;for(const g of G){const i=+g.dataset.i;if(D.role[i]!==role)continue;
-if(c.checked)hidden.delete(i);else hidden.add(i);g.style.display=c.checked?'':'none'}
+if(c.checked)hidden.delete(i);else hidden.add(i);vis(g)}
 if(pinned!==null&&hidden.has(pinned))unpin();if((A!==null&&hidden.has(A))||(B!==null&&hidden.has(B)))clearCmp();
 labels()});
-apply()})();
+apply();
+let h='';try{h=decodeURIComponent(location.hash)}catch(_){}if(h.startsWith('#mv=')){const v=norm(h.slice(4));
+const j=MV.findIndex(m=>norm(m.name).includes(v));if(j>=0)toggleMv(j)}})();
 """
 
 
@@ -331,6 +384,9 @@ def tooltip(ctx: dict, i: int) -> str:
            f'{span("data-cfg", "league|" + str(r["key"][2]), league)} · '
            f'{span("data-id", k + "|minutes_played", minutes)} min</div>',
            f'<div>{span("data-role", k + "|role", cm.role_words(role))}</div>']
+    pf = ctx.get("played", {}).get(r["key"])
+    if pf:
+        out.append(pf)
     for a in (0, 1):
         score = float(sm["scores"][i, a])
         where = lean(score, sm["sd"][a], names, sm["model"], labels, a)
@@ -353,6 +409,7 @@ def tooltip(ctx: dict, i: int) -> str:
         f'{span("data-role", f"{k}|share|{rl}", f"{s:.0%}")} {esc(cm.ROLE_WORDS[rl].lower())}'
         for rl, s in role["top"] if s >= 0.01) + ".</div>")
     det.append(f"<div class=\"g\">{esc(ROLE_RULE)}</div>")
+    det.append(ctx.get("played_detail", {}).get(r["key"], ""))
     lab = ctx["lab"]
     if lab is not None:
         lb = lab[r["key"]]
@@ -370,7 +427,7 @@ def tooltip(ctx: dict, i: int) -> str:
 # ── Check: every number in every card, re-derived from the parquets ──────────
 
 class _Spans(html.parser.HTMLParser):
-    ATTRS = ("data-id", "data-cfg", "data-dna", "data-pca", "data-lab", "data-role")
+    ATTRS = ("data-id", "data-cfg", "data-dna", "data-pca", "data-lab", "data-role", "data-mv")
 
     def __init__(self) -> None:
         super().__init__()
@@ -401,7 +458,7 @@ def _key(parts: list[str]) -> tuple:
 def check_page(path: Path, group: str, weights: dict[str, float], dna_parquet: Path,
                season_parquet: Path, key_cols: tuple[str, ...], leagues: dict[int, str],
                labels: dict[str, str], names, roles: dict[tuple, dict],
-               lab: dict[tuple, dict] | None) -> int:
+               lab: dict[tuple, dict] | None, extra_static: tuple[str, ...] = ()) -> int:
     """
     Re-derive every traced number in every card: identity and minutes from the season parquet,
     percentile wording from player_dna.parquet, every score, push, lean and pull direction by
@@ -435,7 +492,8 @@ def check_page(path: Path, group: str, weights: dict[str, float], dna_parquet: P
         v = [sum(c for _, c in pushes[kk][a]) for kk in keys]
         mu = sum(v) / n_rows
         sd.append(math.sqrt(sum((x - mu) ** 2 for x in v) / (n_rows - 1)))
-    static = sorted(STATIC_TEXT + tuple(labels.values()) + tuple(lc(v) for v in labels.values()),
+    static = sorted(STATIC_TEXT + extra_static + tuple(labels.values())
+                    + tuple(lc(v) for v in labels.values()),
                     key=len, reverse=True)
     n = 0
     for card in data["tips"]:
@@ -447,6 +505,8 @@ def check_page(path: Path, group: str, weights: dict[str, float], dna_parquet: P
         if re.search(r"\d", loose):
             cm.fail(f"{path.name}: digits outside traced spans: {loose[:300]}")
         for attr, r_, shown in p.spans:
+            if attr == "data-mv":           # traced by m4g_movers_display.check_page
+                continue
             parts = r_.split("|")
             k = "|".join(parts[:5])
             if attr == "data-id":
@@ -512,7 +572,8 @@ def point_class(group: str, role: str) -> tuple[int | None, bool, bool, str]:
     return None, False, True, role
 
 
-def svg_map(ctx: dict, order: list[int]) -> tuple[str, list[list[float]], tuple[float, float]]:
+def svg_map(ctx: dict, order: list[int]
+            ) -> tuple[str, list[list[float]], tuple[float, float], list[list[float]]]:
     sm = ctx["sm"]
     s = sm["scores"]
     xs, ys = s[:, 0], s[:, 1]
@@ -530,27 +591,44 @@ def svg_map(ctx: dict, order: list[int]) -> tuple[str, list[list[float]], tuple[
            f'aria-label="Style map, {esc(sm["group"])}: each dot is a player">',
            f'<line id="axx" class="axis" x1="0" y1="{oy:.1f}" x2="{W}" y2="{oy:.1f}"/>',
            f'<line id="axy" class="axis" x1="{ox:.1f}" y1="0" x2="{ox:.1f}" y2="{H}"/>',
-           '<line id="cmpline" class="cmpline" x1="0" y1="0" x2="0" y2="0" visibility="hidden"/>']
+           '<line id="cmpline" class="cmpline" x1="0" y1="0" x2="0" y2="0" visibility="hidden"/>',
+           '<defs><marker id="mvarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
+           'markerHeight="7" orient="auto"><path class="mvah" d="M0,0L10,5L0,10Z"/></marker></defs>',
+           '<polyline id="mvline" class="mvline" points="" visibility="hidden" '
+           'marker-end="url(#mvarrow)"/>']
+    # Combined movers' stints (M4g3c): a team-coloured ring and the club name, shown with the
+    # dot once the combined dot is expanded (the page's JS hides the stint dots until then).
+    ring = {st["key"]: (n + 1, st["team"]) for mv in ctx.get("movers", [])
+            for n, st in enumerate(mv["stints"])}
     xy = []
     for di, i in enumerate(order):
         r = sm["rows"][i]
         x, y = px(float(xs[i]), float(ys[i]))
         xy.append([round(x, 2), round(y, 2)])
         idx, mixed, neutral, _ = point_class(sm["group"], ctx["roles"][r["key"]]["label"])
-        face = ctx["face"].get((r["name"], r["key"][1]))
         extra = ""
-        if face:
-            extra = (f'<circle class="face" r="8"/><text class="lbl" x="11" y="4" '
-                     f'font-weight="600">{esc(face)}</text>')
+        if r["key"] in ring:
+            c, team = ring[r["key"]]
+            extra += (f'<circle class="mvring t{c}" r="8.5"/><text class="lbl mvt" x="0" y="-14" '
+                      f'text-anchor="middle" '
+                      f'font-weight="600">{esc(team)}</text>')
         out.append(f'<g data-i="{di}" transform="translate({x:.1f} {y:.1f})">'
                    f'{_mark(idx, mixed, neutral)}{extra}<circle class="hitbox" r="11"/></g>')
+    mvxy = []
+    for j, mv in enumerate(ctx.get("movers", [])):
+        x, y = px(*mv["cb"]["score"])
+        mvxy.append([round(x, 2), round(y, 2)])
+        out.append(f'<g data-m="{j}" transform="translate({x:.1f} {y:.1f})"><circle class="mvo" r="6.5"/>'
+                   f'<circle class="mvi" r="2.5"/><text class="lbl mvn" x="0" y="20" text-anchor="middle" '
+                   f'font-weight="600">'
+                   f'{esc(mv["name"])}</text><circle class="hitbox" r="12"/></g>')
     out.append('<g id="names"></g>')
     out += [f'<text class="end" x="{W - 10}" y="{H / 2 - 8:.0f}" text-anchor="end">{esc(lab(0, 1))} →</text>',
             f'<text class="end" x="10" y="{H / 2 - 8:.0f}">← {esc(lab(0, -1))}</text>',
             f'<text class="end" x="{W / 2:.0f}" y="18" text-anchor="middle">↑ {esc(lab(1, 1))}</text>',
             f'<text class="end" x="{W / 2:.0f}" y="{H - 10}" text-anchor="middle">↓ {esc(lab(1, -1))}</text>',
             "</svg>"]
-    return "".join(out), xy, (round(ox, 2), round(oy, 2))
+    return "".join(out), xy, (round(ox, 2), round(oy, 2)), mvxy
 
 
 def _key_icon(group: str, role: str) -> str:
@@ -617,18 +695,28 @@ def explainer(ctx: dict, counts: dict[str, int]) -> str:
             + "".join(axes)
             + f"<p><b>Colours and shapes</b></p><ul>{''.join(keys)}</ul>"
             + "".join(f"<p class=\"muted\">{n}</p>" for n in role_note)
-            + "<p class=\"muted\">Ringed: well-known reference players. Scroll or pinch to zoom, "
+            + "<p class=\"muted\">Scroll or pinch to zoom, "
               "drag to pan, hover a dot for its card, click a dot to pin the card and open its "
               "details. <b>Compare mode:</b> click two players to see their real DNA distance, "
               "how they rank in each other's similarity lists, and where they differ most.</p>"
-              "</details>")
+            + ("<p class=\"muted\"><b>Players who changed club:</b> a player with a profile at two "
+               "clubs in this group is one double-ringed dot, his season profile weighted by "
+               "minutes (display only, not part of the map's fit or the neighbour lists). Click it "
+               "to see each club, joined by an arrow in date order; click again or press Esc to "
+               "close. In compare mode, open it first and then pick a club.</p>"
+               if ctx.get("movers") else "")
+            + "</details>")
 
 
 def page(ctx: dict, figs_html: str) -> str:
     sm = ctx["sm"]
     g = sm["group"]
     order = sorted(range(len(sm["rows"])), key=lambda i: sm["rows"][i]["key"])
-    svg, xy, origin = svg_map(ctx, order)
+    svg, xy, origin, mvxy = svg_map(ctx, order)
+    di_of = {sm["rows"][i]["key"]: di for di, i in enumerate(order)}
+    movers = [{"name": mv["name"], "short": mv["name"], "xy": mvxy[j],
+               "st": [di_of[st["key"]] for st in mv["stints"]], "tip": mv["tip"],
+               "panel": mv["panel"]} for j, mv in enumerate(ctx.get("movers", []))]
     roles_in = [ctx["roles"][sm["rows"][i]["key"]]["label"] for i in order]
     toggles = [point_class(g, rl)[3] for rl in roles_in]
     counts: dict[str, int] = {}
@@ -641,11 +729,10 @@ def page(ctx: dict, figs_html: str) -> str:
             "names": [sm["rows"][i]["name"] for i in order],
             "short": [ctx["face"].get((sm["rows"][i]["name"], sm["rows"][i]["key"][1]))
                       or sm["rows"][i]["name"] for i in order],
-            "face": [bool(ctx["face"].get((sm["rows"][i]["name"], sm["rows"][i]["key"][1])))
-                     for i in order],
             "role": toggles, "model": sm["model"],
             "tips": [tooltip(ctx, i) for i in order], "cmp": ctx["cmp"],
-            "unplotted": [r["name"] for r in sm["partial"]], "others": ctx["others"]}
+            "unplotted": [r["name"] for r in sm["partial"]], "others": ctx["others"],
+            "mv": movers}
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     chips = "".join(
         f'<label class="chip"><input type="checkbox" data-role="{esc(t)}" checked>'
@@ -683,6 +770,7 @@ def page(ctx: dict, figs_html: str) -> str:
               f'<span class="muted">Show:</span>{chips}</div>'
               '<p id="cmpmsg" class="muted" aria-live="polite"></p>'
             + svg + '<section id="cmp" class="cmp" hidden aria-live="polite"></section>'
+              '<section id="mvp" class="cmp" hidden aria-live="polite"></section>'
               '<div id="tip" class="tip" hidden></div>'
             + '<h2>Top loadings per axis</h2><p class="muted">Component coefficients on the '
               'weighted input (sign: the largest absolute loading is positive). A positive '

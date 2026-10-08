@@ -43,6 +43,9 @@ Page (display only; m4g_style_page): zoom / pan, search, fine-role colours and t
 number in a card is re-derived from the parquets after writing (m4g_style_page.check_page).
 Compare mode (M4g1b, m4g_compare): two players of the group, their M4f distance, ranks both ways
 and the metrics where they differ most and least; every panel is checked against the parquet.
+Movers (M4g3c, m4g_movers_display): "Played for" on the cards of players with 2+ stints, and one
+combined dot (display only, never in the fit) per player with 2+ plotted stints in the group;
+checked against the parquets and the raw lineups.
 Axis names are the user's reading of the loadings (AXIS_NAMES), each checked against them in
 the review; an axis whose proposed name the loadings do not support stays unnamed.
 
@@ -70,6 +73,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import m4f_weighting_checks as wc  # noqa: E402  (sibling spike: load() and its guards)
 import m4g_common as cm  # noqa: E402  (sibling spike: position minutes, fine roles, labels)
 import m4g_compare as cmp_mod  # noqa: E402  (sibling spike: compare mode facts and check)
+import m4g_movers_display as mv_mod  # noqa: E402  (sibling spike: movers on the maps, M4g3c)
 import m4g_style_page as page_mod  # noqa: E402  (sibling spike: the page and its check)
 import review_sections  # noqa: E402
 
@@ -601,6 +605,8 @@ def label_table(fig: dict) -> list[str]:
 # Compare-mode panels printed on each run (user, 2026-10-07): (A, B) by FACE short label or
 # player_name, DM-CM.
 SHOW_PAIRS = (("Busquets", "Kanté"), ("Michael Carrick", "Busquets"))
+# Mover panels printed on each run (user, 2026-10-08; M4g3c).
+SHOW_MOVERS = ("Lamine Koné", "Jonjo Shelvey")
 
 
 def show_pairs(path: Path, sm: dict, order: list[int]) -> None:
@@ -647,6 +653,11 @@ def main() -> None:
     wt = within_team(maps["DM-CM"], lab)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     page_of = {g: f"style_map_{g.lower().replace('-', '_')}.html" for g in maps}
+    multi = mv_mod.build_facts(SEASON_PARQUET, mv_mod.MATCH_PARQUET)
+    mv_roles = {st["key"]: st["role"] for v in multi.values() for st in v}
+    lineup_dates = mv_mod.stint_dates_from_lineups({k[:3] for k in mv_roles})
+    dna_group = {r["key"]: r["group"] for r in all_rows}
+    dna_status = {r["key"]: r["dna_status"] for r in all_rows}
     for g, sm in maps.items():
         is_dm = g == "DM-CM"
         labels_g = labels_for(g, labels)
@@ -658,15 +669,24 @@ def main() -> None:
                "leagues": wc.LEAGUES, "meta": meta, "facts": facts,
                "notes": {a: AXIS_NOTES[(g, a)] for a in (0, 1) if (g, a) in AXIS_NOTES},
                "cmp": cmp_data, "cmp_js": cmp_mod.JS, "others": others}
+        ctx["group_rows"] = by_group[g]
+        movers = mv_mod.for_map(ctx, multi, dna_group, dna_status, page_of)
+        ctx["played"], ctx["played_detail"] = movers["played"], movers["detail"]
+        ctx["movers"] = movers["movers"]
         path = args.out_dir / page_of[g]
         path.write_text(page_mod.page(ctx, dmcm_figs_html(f68) if is_dm else ""))
         n = page_mod.check_page(path, g, metric_weights(g), wc.DNA_PARQUET, SEASON_PARQUET, KEY,
                                 wc.LEAGUES, labels_g, AXIS_NAMES[g], roles,
-                                lab if is_dm else None)
+                                lab if is_dm else None, mv_mod.STATIC_TEXT)
         n_cmp = cmp_mod.check_page(path, g, wc.DNA_PARQUET, KEY, metric_weights(g), labels_g,
                                    sm["evr"])
+        n_mv = mv_mod.check_page(path, g, wc.DNA_PARQUET, SEASON_PARQUET, wc.LEAGUES, labels_g,
+                                 AXIS_NAMES[g], mv_roles, page_of, lineup_dates)
         print(f"{g}: PC1 {sm['evr'][0]:.3f} PC2 {sm['evr'][1]:.3f}, {n} card values traced, "
-              f"{n_cmp} compare panels checked → {path} ({path.stat().st_size:,} bytes)")
+              f"{n_cmp} compare panels checked, {len(ctx['movers'])} combined dots and "
+              f"{len(ctx['played'])} Played-for cards ({n_mv} values traced) → {path} "
+              f"({path.stat().st_size:,} bytes)")
+        mv_mod.show(path, g, SHOW_MOVERS)
         if is_dm:
             show_pairs(path, sm, order)
     body = review(maps, lab, f68, fpv, read68, readpv, wt, nbrs, dm_all, meta, labels)
