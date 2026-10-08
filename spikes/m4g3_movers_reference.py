@@ -23,6 +23,11 @@ spikes/m4g3_movers.py and spikes/m4g3_power.py:
   .venv/bin/python spikes/m4g3_movers_reference.py --check-measurements NEW_MEASUREMENTS.json \
       --registry data/interim/m4g3b_snapshot/registry.json --write-expected
 
+Hardening (plan 005 M4g4-0, the M4g3b backlog gate): the bootstrap size is checked against B, not
+taken from the file under check; with both files given, each one's power is checked (and the two
+must agree); the block's cross_check_f_hat, the extra seeds' k (paired by position) and the
+absence of cross-check fields without a reference cross value are checked; R_m ≤ 0 has power 0.
+
 Fails on any mismatch beyond TOL. No eleveniq imports (tests/test_spikes_independent.py).
 """
 from __future__ import annotations
@@ -134,7 +139,10 @@ def rule(d2: np.ndarray, h1: np.ndarray, h2: np.ndarray, rng: np.random.Generato
 
 
 def power0(n: int, rel: float, rng: np.random.Generator) -> float:
-    """P(PASS | f = 0): pool of 250 non-movers, halves = s + e, Var(s) 1, Var(e) (1 − R)/R."""
+    """P(PASS | f = 0): pool of 250 non-movers, halves = s + e, Var(s) 1, Var(e) (1 − R)/R.
+    n < MIN_N or R ≤ 0 (no stable between-player signal, so f̂ = +inf) → 0.0; the rng is not used."""
+    if n < MIN_N or not rel > 0:
+        return 0.0
     rel = min(rel, 0.999)
     sd = math.sqrt((1 - rel) / rel)
     hits = 0
@@ -166,6 +174,95 @@ def close(a, b) -> bool:
     return abs(a - b) <= TOL * max(1.0, abs(a), abs(b))
 
 
+def num(x) -> float:
+    """A measurement-file number: '+inf' / '-inf' strings back to floats."""
+    return {"+inf": math.inf, "-inf": -math.inf}.get(x, x) if isinstance(x, str) else x
+
+
+def cmp(errors: list[str], where: str, a, e) -> None:
+    """Append a mismatch: numbers within TOL, anything else by equality."""
+    if not close(float(a), float(e)) if isinstance(e, (int, float)) and not isinstance(e, bool) \
+            else a != e:
+        errors.append(f"{where}: output {a!r} != reference {e!r}")
+
+
+def header_errors(label: str, src: dict) -> list[str]:
+    """The bootstrap size is the written spec's B, never taken from the file under check."""
+    return [] if src.get("b") == B else [f"{label}: b {src.get('b')!r} != B {B}"]
+
+
+def extra_k_errors(label: str, extra: list[dict]) -> list[str]:
+    """Extra seeds are paired with the reference by position: entry i must carry k = i + 1."""
+    return [f"{label} extra seed {i}: k {e.get('k')!r} != {i + 1}"
+            for i, e in enumerate(extra) if e.get("k") != i + 1]
+
+
+def block_metric_errors(metric: str, bm: dict, n: int, res: dict | None, cross: float | None,
+                        extras: list[dict]) -> list[str]:
+    """One metric of the measurement file's movers block against the reference (power aside)."""
+    errors: list[str] = []
+    w = f"block {metric}"
+    cmp(errors, f"{w} n", bm["n"], n)
+    if res is not None:
+        for key, want in (("f_hat", res["f_hat"]), ("ci_lo", res["ci"][0]), ("ci_hi", res["ci"][1]),
+                          ("r_m", res["r_m"]), ("s2_rms", res["s2_rms"]), ("boot_inf", res["boot_inf"])):
+            if key not in bm:
+                errors.append(f"{w}: {key} missing")
+            else:
+                cmp(errors, f"{w} {key}", num(bm[key]), want)
+        if "power_at_f0" not in bm or "power_se" not in bm:
+            errors.append(f"{w}: power_at_f0 / power_se missing")
+    elif any(key in bm for key in ("f_hat", "power_at_f0")):
+        errors.append(f"{w}: untestable but carries f_hat / power")
+    if cross is None:
+        errors += [f"{w}: {key} present without a reference cross-check value"
+                   for key in ("cross_check_r", "cross_check_f_hat") if key in bm]
+    else:
+        if "cross_check_r" not in bm:
+            errors.append(f"{w}: cross_check_r missing")
+        else:
+            cmp(errors, f"{w} cross_check_r", bm["cross_check_r"], cross)
+        if res is None:
+            if "cross_check_f_hat" in bm:
+                errors.append(f"{w}: cross_check_f_hat present for an untestable metric")
+        elif "cross_check_f_hat" not in bm:
+            errors.append(f"{w}: cross_check_f_hat missing")
+        else:
+            cmp(errors, f"{w} cross_check_f_hat", num(bm["cross_check_f_hat"]),
+                (res["s2_rms"] - 1) * (1 - cross) / cross)
+    if len(bm["extra_seeds"]) != EXTRA:
+        errors.append(f"{w}: {len(bm['extra_seeds'])} extra seeds, expected {EXTRA}")
+    errors += extra_k_errors(w, bm["extra_seeds"])
+    for e, x in zip(bm["extra_seeds"], extras):
+        cmp(errors, f"{w} seed {e['k']} n", e["n"], x["n"])
+        if x["res"]:
+            for key, want in (("ci_lo", x["res"]["ci"][0]), ("ci_hi", x["res"]["ci"][1])):
+                if key not in e:
+                    errors.append(f"{w} seed {e['k']}: {key} missing")
+                else:
+                    cmp(errors, f"{w} seed {e['k']} {key}", num(e[key]), want)
+        elif "ci_lo" in e or "ci_hi" in e:
+            errors.append(f"{w} seed {e['k']}: untestable but carries a CI")
+    return errors
+
+
+def power_errors(metric: str, claimed: list[tuple[str, float, float]], mine: float) -> list[str]:
+    """Each claimed (label, power, se) against the reference simulation `mine` (POWER_DATASETS):
+    within t = 4 combined SEs. That also settles the < LOW label: if |power − mine| ≤ t and
+    |mine − LOW| > t, power lies on mine's side of LOW, so the labels can differ only when mine
+    is within t of LOW (the M4g3b rule; a separate label check could never fire).
+    Two claims (output and block) must also agree with each other within TOL."""
+    errors: list[str] = []
+    if len(claimed) == 2 and not close(float(claimed[0][1]), float(claimed[1][1])):
+        errors.append(f"{metric} power: {claimed[0][0]} {claimed[0][1]!r} != "
+                      f"{claimed[1][0]} {claimed[1][1]!r}")
+    for label, power, se_out in claimed:
+        se = math.sqrt(se_out ** 2 + mine * (1 - mine) / POWER_DATASETS)
+        if abs(power - mine) > 4 * max(se, 1e-3):
+            errors.append(f"{metric} {label} power {power:.3f} vs reference {mine:.3f}")
+    return errors
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--check-output", type=Path, help="spikes/m4g3_movers.py output JSON")
@@ -187,13 +284,15 @@ def main() -> None:
     # committed ones for the expected flips: checked below), else the committed file
     meas = block_file if block_file else json.loads(MEASUREMENTS.read_text())
     reg = json.loads(args.registry.read_text())
-    b = (got or block)["b"]
+    head = header_errors("output", got) if got else []
+    head += header_errors("movers block", block) if block else []
+    if head:
+        fail("; ".join(head))
+    b = B
     errors: list[str] = []
 
     def chk(where: str, a, e) -> None:
-        if not close(float(a), float(e)) if isinstance(e, (int, float)) and not isinstance(e, bool) \
-                else a != e:
-            errors.append(f"{where}: output {a!r} != reference {e!r}")
+        cmp(errors, where, a, e)
 
     if any("dna" not in reg["groups"][g] for g in GROUPS):
         fail("registry snapshot: a group has no 'dna' list")
@@ -385,9 +484,6 @@ def main() -> None:
             out["res"] = rule(np.array(d2), np.array(H1), np.array(H2), stream("m4g3_boot" + sfx, metric), b)
         return out
 
-    def num(x) -> float:
-        return {"+inf": math.inf, "-inf": -math.inf}.get(x, x) if isinstance(x, str) else x
-
     def verdict_of(n: int, lo: float | None, hi: float | None) -> str:
         if n < MIN_N:
             return "untestable"
@@ -417,6 +513,7 @@ def main() -> None:
                     chk(f"{metric} cross r", o["cross_check"]["r_step_down"], r0["cross"])
                     chk(f"{metric} cross f", o["cross_check"]["f_hat_with_step_down"],
                         (res["s2_rms"] - 1) * (1 - r0["cross"]) / r0["cross"])
+            errors.extend(extra_k_errors(f"output {metric}", got.get("extra_seeds", {}).get(metric, [])))
             for e, x in zip(got.get("extra_seeds", {}).get(metric, []), extras):
                 chk(f"{metric} seed {e['k']} n", e["n"], x["n"])
                 chk(f"{metric} seed {e['k']} verdict", e["verdict"],
@@ -424,44 +521,27 @@ def main() -> None:
                 if x["res"]:
                     chk(f"{metric} seed {e['k']} ci_lo", e["ci"][0], x["res"]["ci"][0])
                     chk(f"{metric} seed {e['k']} ci_hi", e["ci"][1], x["res"]["ci"][1])
-        power = se_out = None
+        power = None
+        claimed: list[tuple[str, float, float]] = []
         if block:
             bm = block["metrics"][metric]
-            chk(f"block {metric} n", bm["n"], n)
-            if res is not None:
-                for key, want in (("f_hat", res["f_hat"]), ("ci_lo", res["ci"][0]),
-                                  ("ci_hi", res["ci"][1]), ("r_m", res["r_m"]),
-                                  ("s2_rms", res["s2_rms"]), ("boot_inf", res["boot_inf"])):
-                    chk(f"block {metric} {key}", num(bm[key]), want)
-                power, se_out = bm["power_at_f0"], bm["power_se"]
-            elif any(key in bm for key in ("f_hat", "power_at_f0")):
-                errors.append(f"block {metric}: untestable but carries f_hat / power")
-            if r0["cross"] is not None:
-                chk(f"block {metric} cross_check_r", bm["cross_check_r"], r0["cross"])
-            if len(bm["extra_seeds"]) != EXTRA:
-                errors.append(f"block {metric}: {len(bm['extra_seeds'])} extra seeds, expected {EXTRA}")
-            for e, x in zip(bm["extra_seeds"], extras):
-                chk(f"block {metric} seed {e['k']} n", e["n"], x["n"])
-                if x["res"]:
-                    chk(f"block {metric} seed {e['k']} ci_lo", num(e["ci_lo"]), x["res"]["ci"][0])
-                    chk(f"block {metric} seed {e['k']} ci_hi", num(e["ci_hi"]), x["res"]["ci"][1])
+            errors.extend(block_metric_errors(metric, bm, n, res, r0["cross"], extras))
+            if res is not None and "power_at_f0" in bm and "power_se" in bm:
+                claimed.append(("block", bm["power_at_f0"], bm["power_se"]))
         if got and res is not None:
-            power, se_out = got["metrics"][metric]["low_power"]["power_at_f0"], \
-                got["metrics"][metric]["low_power"]["se"]
-        # low power: independent simulation, tolerance
-        if res is not None:
+            lp = got["metrics"][metric]["low_power"]
+            claimed.append(("output", lp["power_at_f0"], lp["se"]))
+        # low power: independent simulation, tolerance; every claimed power is checked
+        if res is not None and claimed:
             mine = power0(n, res["r_m"], np.random.default_rng([POWER_SEED, zlib.crc32(metric.encode())]))
-            se = math.sqrt(se_out ** 2 + mine * (1 - mine) / POWER_DATASETS)
-            if abs(power - mine) > 4 * max(se, 1e-3):
-                errors.append(f"{metric} power {power:.3f} vs reference {mine:.3f}")
-            elif (mine < LOW) != (power < LOW) and abs(mine - LOW) > 4 * max(se, 1e-3):
-                errors.append(f"{metric} underpowered label differs (reference power {mine:.3f})")
+            errors.extend(power_errors(metric, claimed, mine))
+            power = claimed[0][1]
         # expected verdict and flags (ADR 004 §13.7 rule, derived here; plan 005 M4g3b)
         v0 = verdict_of(n, *(res["ci"] if res else (None, None)))
         vk = [verdict_of(x["n"], *(x["res"]["ci"] if x["res"] else (None, None))) for x in extras]
         expected[metric] = {
             "verdict": v0, "n": n,
-            "underpowered": None if res is None else power < LOW,
+            "underpowered": None if res is None or power is None else power < LOW,
             "borderline_seed": None if res is None else any(v != v0 for v in vk),
             "below_model_range": None if res is None else (v0 == "PASS" and res["ci"][1] < 0),
             "extra_seed_verdicts": vk,

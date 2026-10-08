@@ -38,6 +38,10 @@ Spec (plan 005 M4g3 and ADR 004 §13.7, as amended 2026-10-08):
   recomputed per resample, two-sided 95% percentile CI; PASS / FAIL / inconclusive; fewer than
   12 movers → untestable).
 - Low power (written before f̂): m4g3_power.low_power at the metric's own n and R_m.
+- A null in any count column of either parquet fails the run (a NaN half would otherwise drop
+  a baseline candidate silently; plan 005 M4g4-0).
+- The Koné illustration is report only: main() adds it, so compute() (and the measurement
+  writer that calls it) never depends on it (plan 005 M4g4-0).
 - Cross-check (report only): per mover √(r(m1)·r(m2)), r(x) = r_full stepped down by
   Spearman-Brown with k = x / the cell's median (minutes for per-90s and team_pass_share,
   attempts for ratios), the cell = the group's gated pool rows; averaged over the metric's
@@ -110,6 +114,14 @@ def fail(msg: str) -> None:
     raise SystemExit(1)
 
 
+def require_no_nulls(frame: pl.DataFrame, cols, label: str) -> None:
+    """Fail on a null in any count column: cast to float it becomes NaN, and a NaN half value
+    drops that baseline candidate without a word."""
+    nulls = {c: n for c, n in frame.select(sorted(cols)).null_count().row(0, named=True).items() if n}
+    if nulls:
+        fail(f"{label}: null values in count columns {nulls}")
+
+
 # ---------------------------------------------------------------- metric definitions
 
 def spec(metric: str) -> tuple[str, str, list[str], list[str]]:
@@ -172,8 +184,11 @@ class Ctx:
         for m in MOVER_METRICS:
             _, num, pos, neg = spec(m)
             cols |= {num, *pos, *neg}
+        require_no_nulls(self.season, cols - {"match_duration"}, "player_season_stats")
         match = (pl.read_parquet(MATCH_PARQUET, columns=["match_id", *KEY, *sorted(cols)])
-                 .filter(pl.col("competition_id").is_in(POOL) & (pl.col("minutes_played") > 0))
+                 .filter(pl.col("competition_id").is_in(POOL) & (pl.col("minutes_played") > 0)))
+        require_no_nulls(match, cols, "player_match_stats")
+        match = (match
                  .with_columns(pl.col("match_id").replace_strict(dates, return_dtype=pl.Utf8)
                                .alias("match_date"),
                                (pl.col("minutes_played") * 90.0 / pl.col("match_duration"))
@@ -387,11 +402,12 @@ def league_ranks(results) -> dict[tuple[int, int], tuple[int, int]]:
 
 def compute(b: int = pw.B, power_datasets: int = pw.DATASETS, extra_seeds: int = EXTRA_SEEDS,
             dna_groups: dict[str, list[str]] | None = None, verbose: bool = True,
-            meas: dict | None = None) -> dict:
+            meas: dict | None = None, ctx: Ctx | None = None) -> dict:
     """The full mover run: the primary stream (k = 0) with the low-power labels, then
     extra_seeds further streams (verdict, n, CI only). dna_groups (report only) comes from a
-    registry snapshot when the caller has one."""
-    ctx = Ctx(meas)
+    registry snapshot when the caller has one. ctx: a prepared Ctx (default: Ctx(meas)).
+    No report-only illustration here (the Koné block is main()'s)."""
+    ctx = Ctx(meas) if ctx is None else ctx
     if verbose:
         print(f"movers: {len(ctx.movers)} (third stints below {MOVER_FLOOR:.0f}: {len(ctx.third)})")
     out_metrics = {}
@@ -432,6 +448,27 @@ def compute(b: int = pw.B, power_datasets: int = pw.DATASETS, extra_seeds: int =
                            "m1": s1["minutes_nominal_equiv"], "m2": s2["minutes_nominal_equiv"],
                            "cross_league": s1["competition_id"] != s2["competition_id"],
                            "first": [str(s1["first"]), str(s2["first"])]})
+    return {"generated_by": "spikes/m4g3_movers.py", "seed": pw.SEED, "draws": DRAWS, "b": b,
+            "movers": stint_rows, "third_stints": [r["player_name"] for r in ctx.third],
+            "metrics": out_metrics, "extra_seeds": extra}
+
+
+def with_kone(run: dict, kone: list[dict]) -> dict:
+    """compute()'s result with the Koné block inserted after third_stints (the M4g3a key
+    order, so main()'s output file is byte-identical to the M4g3a one)."""
+    if "third_stints" not in run or "kone" in run:
+        fail("with_kone: needs a compute() result with third_stints and no kone")
+    out: dict = {}
+    for key, val in run.items():
+        out[key] = val
+        if key == "third_stints":
+            out["kone"] = kone
+    return out
+
+
+def kone_illustration(ctx: Ctx) -> list[dict]:
+    """The Koné illustration (plan 005 M4g item list; report only): his two stints'
+    long_pass_completion_pct on both scales. Fails unless exactly one mover has the name."""
     kone = [s for s in ctx.movers if s[0]["player_name"] == KONE]
     if len(kone) != 1:
         fail(f"{KONE}: {len(kone)} movers with that name, expected 1")
@@ -444,9 +481,7 @@ def compute(b: int = pw.B, power_datasets: int = pw.DATASETS, extra_seeds: int =
                                      "scale_a": ctx.scales("long_pass_completion_pct", grp, s["competition_id"], v)[0],
                                      "scale_b": ctx.scales("long_pass_completion_pct", grp, s["competition_id"], v)[1]}
                                     for s, (v, den) in zip(stints, vals)]})
-    return {"generated_by": "spikes/m4g3_movers.py", "seed": pw.SEED, "draws": DRAWS, "b": b,
-            "movers": stint_rows, "third_stints": [r["player_name"] for r in ctx.third],
-            "kone": kone_out, "metrics": out_metrics, "extra_seeds": extra}
+    return kone_out
 
 
 def _num(x: float) -> float | str:
@@ -505,7 +540,9 @@ def main() -> None:
     missing = sorted(set(dna_groups) - set(MOVER_METRICS))
     if missing:
         fail(f"DNA metrics missing from MOVER_METRICS: {missing}")
-    result = compute(args.b, args.power_datasets, args.extra_seeds, dict(dna_groups))
+    ctx = Ctx()
+    run = compute(args.b, args.power_datasets, args.extra_seeds, dict(dna_groups), ctx=ctx)
+    result = with_kone(run, kone_illustration(ctx))
     result["registry_version"] = reg.get("registry_version")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=1, default=str))
