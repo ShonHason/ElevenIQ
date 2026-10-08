@@ -9,7 +9,7 @@ Spikes only: M4g4c changes no registry status, note, vector or `score_status`. T
   - **Read `possession_criteria_failed` as "not shown to be possession-free", not as "possession dependence found".** With no possession effect at all (team possession shuffled within league), criterion (2) fails in 43–70% of shuffles for `ball_recoveries_p90` in these four groups (27% in DM-CM), and in 27–83% across all 34 cells (mean 57%). The observed gaps that stopped these groups lie inside that null range. See "Null calibration" below.
   - DM-CM: `mover_stability_inconclusive` (underpowered at 24). It selects β = 0, as pre-stated, so its verdict is M4g3b's (f̂ 0.31, CI [−0.21, 1.03]).
   - The three adjusted mover runs (β̂, team share, β = 1) are all inconclusive on all six streams and are report only: no group selected them.
-- **7 style cells are adjusted** and enter the vector adjusted (D4 = C): DM-CM `clearances_p90` (β̂) and `dribbled_past_p90` (team share); AM-Winger `clearances_p90` (β̂), `dribbled_past_p90` (β̂), `pressures_p90` (team share) and `tackles_attempted_p90` (β = 1); ST `fouls_committed_p90` (team share). Six more style cells pass at β = 0 and stay raw; 16 style cells have no passing candidate and stay raw (as does `ball_recoveries_p90` in CB, FB-WB, AM-Winger and ST).
+- **Superseded by the M4g4c2 trust check (end of this document): all 7 cells below stay raw (β = 0) in M4g4d.** As selected in M4g4c, **7 style cells were adjusted**, entering the vector adjusted (D4 = C): DM-CM `clearances_p90` (β̂) and `dribbled_past_p90` (team share); AM-Winger `clearances_p90` (β̂), `dribbled_past_p90` (β̂), `pressures_p90` (team share) and `tackles_attempted_p90` (β = 1); ST `fouls_committed_p90` (team share). Six more style cells pass at β = 0 and stay raw; 16 style cells have no passing candidate and stay raw (as does `ball_recoveries_p90` in CB, FB-WB, AM-Winger and ST).
 - **C4: "not tested".** DM-CM adjusts neither `interceptions_p90` nor `ball_recoveries_p90`, the mechanism the M4g1b compare-pair expectation names. M4g4d reports the pair distances alongside.
 - **The infrastructure is ready to re-run with more data.** The pipeline columns (M4g4b), the engine, the independent reference, the G2/G3 gates and the expected-flips writer take no 2015/16-specific input beyond the season id, the pool leagues and the written-out Defending cell list (which the run checks against the registry snapshot, so a registry change fails loudly rather than silently). Another full-league season, or more movers, re-runs the same pre-registered test; at n = 24 movers it is underpowered (P(PASS) about 0.6 at f = 0, about 0.2 at f = 0.25).
 - **For the M4 sign-off (user, 2026-10-08):**
@@ -180,3 +180,41 @@ No pair reaches |ρ| ≥ 0.7, raw or adjusted. Each adjusted column's largest pa
 | β̂ negative for CB and FB-WB recoveries | CB −0.71, FB-WB −0.05 |
 | C4 "not tested" iff neither DM-CM interceptions nor recoveries is adjusted | Neither adjusted: "not tested" |
 | 0 changes to any existing cell's status, note or reason | 0 (expected file) |
+
+## M4g4c2 — Trust check on the 7 adjusted cells (user 2026-10-08)
+
+Post-hoc motivated by the null calibration above; the checks, thresholds, streams and a prediction were written into ADR 004 §13.8 before any number (stats-reviewer design review APPROVE WITH CONDITIONS, C1–C8 folded in; user: (c) judges each criterion β = 0 failed, strict "same candidate" for (a)). A cell stays adjusted only if it passes every applicable check; otherwise it stays raw.
+
+- **Run:** `spikes/m4g4c2_trust_check.py` → `data/interim/m4g4c2/trust.json`; independent check `spikes/m4g4c2_trust_reference.py` (every statistic within 1e-9, including the full bootstrap tallies; it rewrote `spikes/expected_m4g4_flips.json`).
+- **Outcome: all 7 cells fail at least one check and stay raw (β = 0) in M4g4d.** No Defending vector column is adjusted; the Defending statuses are unchanged (withheld in all 5 groups); C4 stays "not tested" (no DM-CM adjustment at all).
+
+| Cell (candidate) | (a) P(same) | (b) agree | (c) p | (d) refit ≥ 10 | Result |
+|---|---|---|---|---|---|
+| DM-CM `clearances_p90` (beta_hat) | 0.083 ✗ (family 0.118; β = 0 or none 0.764) | 1/4 ✗ | rho 0.0005, gap 0.0005 ✓ | 0 teams out: β̂ 0.96 → beta_hat ✓ (≥ 20, 0 out: 0.96 → beta_hat) | **raw** |
+| DM-CM `dribbled_past_p90` (team_share) | 0.190 ✗ (family 0.190; β = 0 or none 0.766) | 1/4 ✗ | gap 0.1095 ✗ | — | **raw** |
+| AM-Winger `clearances_p90` (beta_hat) | 0.110 ✗ (family 0.117; β = 0 or none 0.879) | 3/4 ✓ | rho 0.0005, gap 0.0005 ✓ | 3 teams out: β̂ 1.10 → none ✗ (≥ 20, 8 out: 1.08 → none) | **raw** |
+| AM-Winger `dribbled_past_p90` (beta_hat) | 0.107 ✗ (family 0.214; β = 0 or none 0.782) | 1/4 ✗ | rho 0.0005, gap 0.0910 ✗ | 0 teams out: β̂ 1.34 → beta_hat ✓ (≥ 20, 2 out: 1.27 → beta_hat) | **raw** |
+| AM-Winger `pressures_p90` (team_share) | 0.107 ✗ (family 0.107; β = 0 or none 0.832) | 3/4 ✓ | rho 0.0005, gap 0.0005 ✓ | — | **raw** |
+| AM-Winger `tackles_attempted_p90` (beta_1) | 0.086 ✗ (family 0.167; β = 0 or none 0.812) | 1/4 ✗ | rho 0.0005, gap 0.0005 ✓ | — | **raw** |
+| ST `fouls_committed_p90` (team_share) | 0.097 ✗ (family 0.097; β = 0 or none 0.822) | 2/4 ✗ | rho 0.0005, gap 0.0155 ✓ | — | **raw** |
+
+- **(c) passes for 5 of 7 cells**; on both judged criteria at the permutation floor p = 0.0005 (1 / 2,000, so not a precise value) for 4 of them, and ST `fouls_committed_p90` at gap p 0.0155. **For the 3 E-based candidates (β̂, β = 1) it is near-circular** (E ≈ 1 / possession): it mostly confirms that the raw possession link is beyond team-clustered chance, and cannot show an adjusted column is possession-free; for the 2 team-share cells it is not circular in that way. Either way **(a) and (b) carry the weight** (user).
+- **"Fails (a)" means "selection not shown to be stable", not "the adjustment is wrong"** (stats-reviewer, output review), read like `possession_criteria_failed`: with no candidate passing in 63–88% of resamples, (a)'s power against a real effect is unknown and probably low. Acceptable because the check is one-sided and failing returns a cell to raw, the pre-registered default; the same caveat applies to any future season that re-runs M4g4c2.
+- **(a) carries a known conservative bias:** |mean ρ| and the |Q5 − Q1| gap are absolute values, so the bootstrap inflates them; in 63–88% of resamples no candidate passes at all, not even β = 0. Every cell is far below the bar (0.08–0.19 against 0.80).
+- **AM-Winger `pressures_p90` fails on (a) alone** (team share: (b) 3/4, (c) p 0.0005 on both). It is the one cell whose outcome rests only on (a), and so on (a)'s known bias. The pre-fixed rule applies; it stays raw.
+- **5 cells fail (b) independently of (a)'s bias** (≤ 2 of 4 leave-one-league-out runs select the same candidate): DM-CM `clearances_p90` (β̂ is selected only when Ligue 1 is left out; with Ligue 1 in, no candidate passes — `selected_without` is keyed by the dropped league), DM-CM `dribbled_past_p90`, AM-Winger `dribbled_past_p90`, AM-Winger `tackles_attempted_p90`, ST `fouls_committed_p90`. Their selection depends on which leagues are in.
+- **(d) excluded no team for two of its three cells** (DM-CM `clearances_p90`: smallest team count 54, 0 out at ≥ 10 and ≥ 20; AM-Winger `dribbled_past_p90`: 0 out at ≥ 10, 2 at ≥ 20), so their (d) ✓ repeats the M4g4c selection and is not a robustness pass (stats-reviewer). Both fail elsewhere.
+- AM-Winger `clearances_p90` also fails (d): with teams below 10 group clearances left out, β̂ is 1.10 and no candidate passes.
+- **Prediction scorecard:** the five near-bar cells failed (a) as predicted; AM-Winger `tackles_attempted_p90` failed (a) under the strict rule as predicted (β̂ 81 vs β = 1 86 of 1,000 resamples); DM-CM `dribbled_past_p90` was predicted to pass (a) and failed it (0.19), and failed (c) on the gap (p 0.110); AM-Winger `clearances_p90` failed (d) as the likeliest case; DM-CM `clearances_p90` failed (b) as flagged.
+
+### (e) Per-player moves the reverts undo (report only)
+
+| Cell | Median \|shift\| | P90 | Raw vs adjusted ρ | Largest moves |
+|---|---:|---:|---:|---|
+| DM-CM `clearances_p90` | 4.5 | 13.3 | 0.966 | Ivan Rakitić (Barcelona) 20 → 44, Augusto Matías Fernández (Celta Vigo) 65 → 86, Maxime Gonalons (Lyon) 70 → 90 |
+| DM-CM `dribbled_past_p90` | 7.5 | 20.2 | 0.916 | Carlos Alberto Sánchez Moreno (Aston Villa) 56 → 89, Miralem Pjanić (AS Roma) 42 → 74, Idrissa Gana Gueye (Aston Villa) 28 → 59 |
+| AM-Winger `clearances_p90` | 6.2 | 18.6 | 0.919 | Bouna Sarr (Olympique de Marseille) 43 → 83, Florian Thauvin (Olympique de Marseille) 50 → 88, Rachid Ghezzal (Lyon) 34 → 72 |
+| AM-Winger `dribbled_past_p90` | 6.0 | 18.5 | 0.930 | Neymar da Silva Santos Junior (Barcelona) 12 → 52, Alejandro Menéndez Díez (Sporting Gijón) 54 → 17, Tiago Manuel Dias Correia (Rayo Vallecano) 24 → 56 |
+| AM-Winger `pressures_p90` | 4.3 | 14.6 | 0.952 | Lorenzo Pasciuti (Carpi) 59 → 23, Abdoul Razzagui Camara (Angers) 66 → 40, John Tshibumbu (Gazélec Ajaccio) 54 → 28 |
+| AM-Winger `tackles_attempted_p90` | 4.9 | 13.6 | 0.957 | Mathieu Valbuena (Lyon) 18 → 49, Florian Thauvin (Olympique de Marseille) 37 → 66, Rachid Ghezzal (Lyon) 46 → 75 |
+| ST `fouls_committed_p90` | 4.8 | 18.2 | 0.937 | Alassane Pléa (OGC Nice) 59 → 90, Felipe Salvador Caicedo Corozo (Espanyol) 85 → 54, Ciro Immobile (Torino) 49 → 19 |

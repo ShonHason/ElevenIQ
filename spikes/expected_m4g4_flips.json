@@ -1,5 +1,5 @@
 {
- "description": "M4g4 expected registry and DNA changes (ADR 004 §13.8, plan 005 M4g4), written by spikes/m4g4_possession_reference.py --write-expected BEFORE any registry code: no existing cell changes; the five Defending score_status values (D5); the adjusted vector columns per group (D4 = C); the ball_recoveries_p90 mover verdicts per candidate (a candidate no group selected is report only, not used for any restore).",
+ "description": "M4g4 expected registry and DNA changes (ADR 004 §13.8, plan 005 M4g4), written by spikes/m4g4_possession_reference.py --write-expected BEFORE any registry code: no existing cell changes; the five Defending score_status values (D5); the adjusted vector columns per group (D4 = C); the ball_recoveries_p90 mover verdicts per candidate (a candidate no group selected is report only, not used for any restore). Updated by spikes/m4g4c2_trust_reference.py --write-expected (M4g4c2 trust check).",
  "snapshot_registry_version": "463d1a4c31ae08a7f0ba7607704a4b802bf7bacab1259702b45fecc5bec7eb65",
  "status_changes": [],
  "note_changes": [],
@@ -107,40 +107,9 @@
  "vector_adjusted_columns": {
   "CB": [],
   "FB-WB": [],
-  "DM-CM": [
-   {
-    "metric": "clearances_p90",
-    "candidate": "beta_hat"
-   },
-   {
-    "metric": "dribbled_past_p90",
-    "candidate": "team_share"
-   }
-  ],
-  "AM-Winger": [
-   {
-    "metric": "clearances_p90",
-    "candidate": "beta_hat"
-   },
-   {
-    "metric": "dribbled_past_p90",
-    "candidate": "beta_hat"
-   },
-   {
-    "metric": "pressures_p90",
-    "candidate": "team_share"
-   },
-   {
-    "metric": "tackles_attempted_p90",
-    "candidate": "beta_1"
-   }
-  ],
-  "ST": [
-   {
-    "metric": "fouls_committed_p90",
-    "candidate": "team_share"
-   }
-  ]
+  "DM-CM": [],
+  "AM-Winger": [],
+  "ST": []
  },
  "mover_verdicts": {
   "beta_0": {
@@ -228,10 +197,126 @@
   }
  },
  "compare_pairs": {
-  "dm_cm_adjusted": [
-   "clearances_p90",
-   "dribbled_past_p90"
-  ],
+  "dm_cm_adjusted": [],
   "tested": false
+ },
+ "trust_check": {
+  "spec": "ADR 004 §13.8 M4g4c2 (post-hoc motivated; a failing cell stays raw)",
+  "rules": {
+   "b_boot": 1000,
+   "n_perm": 1999,
+   "stab_min": 0.8,
+   "lolo_min": 3,
+   "p_max": 0.05,
+   "d_min": 10,
+   "d_report": 20,
+   "jitter": 1e-09
+  },
+  "cells": {
+   "AM-Winger clearances_p90": {
+    "candidate": "beta_hat",
+    "keep_adjusted": false,
+    "a_p_same": 0.11,
+    "b_agree": 3,
+    "c_p_rho": 0.0005,
+    "c_p_gap": 0.0005,
+    "c_judged": [
+     "rho",
+     "gap"
+    ],
+    "d_selected_ge10": null,
+    "d_teams_excluded_ge10": 3,
+    "d_teams_excluded_ge20": 8
+   },
+   "AM-Winger dribbled_past_p90": {
+    "candidate": "beta_hat",
+    "keep_adjusted": false,
+    "a_p_same": 0.107,
+    "b_agree": 1,
+    "c_p_rho": 0.0005,
+    "c_p_gap": 0.091,
+    "c_judged": [
+     "rho",
+     "gap"
+    ],
+    "d_selected_ge10": "beta_hat",
+    "d_teams_excluded_ge10": 0,
+    "d_teams_excluded_ge20": 2
+   },
+   "AM-Winger pressures_p90": {
+    "candidate": "team_share",
+    "keep_adjusted": false,
+    "a_p_same": 0.107,
+    "b_agree": 3,
+    "c_p_rho": 0.0005,
+    "c_p_gap": 0.0005,
+    "c_judged": [
+     "rho",
+     "gap"
+    ],
+    "d_selected_ge10": "n/a",
+    "d_teams_excluded_ge10": "n/a",
+    "d_teams_excluded_ge20": "n/a"
+   },
+   "AM-Winger tackles_attempted_p90": {
+    "candidate": "beta_1",
+    "keep_adjusted": false,
+    "a_p_same": 0.086,
+    "b_agree": 1,
+    "c_p_rho": 0.0005,
+    "c_p_gap": 0.0005,
+    "c_judged": [
+     "rho",
+     "gap"
+    ],
+    "d_selected_ge10": "n/a",
+    "d_teams_excluded_ge10": "n/a",
+    "d_teams_excluded_ge20": "n/a"
+   },
+   "DM-CM clearances_p90": {
+    "candidate": "beta_hat",
+    "keep_adjusted": false,
+    "a_p_same": 0.083,
+    "b_agree": 1,
+    "c_p_rho": 0.0005,
+    "c_p_gap": 0.0005,
+    "c_judged": [
+     "rho",
+     "gap"
+    ],
+    "d_selected_ge10": "beta_hat",
+    "d_teams_excluded_ge10": 0,
+    "d_teams_excluded_ge20": 0
+   },
+   "DM-CM dribbled_past_p90": {
+    "candidate": "team_share",
+    "keep_adjusted": false,
+    "a_p_same": 0.19,
+    "b_agree": 1,
+    "c_p_rho": 0.776,
+    "c_p_gap": 0.1095,
+    "c_judged": [
+     "gap"
+    ],
+    "d_selected_ge10": "n/a",
+    "d_teams_excluded_ge10": "n/a",
+    "d_teams_excluded_ge20": "n/a"
+   },
+   "ST fouls_committed_p90": {
+    "candidate": "team_share",
+    "keep_adjusted": false,
+    "a_p_same": 0.097,
+    "b_agree": 2,
+    "c_p_rho": 0.0005,
+    "c_p_gap": 0.0155,
+    "c_judged": [
+     "rho",
+     "gap"
+    ],
+    "d_selected_ge10": "n/a",
+    "d_teams_excluded_ge10": "n/a",
+    "d_teams_excluded_ge20": "n/a"
+   }
+  }
  }
 }
