@@ -33,6 +33,9 @@ ACTIONS = ("ball_recoveries", "tackles_attempted", "pressures", "clearances", "d
 NEW_COLUMNS = frozenset({"opponent_open_play_passes_while_on",
                          *(f"team_{a}_while_on" for a in ACTIONS)})
 MAY_CHANGE = frozenset({"match_parquet_sha256", "season_parquet_sha256", "season_columns"})
+# provenance sha key → the provenance key holding that file's path (written out; plan 005 M4g4b
+# backlog item 4)
+SHA_PATH_KEYS = {"match_parquet_sha256": "match_parquet", "season_parquet_sha256": "season_parquet"}
 
 
 def sha256(path: Path) -> str:
@@ -76,8 +79,7 @@ def main() -> None:
     args = ap.parse_args()
     load = lambda p: json.loads(p.read_text())  # noqa: E731
     after = load(args.after_measurements)
-    shas = {k: sha256(ROOT / after["provenance"][k.replace("_sha256", "")])
-            for k in ("match_parquet_sha256", "season_parquet_sha256")}
+    shas = {k: sha256(ROOT / after["provenance"][path_key]) for k, path_key in SHA_PATH_KEYS.items()}
     errors = measurement_errors(load(args.before_measurements), after, shas)
     rb, ra = load(args.before_registry), load(args.after_registry)
     errors += registry_errors(rb, ra)

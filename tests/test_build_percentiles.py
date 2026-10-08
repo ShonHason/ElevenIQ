@@ -30,6 +30,7 @@ from eleveniq.pipeline.build_percentiles import build_percentiles, percentile_ta
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SEASON = _ROOT / "data" / "processed" / "player_season_stats.parquet"
+_MEASUREMENTS = _ROOT / "src" / "eleveniq" / "analytics" / "measurements" / "statsbomb_27.json"
 _SPIKE = _ROOT / "spikes" / "m4d_percentiles_reference.py"
 _FIXTURE = _ROOT / "tests" / "fixtures" / "m4d_percentiles" / "reference.json"
 _FIELDS = ("value", "pct_local", "n_local", "status_local", "pct_global", "n_global", "status_global")
@@ -73,6 +74,9 @@ def test_hand_picked_fixture_rows_match(built):
     t = built[1]
     doc = json.loads(_FIXTURE.read_text())
     assert doc["season_parquet_sha256"] == C.file_sha256(_SEASON)
+    # the fixture rows depend on the registry, so a measurement change must refresh them
+    # (plan 005 M4g4b backlog item 6)
+    assert doc["measurements_sha256"] == C.file_sha256(_MEASUREMENTS)
     for r in doc["rows"]:
         k = r["key"]
         sub = t.filter((pl.col("player_id") == k["player_id"]) & (pl.col("team_id") == k["team_id"])

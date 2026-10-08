@@ -1494,6 +1494,20 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
   - **Notes for M4g4c (no action in M4g4b):** low-minute rows reach extreme values (opponent passes per 90 up to 1,568 at 0.52 minutes; shares of 1.0 at 5–42 minutes), so any share or E per 90 shown outside the gated pool needs the same gate or a minimum count. La Liga records 16.3 interceptions per team-match against 10.2–11.7 elsewhere, so pooled β̂ and team fits must stay league-demeaned (as D2 requires). The two recounts (`m4g_opponent_exposure`, `verify_core_metrics`) share the §31 timelines: independent of the pipeline, not of each other.
   - **Synthetic test fixtures (user, 2026-10-08):** opt-in per test, never autouse. `synthetic_one_team` relaxes the defenders minimum for one-team lineups; `synthetic_small_teams` also relaxes it (never raising a lower value). A default-path test asserts the 7 / 11 bounds for team actions and defenders, so the relaxation cannot leak into a real run. No expected value in any existing test changed.
 
+### M4g4c — Candidates, criteria and movers (plan approved by the user, 2026-10-08)
+- **Plan decisions (user, 2026-10-08, before any result):** G1 every selection quantity on the 1,233 gated rows; G2 (stop, not filter) opponent open-play passes ≥ 1,000 and each Defending DNA action's team count ≥ 20 on every gated row; G3 (halves) β half ≥ 500 opponent passes, share half ≥ 10 team actions; everything within league or league-demeaned; criterion (3) on the M4g2 split stream at the committed K (3,200); the residual §31 timeline risk recorded (G5).
+- **Stops (user):** (1) the selection table, (2) the mover verdicts, (3) the expected-flips file; each approved on 2026-10-08.
+- **Outcome** (`docs/reviews/m4g4c-possession.md`; ADR 004 §13.8):
+  - the engine (`spikes/m4g4_possession.py`) and the independent reference (`spikes/m4g4_possession_reference.py`) agree on every field within 1e-9 (power within 4 combined SEs); β = 0 equals the committed measurements (ρ, r_full, D9, `pct_local`);
+  - G2 never stops (minimums 3,569 opponent passes, 61 team actions); G3 excludes no `ball_recoveries_p90` mover under any candidate (n = 24);
+  - `ball_recoveries_p90`: DM-CM selects β = 0; CB, FB-WB, AM-Winger and ST select none (criterion (2) binds). Read as "not shown to be possession-free": the null calibration fails criterion (2) in 43–70% of no-effect shuffles for these groups;
+  - the three adjusted mover runs are inconclusive on all six streams (report only: no group selected them);
+  - expected (`spikes/expected_m4g4_flips.json`): Defending withheld in all 5 groups (4 × `possession_criteria_failed`, DM-CM `mover_stability_inconclusive`); 7 style cells enter the vector adjusted; C4 "not tested"; 0 changes to existing cells;
+  - **deviation:** the 12-significant-digit tie rule for β-adjusted values (ADR 004 §13.8);
+  - added to the M4 sign-off list: "accept adjustments with |β̂| > 1?" (AM-Winger clearances, dribbled_past; with the low-count sensitivity 2.23 → 1.10 / 1.08) and "accept the 7 adjusted cells given criterion (2)'s ~50% null failure rate and their large per-player moves?";
+  - `/finish-chunk`: stats-reviewer (output only) CONCERNS → fixed in the one fix round (wording, null calibration spike, sensitivity, power label); code-reviewer PASS with should-fix items, fixed.
+- **Backlog in this chunk:** M4g4b leftovers #4 (explicit sha → path map) and #6 (`measurements_sha256` checked in the m4d / m4f fixture tests) done; #1 read-only half done (every lineup player has a timeline by construction; 0 duplicate player IDs in 1,551 matches; the 15,839 lineup players without a player-match row are all unused substitutes with no positions). #1's code change, #2, #3 and #5 stay gated before M4g4d's registry write.
+
 ### M4g5 — xPass (spike, then pipeline)
 - **Passes:**
   - open play only (`pass.type.name` ∉ `RESTART_TYPES`), periods 1–4;
@@ -1571,6 +1585,8 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
   - ST Goal threat becomes shot volume only (Kane 90 vs Vardy 68), from the same cause.
 - **Options:** accept it, cap a single-member family's weight, or merge families.
 - **Also on the M4 sign-off list:** the 8 majority-admitted allow-listed cells (M4g4 decides nothing for them; M4g4 plan), and any FAIL on a current DNA metric (§13.7).
+- **Also on the M4 sign-off list (user, 2026-10-08, M4g4c stop 1): "accept adjustments with |β̂| > 1?"** AM-Winger `clearances_p90` (β̂ 2.23, bootstrap CI 0.69–3.66) and `dribbled_past_p90` (β̂ 1.34) are selected with |β̂| > 1 (ADR 004 §13.8). Sensitivity (stats-reviewer): the 2.23 rests on three AM-Winger team groups with 3, 5 and 9 clearances; without teams below 10 / 20 group clearances it is 1.10 / 1.08. The pre-registered fit is kept; a group-count gate in the fit is decided here or in a later ADR.
+- **Also on the M4 sign-off list (user, 2026-10-08, M4g4c `/finish-chunk`): "accept the 7 adjusted cells given criterion (2)'s ~50% null failure rate and their large per-player moves?"** Evidence: the null calibration (`spikes/m4g4c_null_calibration.py`; criterion (2) fails in 27–83% of no-effect shuffles, mean 57%), 5 of 7 passing near a bar, and raw → adjusted percentile moves (median 4–7.5 points, 90th percentile 13–20) in `docs/reviews/m4g4c-possession.md`.
 - **Evidence:** ADR 004 §13.6 ("Stats-reviewer outcome").
 - **Timing:** decide after M4g4/M4g5, which may add members (Defending, Passing) and change the picture, and before M4g6.
 
@@ -1629,12 +1645,17 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   5. `spikes/m4g3_movers.py`: fail on a null count column instead of letting NaN drop a baseline candidate silently.
   6. `spikes/m4g3_movers_reference.py` `power0` (and check `m4g3_power.low_power`): define the R_m ≤ 0 case (power 0) instead of a math domain error.
 - **M4g4b leftovers — GATE: before M4g4d writes any adjusted column to the registry or the vector** (one fix round done; code-reviewer, qa-tester and stats-reviewer, M4g4b; user rule 2026-10-08):
-  1. `build_player_match`: `opponent_open_play_pass_credits` and `team_action_credits` skip a lineup player with no timeline (`pid in timelines`), as `team_open_play_pass_credits` already did. Confirm that every lineup player has a timeline; if one can be missing, report it rather than skip it.
+  1. `build_player_match`: `opponent_open_play_pass_credits` and `team_action_credits` skip a lineup player with no timeline (`pid in timelines`), as `team_open_play_pass_credits` already did. Confirm that every lineup player has a timeline; if one can be missing, report it rather than skip it. **Confirmation done in M4g4c** (by construction: the lineup loop assigns every player's timeline; 0 duplicate IDs); the report-not-skip change remains.
   2. `opponent_open_play_pass_credits` skips a pass whose `team.id` differs from the passer's lineup team and relies on `team_open_play_pass_credits` to report it and fail the build. Make that dependency explicit (one shared check, or a test that fails if the reporting moves).
   3. The two `continue` branches for an actor or passer outside the lineups (dropped events) are not covered by a test.
-  4. `spikes/m4g4b_before_after.py` maps sha keys to parquet paths with `k.replace("_sha256", "")`; use an explicit map.
+  4. ~~`spikes/m4g4b_before_after.py` maps sha keys to parquet paths with `k.replace("_sha256", "")`; use an explicit map.~~ **Done in M4g4c** (`SHA_PATH_KEYS`).
   5. Cosmetic: merge the stacked `usefixtures` decorators in `tests/test_build_player_match.py` into one list.
-  6. The m4d / m4f reference fixtures pin `season_parquet_sha256` (checked) and `measurements_sha256` (not checked: it was stale from M4g4a until the M4g4b refresh). Check it, or drop it.
+  6. ~~The m4d / m4f reference fixtures pin `season_parquet_sha256` (checked) and `measurements_sha256` (not checked: it was stale from M4g4a until the M4g4b refresh). Check it, or drop it.~~ **Done in M4g4c:** checked in both integration tests.
+- **M4g4c follow-ups** (code-reviewer, fix delta; user rule: one fix round; report-only code, no gate):
+  - `spikes/m4g4c_null_calibration.py` has no test: a synthetic one (finite ρ and gap, reproducible for a fixed seed, team labels permuted as whole teams);
+  - it repeats the engine's quintile rule (`⌈5 · rank / n⌉`, Q5 − Q1) instead of importing it from `m4g4_possession.Cell`; share one helper so the two cannot drift;
+  - `test_tie_rule_ties_equal_ratios_computed_in_different_orders` asserts the raw values differ in the last bit (it shows the rule is needed), which depends on IEEE rounding of that one pair; keep it, or use a pair found at test time;
+  - `test_engine_fit_equals_reference_slope_and_fails_on_a_zero_team` builds `Cell` with `object.__new__`; give `Cell` a small constructor from arrays if it grows.
 - **§31 treatment re-entry near a period end** (M4g4b checkpoint 1; user 2026-10-08; not part of M4g4b): match 3879637 (Lazio), Milinković-Savić has Player Off 44:27 and Player On 45:16 in period 1, but the ADR 002 §31 timeline (pipeline and `verify_core_metrics` agree) resumes him only at the period 2 start. His events at 45:25–45:30 (a pass, a pressure, a ball recovery) fall outside his credited time, and 45:16 → the 48:47 Half End (about 3.5 minutes) is not credited to him.
   - To do: measure the lost seconds or minutes here, find every other treatment re-entry (Player On) between the nominal period end and the Half End, or otherwise near a period end, across all configured leagues, and report how much credited time each loses;
   - then decide whether §31's window pairing needs an amendment (an ADR 002 change, its own chunk, with the before/after STOP rule).

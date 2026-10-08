@@ -1,0 +1,237 @@
+{
+ "description": "M4g4 expected registry and DNA changes (ADR 004 §13.8, plan 005 M4g4), written by spikes/m4g4_possession_reference.py --write-expected BEFORE any registry code: no existing cell changes; the five Defending score_status values (D5); the adjusted vector columns per group (D4 = C); the ball_recoveries_p90 mover verdicts per candidate (a candidate no group selected is report only, not used for any restore).",
+ "snapshot_registry_version": "463d1a4c31ae08a7f0ba7607704a4b802bf7bacab1259702b45fecc5bec7eb65",
+ "status_changes": [],
+ "note_changes": [],
+ "reason_changes": [],
+ "rules": {
+  "rho_max": 0.1,
+  "sign_dead_zone": 0.05,
+  "inconsistent": 0.3,
+  "gap_max": 10.0,
+  "r_full_min": 0.6,
+  "g2": [
+   20,
+   1000
+  ],
+  "g3": [
+   10,
+   500
+  ],
+  "beta_b": 2000,
+  "threshold": 0.5,
+  "min_movers": 12,
+  "low_power": 0.8,
+  "extra_seeds": 5
+ },
+ "defending_score_status": {
+  "CB": "possession_criteria_failed",
+  "FB-WB": "possession_criteria_failed",
+  "DM-CM": "mover_stability_inconclusive",
+  "AM-Winger": "possession_criteria_failed",
+  "ST": "possession_criteria_failed"
+ },
+ "status_detail": {
+  "CB": {
+   "selected": null,
+   "mover_verdict": null,
+   "underpowered": null
+  },
+  "FB-WB": {
+   "selected": null,
+   "mover_verdict": null,
+   "underpowered": null
+  },
+  "DM-CM": {
+   "selected": "beta_0",
+   "mover_verdict": "inconclusive",
+   "underpowered": true
+  },
+  "AM-Winger": {
+   "selected": null,
+   "mover_verdict": null,
+   "underpowered": null
+  },
+  "ST": {
+   "selected": null,
+   "mover_verdict": null,
+   "underpowered": null
+  }
+ },
+ "selection": {
+  "CB": {
+   "ball_recoveries_p90": null,
+   "clearances_p90": null,
+   "dribbled_past_p90": null,
+   "pressures_p90": null,
+   "tackles_attempted_p90": null
+  },
+  "FB-WB": {
+   "ball_recoveries_p90": null,
+   "clearances_p90": null,
+   "dribbled_past_p90": "beta_0",
+   "fouls_committed_p90": "beta_0",
+   "pressures_p90": "beta_0",
+   "tackles_attempted_p90": "beta_0"
+  },
+  "DM-CM": {
+   "ball_recoveries_p90": "beta_0",
+   "blocks_p90": null,
+   "clearances_p90": "beta_hat",
+   "dribbled_past_p90": "team_share",
+   "fouls_committed_p90": null,
+   "interceptions_p90": null,
+   "pressures_p90": null,
+   "tackles_attempted_p90": "beta_0"
+  },
+  "AM-Winger": {
+   "ball_recoveries_p90": null,
+   "blocks_p90": null,
+   "clearances_p90": "beta_hat",
+   "dribbled_past_p90": "beta_hat",
+   "fouls_committed_p90": null,
+   "interceptions_p90": null,
+   "pressures_p90": "team_share",
+   "tackles_attempted_p90": "beta_1"
+  },
+  "ST": {
+   "ball_recoveries_p90": null,
+   "blocks_p90": null,
+   "clearances_p90": "beta_0",
+   "dribbled_past_p90": null,
+   "fouls_committed_p90": "team_share",
+   "pressures_p90": null,
+   "tackles_attempted_p90": null
+  }
+ },
+ "vector_adjusted_columns": {
+  "CB": [],
+  "FB-WB": [],
+  "DM-CM": [
+   {
+    "metric": "clearances_p90",
+    "candidate": "beta_hat"
+   },
+   {
+    "metric": "dribbled_past_p90",
+    "candidate": "team_share"
+   }
+  ],
+  "AM-Winger": [
+   {
+    "metric": "clearances_p90",
+    "candidate": "beta_hat"
+   },
+   {
+    "metric": "dribbled_past_p90",
+    "candidate": "beta_hat"
+   },
+   {
+    "metric": "pressures_p90",
+    "candidate": "team_share"
+   },
+   {
+    "metric": "tackles_attempted_p90",
+    "candidate": "beta_1"
+   }
+  ],
+  "ST": [
+   {
+    "metric": "fouls_committed_p90",
+    "candidate": "team_share"
+   }
+  ]
+ },
+ "mover_verdicts": {
+  "beta_0": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ],
+   "ci": [
+    -0.205440122,
+    1.02601428
+   ],
+   "f_hat": 0.30825262,
+   "r_m": 0.590827026,
+   "sqrt_s2_rms_a": 1.1347131135225326,
+   "power_at_f0": 0.639,
+   "reused_from": "M4g3b",
+   "used_for_restore_in": [
+    "DM-CM"
+   ]
+  },
+  "beta_hat": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ],
+   "ci": [
+    -0.15767715775973065,
+    1.3618938942686383
+   ],
+   "f_hat": 0.4243965571622569,
+   "r_m": 0.5881643583355952,
+   "sqrt_s2_rms_a": 1.1966413088860692,
+   "power_at_f0": 0.6355,
+   "used_for_restore_in": []
+  },
+  "team_share": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ],
+   "ci": [
+    -0.1613882668351115,
+    0.9638915727854072
+   ],
+   "f_hat": 0.29491105543417484,
+   "r_m": 0.599853404408096,
+   "sqrt_s2_rms_a": 1.1831837685269024,
+   "power_at_f0": 0.6855,
+   "used_for_restore_in": []
+  },
+  "beta_1": {
+   "verdict": "inconclusive",
+   "n": 24,
+   "extra_seed_verdicts": [
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive",
+    "inconclusive"
+   ],
+   "ci": [
+    -0.2878107196156339,
+    0.7052396269712095
+   ],
+   "f_hat": 0.13675419951603732,
+   "r_m": 0.6011846550680258,
+   "sqrt_s2_rms_a": 1.2107667795070214,
+   "power_at_f0": 0.6835,
+   "used_for_restore_in": []
+  }
+ },
+ "compare_pairs": {
+  "dm_cm_adjusted": [
+   "clearances_p90",
+   "dribbled_past_p90"
+  ],
+  "tested": false
+ }
+}

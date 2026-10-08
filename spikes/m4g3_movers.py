@@ -171,9 +171,11 @@ def cut(cum_nominal: np.ndarray, m1: float, m2: float) -> tuple[int, int]:
 class Ctx:
     """Everything the per-metric runs share: movers, populations, non-mover halves."""
 
-    def __init__(self, meas: dict | None = None) -> None:
+    def __init__(self, meas: dict | None = None, extra_cols: tuple[str, ...] = ()) -> None:
         """meas: the measurements to read min_attempts and r_full from (default: the committed
-        file; the measurement writer passes the values it has just computed)."""
+        file; the measurement writer passes the values it has just computed). extra_cols: further
+        count columns to load, null-check and sum into the non-mover halves (M4g4c: exposure and
+        team counts); the default adds none."""
         self.season = pl.read_parquet(SEASON_PARQUET).filter(pl.col("season_id") == SEASON_ID)
         self.meas = json.loads(MEASUREMENTS.read_text()) if meas is None else meas
         dates, self.results = {}, []
@@ -187,6 +189,7 @@ class Ctx:
         for m in MOVER_METRICS:
             _, num, pos, neg = spec(m)
             cols |= {num, *pos, *neg}
+        cols |= set(extra_cols)
         require_no_nulls(self.season, cols - {"match_duration"}, "player_season_stats")
         match = (pl.read_parquet(MATCH_PARQUET, columns=["match_id", *KEY, *sorted(cols)])
                  .filter(pl.col("competition_id").is_in(POOL) & (pl.col("minutes_played") > 0)))
@@ -233,7 +236,8 @@ class Ctx:
         self.pop_cache: dict[tuple[str, str], dict] = {}
 
         # non-mover halves per mover (shared by all metrics and seeds)
-        need = sorted({c for m in MOVER_METRICS for c in (spec(m)[1], *spec(m)[2], *spec(m)[3])})
+        need = sorted({c for m in MOVER_METRICS for c in (spec(m)[1], *spec(m)[2], *spec(m)[3])}
+                      | set(extra_cols))
         self.halves: list[list[dict]] = []
         for stints in self.movers:
             grp = stints[0]["position_group"]
