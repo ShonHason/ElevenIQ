@@ -1463,7 +1463,7 @@ Adds to §13.1; plan 005 M4g3 / M4g3c hold the full spec.
 - **Known beforehand:**
   - M4g3 changes no `registry_status`, note or `score_status`. Passing stays `pending_mover_stability` until M4g5.
   - The verdict is per metric (movers are pooled), the same in every group.
-  - `defensive_duel_success_pct` is `untestable`: 0 of 24 movers meet `min_attempts` on both stints. Defending's testable directional members are `ball_recoveries_p90` and `tackles_won_p90`, as M4g4 adjusts them.
+  - `defensive_duel_success_pct` is `untestable`: 0 of 24 movers meet `min_attempts` on both stints. Defending's testable directional DNA member is `ball_recoveries_p90`, as M4g4 adjusts it. **Corrected in §13.8:** `tackles_won_p90` was listed here too, but it is `d17_dropped` in all 5 groups (ρ 0.90–0.93 with `tackles_attempted_p90`), so it is not a DNA member and cannot restore Defending.
   - Also `untestable`: `aerial_win_pct` (4 movers), `np_xg_per_shot` (2). Tested: `pass_completion_pct` (24), `long_pass_completion_pct` (15).
 - **Pre-stated outcomes (user, 2026-10-08, before the real run):**
   - **Passing reason text** (`pending_mover_stability`, shown on the compare page) stays unchanged until M4g5. After M4g3 it means "pending the xPass decision".
@@ -1535,3 +1535,52 @@ Adds to §13.1; plan 005 M4g3 / M4g3c hold the full spec.
     - The expected flips derive `underpowered` from the block's own power with the same < 0.8 rule.
     - So a power near 0.8 is checked for plausibility, not exactness. Today no power is within 0.03 of 0.8 (nearest: `dribbles_attempted_p90` 0.85, `fouls_won_p90` 0.75), so no label depends on this.
   - **Rebuild:** percentiles and DNA changed only in their stamps (`registry_version`, and the DNA files' `percentiles_parquet_sha256`). Both reference checks pass. The M4e golden pages and the M4g1 validation section changed in the version string only.
+
+### 13.8 M4g4 pre-registration: possession adjustment and the Defending restore (user decisions 2026-10-08, before any M4g4 measurement)
+Adds to §13.1 and §13.2; plan 005 "M4g4 plan" holds the full spec, the power table and the chunks. The §13.1 candidates and their order, the four criteria and the restore rule are unchanged, made operational here.
+
+**Stats-reviewer pre-code review (2026-10-08): APPROVE WITH CONDITIONS.** It verified every quoted fact and reproduced the power figures. Its conditions are folded in below: C1–C5 are user decisions, the rest is wording.
+
+- **Correction to §13.7:** `tackles_won_p90` is `d17_dropped` in all 5 groups (ρ 0.90–0.93 with `tackles_attempted_p90`). It is not a DNA member and cannot restore Defending. **`ball_recoveries_p90` is the only directional Defending DNA member in any group**, so every group's restore rests on it.
+- **Criterion (1) (C1):** |mean over the 4 leagues of the signed within-league ρ| < 0.1 on both proxies. **No sign-test escape (reading (a)).**
+  - (a) is the stricter reading, and its β = 0 consequences were known when it was chosen: AM-Winger `pressures_p90` and `blocks_p90` and ST `dribbled_past_p90` fail at β = 0 under (a) and would have passed under (b).
+  - Report-only flag "inconsistent across leagues": any single league |ρ| ≥ 0.3.
+- **Sign flip (C2):** a candidate fails when, on either proxy, its mean ρ has the opposite sign to β = 0's and |mean ρ| ≥ 0.05. The rule does not apply on a proxy where β = 0's own |mean ρ| < 0.05.
+- **Criterion (2) (C3):** both proxies. Rows are ranked within each league by the proxy (average ranks; quintile ⌈5 · rank / n⌉), on local percentiles recomputed on the candidate column. The gap is |Q5 − Q1| per league, averaged over the 4 leagues, ≤ 10 points.
+- **Criterion (4) (D1)** is report-only: "passes all four" means (1)–(3) pass and (4) is reported.
+- **β̂ (D2):**
+  - **Unconstrained.** β̂ < 0 is flagged "rises with own possession", and |β̂| > 1 is flagged. CB and FB-WB recoveries have positive β = 0 ρ (+0.25 / +0.28, +0.11 / +0.14), so a negative β̂ is expected there; this prediction was made before any fit.
+  - **Fit:** team-level unweighted OLS of the log minutes-weighted mean per-90 on the log minutes-weighted mean E of the group's primary scored rows, both league-demeaned. Teams with no row are dropped; a team mean ≤ 0 fails the fit.
+  - **Leave-one-league-out:** for league l, β̂ is fitted without l and applied to l. Criteria (1) and (2) average over the 4 held-out leagues.
+  - **CI:** team bootstrap within leagues, report only.
+  - **Order:** β = 0 → β̂ → team share → β = 1 is a fixed pre-registered order, not an ordering by size of change.
+- **Mover re-run (D3):**
+  - each half is adjusted with its own exposure, using the fixed all-4-league β̂, as are criterion (3)'s split halves;
+  - one pooled verdict per (metric, candidate), each mover adjusted with its own group's parameters;
+  - streams `cell_rng("m4g4_draws" | "m4g4_boot" [+ "#k", k = 1–5], metric, candidate)`, candidate tokens `beta_hat` / `team_share` / `beta_1`;
+  - mover runs for `ball_recoveries_p90` under all three non-zero candidates; a verdict for a candidate a group did not select is report-only;
+  - scales (a) and (b) use the adjusted column's own reference population;
+  - **β = 0 reuses the M4g3b verdict and is not re-run** (an unchanged column; a re-run on new streams would be seed-shopping).
+- **Vector (D4 = C):** every Defending DNA member (style or directional) whose selected candidate passes (1)–(3) enters the vector adjusted. The mover rule gates only the score. β = 0, or no passing candidate, leaves the raw column. Weights stay as §12.6.
+- **Defending `score_status` (D5):** `possession_criteria_failed`, `mover_stability_failed`, `mover_stability_inconclusive`, `mover_stability_untestable`, `mover_seed_sensitive`, `mover_below_model_range`, or `ok`. "underpowered at n" is a note.
+  - **Precedence:** possession → mover verdict (primary stream) → seed sensitivity → below model range.
+  - **Definitions:** `mover_seed_sensitive` = primary PASS and any extra stream ≠ PASS; `mover_below_model_range` = primary PASS, CI upper bound < 0 and √`s2_rms_a` > 1.
+  - With one directional member per group, the status is that member's.
+- **Restore support (D6, D7):**
+  - **D6:** a restore needs PASS on all six streams (PASS ∧ ¬`borderline_seed`); simulated cost 3–4 points of power at f = 0.
+  - **D7:** "PASS (below model range)" restores only through the §13.7 exception, applied via a stored `s2_rms_a` (RMS S² on local percentiles), which the movers block gains for every metric: √`s2_rms_a` ≤ 1. The β = 0 reuse back-fills it from the M4g3 primary streams.
+- **The 8 majority-triggered allow-listed cells (§13.6): M4g4 decides nothing for them.**
+  - M4g4's exposure (opponent passing) was never pre-registered for on-ball progression, and their M4g3 verdicts are all inconclusive.
+  - They stay DNA and move to the M4 sign-off list, next to family weighting and the FAIL list. M4g5 informs the two `long_pass_completion_pct` cells.
+  - **This statement satisfies the M4g2 stats-reviewer condition** that M4g4 state its decision for the 8 before its run.
+- **D17 and notes (C5):** D17 is re-checked on adjusted columns, report only. There are 0 note changes: an adjusted column keeps its D9 note, flagged for the M4 sign-off.
+- **Power (`ball_recoveries_p90`, n = 24, all six streams):**
+  - P(PASS | f = 0) is 0.40 / 0.45 / 0.56 / 0.63 at R_m 0.45 / 0.50 / 0.55 / 0.59; at f = 0.25 it is about 0.2.
+  - The expected adjusted R_m is about 0.50 (it rests on f̂ 0.31, CI [−0.21, 1.03]; per-half E variation can move it either way). Residual team pressing style puts the realistic case between f = 0 and f = 0.25.
+  - Every expected case is underpowered.
+- **Pre-stated outcomes:**
+  - the Defending score most likely stays withheld in most or all groups for 2015/16; the rule is not relaxed after the results;
+  - if DM-CM selects β = 0 (its β = 0 ρ is −0.08 / −0.08, the only group that passes (1) at β = 0), DM-CM Defending stays withheld as `mover_stability_inconclusive` (M4g3b: f̂ 0.31, CI [−0.21, 1.03]);
+  - **compare pairs (C4):** the M4g1b expectation (Busquets–Kanté 0.1431, Carrick–Busquets 0.1134) is "not tested" iff neither DM-CM `interceptions_p90` nor `ball_recoveries_p90` is adjusted. Other DM-CM adjustments (pressures, blocks, clearances, fouls committed all fail β = 0 on (1)) are reported alongside.
+- **Known beforehand:** 0 changes to `registry_status`, note or reason on any existing cell. `spikes/expected_m4g4_flips.json` is written by an independent reference before any registry code, and `spikes/m4g4_before_after.py` is the STOP rule.
+- **M4g4-0 (`5886a06`):** the M4g3b reference-hardening gate is done. The committed outputs are reproduced byte-identically, and the reference passes on them.
