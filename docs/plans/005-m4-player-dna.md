@@ -1128,8 +1128,8 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
   - **Pool:** non-movers are single-stint rows of the same group with ≥ 900 nominal minutes.
   - **Matching:** each mover's (m1, m2) is matched by drawing a non-mover with ≥ m1 + m2 minutes. Minutes are nominal-equivalent, the gate's clock. That non-mover's matches are taken in date order: the first ≈ m1 minutes, then the next ≈ m2 minutes (nearest whole match).
     - These are regular starters (up to about 2,860 minutes).
-    - Many second stints are at struggling clubs (Sunderland, Carpi, Palermo, Frosinone). Selection like this tends to make team effects look smaller.
-  - **Draws:** R = 200 draws per mover, from `default_rng(20261008)`.
+    - Many second stints are at struggling clubs (Sunderland, Carpi, Palermo, Frosinone). Selection like this tends to make team effects look smaller. **Not supported (M4g3a review):** for this estimator a shared drift to weaker clubs inflates mover changes (towards FAIL); direction not established (docs/reviews/m4g3-movers.md).
+  - **Draws:** R = 200 draws per mover, from `default_rng(20261008)`. **Deviation (M4g3a, ADR 004 §13.7):** one stream per metric for the draws and one for the bootstrap, seeded from 20261008 and the metric name; set before the run script first executed.
   - **Result:** the baseline change = the mean |Δ| over all draws.
 - **Ratio S = mover change / baseline change**, with a paired bootstrap CI over movers (B = 2000, seed fixed): each resample recomputes the movers' |Δ| and their matched baselines.
   - A root-mean-square version is reported next to it. mean |Δ| turns into the decision quantity only if the two |Δ| distributions have the same shape; the RMS version is exact.
@@ -1221,6 +1221,9 @@ The detailed plan was approved on 2026-10-03. It has three chunks: M4c1 (second-
 - **Then:** re-run the teammates-among-neighbours count (same pass criteria, all groups); report only.
 - **The 8 majority-triggered allow-listed cells (M4g2 O1, user 2026-10-07):** re-examined after the possession adjustment: CB `progressive_passes_p90`, `progressive_carries_p90`, `long_pass_completion_pct`; FB-WB `progressive_passes_p90`, `progressive_carries_p90`; DM-CM `progressive_passes_p90`, `progressive_carries_p90`, `long_pass_completion_pct`.
   - **Before its run (stats-reviewer condition), M4g4 states what it decides for these 8.** If it decides nothing, it says so.
+- **Open items, to decide in the M4g4 plan (user, 2026-10-08):**
+  - consider requiring a restore-supporting mover PASS to hold across several seeds (`pressures_p90` showed seed sensitivity in M4g3a: CI upper bound 0.47, 0.48–0.52 on five other seeds). Not decided now.
+  - apply the pre-registered "PASS (below model range)" label (ADR 004 §13.7) to the M4g4 mover re-run.
 - **Compare-mode re-check (user, 2026-10-07; M4g1b pairs):** after the possession adjustment, re-run Busquets vs Kanté and Carrick vs Busquets on the DM-CM compare panel. Report only.
   - **Before (M4g1b, unadjusted):** Busquets–Kanté distance 0.1430, Kanté #100 for Busquets and Busquets #133 for Kanté (of 293). Carrick–Busquets 0.1136, #46 / #44.
   - **Expectation, written before the adjustment:**
@@ -1351,6 +1354,7 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   - ranks share a rank within 1e-12. The tolerance is not transitive for chains of near-ties. Harmless for display, and the check uses the same rule;
   - `SHOW_PAIRS` (`spikes/m4g_style_map.py`) fails the whole run if a pair is not unique among the plotted rows. A warning would do, since the pairs are display only;
   - `others` (the cross-group search list) holds every row, so a player at two clubs is listed twice. Dedupe by name to shrink each page.
+- **M4g3a mover-run follow-ups** (code-reviewer, M4g3a; user 2026-10-08): `spikes/m4g3_movers.py` filters the match parquet by competition only; add a `season_id` filter (today a second season would make `replace_strict` raise, so it is safe but implicit).
 - **M4g3a power follow-ups** (code-reviewer, M4g3a checkpoint fix delta; user 2026-10-08: no more fix rounds before the real run):
   - `spikes/m4g3_power.py` `main()` builds the grid's low-power labels from the grid cells (their own seed keys), not through `low_power`; the JSON labels are a reference, and a real metric's label comes from `low_power` (≈ 1 pp Monte Carlo difference). Call `low_power` in `main()` or say so in the JSON.
 - **M4g3c movers-display follow-ups** (code-reviewer, M4g3c; user 2026-10-08):
