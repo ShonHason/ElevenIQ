@@ -131,14 +131,18 @@ Possession flags show their CI next to them (N1). Defending reasons use the N2 w
 | Radar, map, bars | hand-written SVG, `d3-zoom`, `d3-scale` |
 | Icons | `lucide-react` |
 
-- **Radar:** shown from 768 px up. Below that, family-grouped percentile bars with the same data.
+- **Profile shape** (W4, plan 006): a polygon of the family dimension scores at the top of the player page.
+  - Withheld families are open, dashed vertices, never 0.
+  - No overall number.
+  - Compare overlays two shapes from the same position group only.
+- **Radar:** shown from 768 px up. On phones the profile shape takes the place of the bars-only fallback; the family tables carry the per-metric detail.
 - **Style map:** map first; a one-line caption ("Position shows style, not quality"); the explainer, legend and loadings collapsed.
 
 ## 9. Page hierarchy
 - **Search:** in the header on every page; instant results (name or nickname, team, league, group). URLs and keys use `player_id` only.
 - **Similar players** (landing): the player's identity strip, then the 10 neighbours (rank, name, team, league, distance, "most alike / most different" phrases, same-team chip, provisional chip). Compare opens in a sheet.
 - **Player page:**
-  - first: the identity strip (with the near-gate chip if any), the dimension scores row (withheld chips) and the radar;
+  - first: the identity strip (with the near-gate chip if any), the profile shape (withheld vertices dashed), and the radar from 768 px up;
   - then: family tables, signature traits, and links to Similar players and the map point.
 - **Compare:**
   - first: two identity strips, the distance, ranks both ways, and the 5 most different and 3 most alike metrics;
