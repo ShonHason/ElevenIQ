@@ -73,13 +73,17 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
 
 
 ### Design (frontend)
-- Use the `apple-design` skill (.claude/skills/apple-design/, MIT, Emil Kowalski) selectively
-  for the frontend: typography, materials, instant feedback, reduced-motion support and subtle
-  transitions.
-- Data must stay readable: no springy or animated data values. Numbers, percentiles, bars and
-  radar vertices render at their final value with no count-up, spring or overshoot.
-- When using apple-design during a task, skip its 'Initial Response' greeting and apply the
-  guidance directly.
+- UI work follows docs/DESIGN.md. It overrides any design skill on conflict.
+- Skill leadership: our rules (ADR 004 §11.5, N1–N3, the words table, docs/DESIGN.md) lead
+  data display; the dataviz skill leads colour scales and charts (every palette passes its
+  validator); apple-design leads typography, materials, feedback and panel motion (skip its
+  'Initial Response' greeting); frontend-design's anti-default list is a review checklist only
+  (restated in our own words in docs/DESIGN.md §10).
+- Data must stay readable: no springy or animated data values. Numbers, percentiles, bars,
+  radar vertices and map points render at their final value: no count-up, spring or overshoot.
+- User-facing text comes only from the words table (registry.REASON_TEXT, export/words.py).
+  No copied strings in pages or components.
+- New design skills or UI libraries need my approval before install.
 
 ### Out of Scope (MVP)
 Transfer prediction, market-value prediction, tactical team-fit, live match analytics,

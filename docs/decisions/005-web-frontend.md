@@ -102,7 +102,7 @@ Out of v1 (later milestones): Gem Finder (M6), natural-language search (M8), mul
 ## 4. UI libraries (pending: chosen by the user, verified in W2)
 **Choice (user, 2026-10-07):**
 - **Components:** shadcn/ui on Base UI primitives, with Tailwind CSS.
-- **Motion:** for UI transitions only (chrome, panels, sheets), never for data values.
+- ~~**Motion:** for UI transitions only (chrome, panels, sheets), never for data values.~~ **Dropped (W0 decision 9, user 2026-10-09):** CSS transitions with Base UI's starting / ending-style attributes. **Condition:** before W5, confirm the style map's mover dot → stint dots expansion works with CSS / SVG transitions; if not, stop and bring it back to the user.
 - **Radar:** a hand-written SVG component, ported from `tools/compare_page.py`.
 - **Style map:** SVG with `d3-zoom` and `d3-scale`, a port of the current map logic (`spikes/m4g_style_page.py`).
 - **Icons:** `lucide-react`.
@@ -120,20 +120,7 @@ Requirements the choice must meet:
 - **Component primitives** (dialogs, popovers, tabs): accessible (WAI-ARIA patterns, focus management) and unstyled or themeable.
 
 ## 5. Design
-- **The `apple-design` skill** (`.claude/skills/apple-design/`, MIT) is used selectively, under the CLAUDE.md design rules.
-- **Applied:**
-  - **Typography:** the system font stack, size-specific tracking and leading, and hierarchy from weight, size and leading together.
-  - **Materials:** a translucent header and sheets with `backdrop-filter`, never light-on-light; solid fallbacks.
-  - **Instant feedback:** pointer-down states; search results update as the user types, with no debounce beyond one frame.
-  - **Accessibility settings:** `prefers-reduced-motion`, `prefers-reduced-transparency` and `prefers-contrast` are each honoured.
-  - **Transitions:** subtle (opacity / transform ≤ 200 ms) on chrome only, with spatial consistency for panels (in and out along the same edge).
-  - **Wayfinding:** wayfinding and specific labels as in §3.
-- **Data stays readable:**
-  - No spring, count-up, tween or overshoot on any data value, bar, vertex or point position.
-  - Numbers use tabular figures (`font-variant-numeric: tabular-nums`).
-  - Percentile phrases come from the contract.
-  - Colour is never the only carrier of meaning: style and team-influenced metrics are also labelled in text.
-- **Not applied:** gesture physics, momentum projection, rubber-banding and haptics. They have no use on a data site, except map pan and zoom, where the chosen library's defaults apply with motion reduced under `prefers-reduced-motion`.
+**Moved to `docs/DESIGN.md`** (plan 006 W0, user decisions 2026-10-09), which overrides any design skill on conflict. The rules first recorded here are carried into DESIGN.md: system font, tabular numerals, materials with solid fallbacks, instant feedback, reduced-motion / transparency / contrast, chrome-only transitions, no animated data values, colour never alone. Decision record: `docs/design/w0-design-plan.md`.
 
 ## 6. Deployment
 - **Static hosting options:**

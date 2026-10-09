@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElevenIQ design preview</title>
+<style>
+/* docs/DESIGN.md tokens (W0, user decisions 2026-10-09). Sample values only: not real data. */
+[data-theme="light"] {
+  color-scheme: light;
+  --surface-0:#fcfcfb; --surface-1:#ffffff; --surface-2:#f3f2ef; --line:#e4e3df;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#6e6d69; --accent:#2a78d6; --caution:#9a6500;
+  --p0:#b5501c; --p1:#f0a07a; --p2:#f0efec; --p2-bar:#bdbbb4; --p3:#86b6ef; --p4:#256abf;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0:#141413; --surface-1:#1a1a19; --surface-2:#232321; --line:#33332f;
+  --ink:#ffffff; --ink-2:#c3c2b7; --ink-3:#9a998f; --accent:#3987e5; --caution:#d9a23a;
+  --p0:#d95926; --p1:#8f3d14; --p2:#383835; --p2-bar:#6b6a64; --p3:#184f95; --p4:#3987e5;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 14px/20px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: grid; grid-template-columns: 1fr 1fr; }
+.theme { background: var(--surface-0); color: var(--ink); padding: 24px; min-width: 0; }
+h1 { font-size: 24px; line-height: 30px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+h2 { font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -0.005em; margin: 24px 0 8px; }
+.caption { font-size: 12px; line-height: 16px; color: var(--ink-3); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 96px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+.swatch div:first-child { height: 40px; }
+.swatch div:last-child { padding: 4px 6px; font-size: 12px; line-height: 16px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; border-radius: 6px; overflow: hidden; }
+.scale div { height: 28px; }
+.scale-labels { display: grid; grid-template-columns: repeat(5, 1fr); font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+table { width: 100%; border-collapse: collapse; background: var(--surface-1); border: 1px solid var(--line); border-radius: 8px; font-size: 13px; line-height: 18px; }
+th, td { text-align: left; padding: 0 10px; height: 36px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-weight: 600; color: var(--ink-2); font-size: 12px; }
+tr:last-child td { border-bottom: none; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num b { font-weight: 500; }
+.bar { display: inline-block; width: 48px; height: 6px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line); vertical-align: middle; margin-left: 8px; position: relative; overflow: hidden; }
+.bar i.style { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.table-wrap { overflow-x: auto; border-radius: 8px; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+.compact td, .compact th { height: 28px; }
+.compact .bar { display: none; }
+.metric small { display: block; color: var(--ink-3); font-size: 12px; line-height: 14px; }
+.compact .metric small { display: none; }
+.withheld { color: var(--ink-2); font-style: italic; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; border: 1px solid var(--line); }
+.chip svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chip.caution { color: var(--caution); }
+.chip.basis { height: 18px; padding: 0 6px; font-size: 11px; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { margin-top: 8px; }
+</style>
+</head>
+<body>
+<template id="content">
+  <h1>Design preview</h1>
+  <div class="caption">docs/DESIGN.md tokens. Sample values, not real data. Chip and status wording are placeholders until the W1 words table.</div>
+
+  <h2>Surfaces and ink</h2>
+  <div class="row">
+    <div class="swatch"><div style="background:var(--surface-0)"></div><div>surface-0</div></div>
+    <div class="swatch"><div style="background:var(--surface-1)"></div><div>surface-1</div></div>
+    <div class="swatch"><div style="background:var(--surface-2)"></div><div>surface-2</div></div>
+    <div class="swatch"><div style="background:var(--line)"></div><div>line</div></div>
+    <div class="swatch"><div style="background:var(--ink)"></div><div>ink</div></div>
+    <div class="swatch"><div style="background:var(--ink-2)"></div><div>ink-2</div></div>
+    <div class="swatch"><div style="background:var(--accent)"></div><div>accent</div></div>
+    <div class="swatch"><div style="background:var(--caution)"></div><div>caution</div></div>
+  </div>
+
+  <h2>Percentile scale (direction-adjusted)</h2>
+  <div class="scale">
+    <div style="background:var(--p0)"></div><div style="background:var(--p1)"></div><div style="background:var(--p2)"></div><div style="background:var(--p3)"></div><div style="background:var(--p4)"></div>
+  </div>
+  <div class="scale-labels"><span>&lt; 10</span><span>10–40</span><span>around average</span><span>60–90</span><span>&gt; 90</span></div>
+  <div class="caption note">Bars use the around-average gray <span class="bar"><i style="width:55%;background:var(--p2-bar)"></i></span>; style metrics are a hollow bar at every value: <span class="bar"><i class="style" style="width:80%"></i></span></div>
+
+  <h2>Percentile table</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Metric</th><th class="num">Value</th><th class="num">Local <span class="chip basis">basis</span></th><th class="num">Global</th><th></th></tr></thead>
+    <tbody>
+      <tr><td class="metric">Progressive passes<small>higher better</small></td><td class="num"><b>7.84</b></td><td class="num">93<span class="bar"><i style="width:93%;background:var(--p4)"></i></span></td><td class="num">91</td><td></td></tr>
+      <tr><td class="metric">Final-third entries (pass)<small>higher better</small></td><td class="num"><b>4.10</b></td><td class="num">71<span class="bar"><i style="width:71%;background:var(--p3)"></i></span></td><td class="num">68</td><td></td></tr>
+      <tr><td class="metric">Ball recoveries<small>higher better</small></td><td class="num"><b>5.02</b></td><td class="num">52<span class="bar"><i style="width:52%;background:var(--p2-bar)"></i></span></td><td class="num">49</td><td></td></tr>
+      <tr><td class="metric">Dribbled past<small>lower better</small></td><td class="num"><b>1.31</b></td><td class="num">78<span class="bar"><i style="width:78%;background:var(--p1)"></i></span></td><td class="num">74</td><td><span class="chip">coloured by 100 − p</span></td></tr>
+      <tr><td class="metric">Aerials won<small>higher better</small></td><td class="num"><b>1.20</b></td><td class="num">6<span class="bar"><i style="width:6%;background:var(--p0)"></i></span></td><td class="num">&lt;1</td><td></td></tr>
+      <tr><td class="metric">Long passes<small>style</small></td><td class="num"><b>10.60</b></td><td class="num">83<span class="bar"><i class="style" style="width:83%"></i></span></td><td class="num">83</td><td><span class="chip">Style</span></td></tr>
+      <tr><td class="metric">Defending (dimension)<small>score</small></td><td colspan="3" class="withheld">withheld (not shown to be free of team-possession effects)</td><td><span class="chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Withheld</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Compact mode</h2>
+  <div class="table-wrap"><table class="compact">
+    <thead><tr><th>Metric</th><th class="num">Value</th><th class="num">Local <span class="chip basis">basis</span></th><th class="num">Global</th><th></th></tr></thead>
+    <tbody>
+      <tr><td class="metric">Progressive passes<small>higher better</small></td><td class="num"><b>7.84</b></td><td class="num">93<span class="bar"><i style="width:93%;background:var(--p4)"></i></span></td><td class="num">91</td><td></td></tr>
+      <tr><td class="metric">Ball recoveries<small>higher better</small></td><td class="num"><b>5.02</b></td><td class="num">52<span class="bar"><i style="width:52%;background:var(--p2-bar)"></i></span></td><td class="num">49</td><td></td></tr>
+      <tr><td class="metric">Long passes<small>style</small></td><td class="num"><b>10.60</b></td><td class="num">83<span class="bar"><i class="style" style="width:83%"></i></span></td><td class="num">83</td><td><span class="chip">Style</span></td></tr>
+      <tr><td class="metric">Defending (dimension)<small>score</small></td><td colspan="3" class="withheld">withheld (not shown to be free of team-possession effects)</td><td><span class="chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Withheld</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Status chips</h2>
+  <div class="row">
+    <span class="chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Withheld</span>
+    <span class="chip caution"><svg viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.5"/></svg>Fewer minutes: less reliable</span>
+    <span class="chip"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.5a3.5 3.5 0 010 7M21.5 20c0-3-1.8-5.2-4.5-5.8"/></svg>Same team</span>
+    <span class="chip"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A1.6 1.6 0 005.9 21h12.2a1.6 1.6 0 001.4-2.5L14 9V3"/></svg>Provisional</span>
+    <span class="chip">Style</span>
+    <span class="chip basis">basis</span>
+  </div>
+  <div class="caption note">"Fewer minutes: less reliable" appears only for CB and FB-WB profiles with 900–1,350 nominal minutes.</div>
+  <p><a href="#">Link in accent</a></p>
+</template>
+<section class="theme" data-theme="light"></section>
+<section class="theme" data-theme="dark"></section>
+<script>
+for (const s of document.querySelectorAll(".theme")) s.append(document.getElementById("content").content.cloneNode(true));
+</script>
+</body>
+</html>

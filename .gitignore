@@ -12,3 +12,6 @@ build/
 .env
 .venv/
 venv/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+node_modules/
