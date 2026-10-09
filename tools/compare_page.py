@@ -550,7 +550,8 @@ def metric_notes(players: Sequence[Player], metric: str, role: str = PRIMARY) ->
             fixed = SPECS_BY_COLUMN[metric].fixed_display
             why = (reg_span(metric, group, "fixed_display.reason", fixed.reason)
                    if fixed is not None and "fixed_display" in cell.reasons
-                   else reg_span(metric, group, "reasons", ", ".join(cell.reasons)))
+                   else reg_span(metric, group, "reasons",
+                                 ", ".join(R.reason_text(r) for r in cell.reasons)))
             seen.append(f'{esc(GROUP_PLURAL[group])}: {why}')
     if metric == "long_pass_completion_pct":
         seen.insert(0, esc(LONG_PASS_NOTE))

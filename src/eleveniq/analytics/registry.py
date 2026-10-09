@@ -85,6 +85,40 @@ R_D12B_NOT_REGISTERED = "d12b_not_preregistered"
 R_DNA = "dna"
 R_OVERRIDE = "override"
 
+# Human-readable text per reason code (plan 006 pre-W1 gate G2): texts approved by the user
+# 2026-10-09, seven reworded by the stats-reviewer under decision 10. The one source for every
+# page: the comparison page now, W1's export/words.py later. No digits (no untraced numbers on
+# the pages) and no causal claims. `fixed_display` keeps its spec's ADR reason text
+# (FixedDisplay.reason); `override: <ADR>` is rendered by reason_text.
+REASON_TEXT: dict[str, str] = {
+    R_DNA: "in the DNA profile",
+    "signature": "signature trait",
+    R_D17: "left out: ranks players almost the same as another DNA metric",
+    R_ZERO_HEAVY: "many players record none, so it is not ranked as a profile metric",
+    R_UNRELIABLE: "not stable enough between two halves of a player's matches to profile a player",
+    R_LOW_COVERAGE: "too few players reach its attempt minimum",
+    R_NO_SIGNAL: "differences between players could not be told apart from chance",
+    R_UNTESTABLE: "its link to team possession could not be tested",
+    R_TEAM_STYLE: "associated with team possession above the possession-check threshold",
+    R_MAJORITY: "associated with team possession in most leagues",
+    R_ALLOW: "kept in the profile despite an association with team possession (recorded decision)",
+    R_D12B: "team pass share is judged by its own stricter possession check",
+    R_D12B_NOT_REGISTERED: "team pass share is only used for central midfielders and centre-backs",
+}
+OVERRIDE_TEXT = "set by a recorded decision ({adr})"
+
+
+def reason_text(code: str) -> str:
+    """The text of one stored reason code. Raises KeyError on an unknown code (and on
+    `fixed_display`, whose text is the spec's own reason)."""
+    if code.startswith(f"{R_OVERRIDE}: "):
+        return OVERRIDE_TEXT.format(adr=code[len(R_OVERRIDE) + 2:])
+    try:
+        return REASON_TEXT[code]
+    except KeyError:
+        raise KeyError(f"no human text for registry reason {code!r}") from None
+
+
 NOTE_TEAM_STYLE = "team-style influenced"
 NOTE_LOWER_RELIABILITY = "lower reliability"
 

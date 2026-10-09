@@ -30,6 +30,7 @@ import polars as pl
 import pytest
 
 from eleveniq import config
+from eleveniq.analytics import registry as R
 from eleveniq.analytics.registry import REGISTRY, SPECS
 from tools import compare_page as P
 
@@ -213,8 +214,8 @@ def _expected_reg(ref: str) -> str:
     cell = REGISTRY.cell(metric, group)
     if field == "notes":
         return cell.notes[int(index[0])]
-    if field == "reasons":
-        return ", ".join(cell.reasons)
+    if field == "reasons":                          # the code, through the one text table (G2)
+        return ", ".join(R.reason_text(r) for r in cell.reasons)
     if field == "fixed_display.reason":
         fixed = P.SPECS_BY_COLUMN[metric].fixed_display
         assert fixed is not None
