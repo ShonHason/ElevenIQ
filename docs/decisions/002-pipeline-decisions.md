@@ -10,8 +10,10 @@ Section 6 records aggregation principles to be implemented in Milestone 2.
 
 ## 1. Progressive Pass Definition
 
+**Amended by ADR 004 D14 (plan 005 M4b, 2026-10-03):** a restart (corner, free kick, goal kick, kick-off, throw-in; `metrics/pass_types.RESTART_TYPES`) is never progressive. `is_progressive_pass` requires `pass_type_name`.
+
 **File:** `src/eleveniq/metrics/progressive.py`
-**Function:** `is_progressive_pass(start, end, *, outcome, threshold=10.0) -> bool`
+**Function:** `is_progressive_pass(start, end, *, outcome, pass_type_name, threshold=10.0) -> bool` (`pass_type_name` required since ADR 004 D14; a restart is never progressive)
 
 ### ElevenIQ definition
 
@@ -787,6 +789,8 @@ Analytics functions in `src/eleveniq/metrics/` will be imported from the relevan
 
 ## 8. Key Passes Definition
 
+**Split by ADR 004 §9 (plan 005 M4b3):** `key_passes` and `assists` also have `op_` / `restart_` parts, by the key pass's own type (`RESTART_TYPES`); the totals are unchanged.
+
 A pass is counted as a key pass if it carries `shot_assist = true` **or**
 `goal_assist = true` in the StatsBomb event.
 
@@ -992,6 +996,8 @@ counter with `not block_data.get("offensive") and not block_data.get("save_block
 
 ## 14. Pass Completion Denominator and Unknown-Outcome Passes
 
+**Amended by ADR 004 D13 (plan 005 M4b):** Injury Clearance passes (`passes_injury_clearance`) also leave the `pass_completion_pct` denominator.
+
 ### Formula
 
 ```
@@ -1136,6 +1142,8 @@ defined.
 
 ## 17. `meets_min_minutes` — Per-Stint Minutes (Default Until M4)
 
+**Superseded by ADR 004 D1–D3 (plan 005 M4b):** the gate reads `minutes_nominal_equiv ≥ 900 − 1e-6`; each stint is gated on its own; there is no combined gate.
+
 `meets_min_minutes` in `player_season_stats.parquet` is computed from
 `minutes_played`, which is the per-stint total (one team's contribution to the
 season).  For a player who transfers mid-season, each stint is evaluated
@@ -1163,7 +1171,7 @@ percentile computation reads `meets_min_minutes`.
 **Minutes definition (plan 004 H4).** Since H4b, `minutes_played` is period-aware and
 counts all stoppage time (§31). So 900 minutes is about 840 (PL) to 861 (La Liga) nominal
 minutes (§31, Definition note), and 11 pool rows crossed the gate upward in H4, none
-downward (§31.7). Whether to keep 900 is an M4 decision.
+downward (§31.7). Whether to keep 900 is an M4 decision. **Decided in ADR 004 D1–D3:** the gate uses nominal-equivalent minutes, each stint is gated on its own, and there is no combined gate.
 
 `player_season_minutes_total` sums a player's stints **within one competition**
 only. Minutes in another league in the same season are not included; see §29.
@@ -1187,9 +1195,12 @@ player-DNA feature set.
 
 ## 19. Long-Pass Threshold
 
+**Amended by ADR 004 D13/D14 (plan 005 M4b):** long passes exclude every restart (set pieces and throw-ins). `long_passes_unknown_outcome` and `long_passes_injury_clearance` use the same predicate, and Injury Clearances leave the `long_pass_completion_pct` denominator.
+
 A long pass is a pass with `pass.length >= LONG_PASS_THRESHOLD_UNITS` (30 units,
-from `config.py`) **and** `pass.type.name NOT IN SET_PIECE_TYPES`
-(`{"Corner", "Goal Kick", "Free Kick", "Kick Off"}`).
+from `config.py`) **and** a pass type that is not a restart: `pass.type.name NOT IN RESTART_TYPES`
+(`{"Corner", "Goal Kick", "Free Kick", "Kick Off", "Throw-in"}`, `metrics/pass_types.py`; the
+throw-in was added by ADR 004 D14, below the set pieces listed originally).
 
 **Why the set-piece exclusion?**  76.6% of corner kicks and a large fraction of goal
 kicks exceed 30 units.  Including them inflates `long_passes_attempted` for wide
@@ -1197,7 +1208,7 @@ players and GKs relative to central players, biasing the metric as a measure of
 distribution range.  Kick Off passes are excluded for the same reason: they are
 restarts, not distribution actions.
 
-**Chunk B amendment:** "Kick Off" was added to `SET_PIECE_TYPES` when that constant
+**Chunk B amendment (history):** "Kick Off" was added to `SET_PIECE_TYPES` when that constant
 was promoted from a local variable in `build_player_match.py` to the shared
 `entries.py` module.  This removed 89 attempted / 88 completed Kick Off long passes
 from the La Liga 2015/16 totals (0.1% of total).
@@ -1402,8 +1413,10 @@ All `*_YDS` suffixes were renamed to `*_UNITS` in `config.py` and
 
 ## 25. xG Assisted
 
+**Split by ADR 004 §9 (plan 005 M4b3):** `xg_assisted` also has `op_xg_assisted` / `restart_xg_assisted`, by the key pass's own type; the total is unchanged.
+
 **File:** `src/eleveniq/metrics/xg_assisted.py`
-**Function:** `compute_xg_assisted_per_player(events, *, max_carry_units) -> dict[int, tuple[float, float]]`
+**Function:** `compute_xg_assisted_per_player(events, *, max_carry_units, fallbacks, open_play_xga, restart_xga) -> dict[int, tuple[float, float]]` (all keywords required; `fallbacks` counts the ADR 004 D16 fallbacks, `open_play_xga` / `restart_xga` are filled with the ADR 004 §9 split)
 
 ### Definition
 
@@ -1426,6 +1439,8 @@ confirmed fact.
 ---
 
 ## 26. xG Assisted Direct
+
+**Amended by ADR 004 D16 (plan 005 M4b):** a shot with no Ball Receipt* between the key pass and the shot, or with no shooter or possession, is not direct. Fallbacks are counted as report-only issues.
 
 **File:** `src/eleveniq/metrics/xg_assisted.py` (same function, second element of returned tuple)
 
@@ -1493,6 +1508,8 @@ to test at Milestone 4, not a known fact.
 ---
 
 ## 27. Final-Third and Box Entry Metrics
+
+**Amended by ADR 004 D14 (plan 005 M4b):** pass entries exclude throw-ins as well as set pieces (`RESTART_TYPES`).
 
 **File:** `src/eleveniq/metrics/entries.py`
 
@@ -1722,6 +1739,7 @@ cohort question (ADR 003 §1).
   Mario Suárez, Alhassane Bangoura, Mauro Zárate. Timm Klose, Mevlüt Erdinç and
   Alessandro Diamanti left the list: each now has ≥ 900 on one pool row (§31.7). This
   feeds the M4 minutes-gate decision (§17).
+- **Resolved in ADR 004 D3:** every reference population holds one row per `(player_id, season_id, source)`, the row with the most minutes.
 - The `build_player_season` `__main__` top-5 diagnostic is filtered on
   `in_percentile_pool` but not deduplicated across leagues.
 

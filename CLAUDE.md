@@ -61,12 +61,25 @@ implemented incrementally, one milestone at a time. See docs/brief.md for full c
   - statsbomb/  - source adapter: download + load raw StatsBomb files
   - metrics/    - pure metric functions (minutes, progressive, positions, ...)
   - pipeline/   - build stages (player_match, player_season) + quality checks
+  - analytics/  - metric registry (registry.py) derived from committed measurements;
+                  cohorts.py, percentiles.py, dna.py (DNA vector, dimension scores, pair distance)
+- tools/ (outside the package): dev tools that import eleveniq, e.g. compare_page.py
+  (M4e comparison page). Counts as logic in /finish-chunk (qa-tester runs).
 - Future (when built): api/ -> services/ -> analytics/ -> repositories/,
   all inside src/eleveniq/. No analytics logic inside API endpoints.
 - Data: data/raw/ (downloaded, never edited), data/interim/, data/processed/.
   data/ is never committed.
 - Typed Python, meaningful naming, configuration over hard-coded values.
 
+
+### Design (frontend)
+- Use the `apple-design` skill (.claude/skills/apple-design/, MIT, Emil Kowalski) selectively
+  for the frontend: typography, materials, instant feedback, reduced-motion support and subtle
+  transitions.
+- Data must stay readable: no springy or animated data values. Numbers, percentiles, bars and
+  radar vertices render at their final value with no count-up, spring or overshoot.
+- When using apple-design during a task, skip its 'Initial Response' greeting and apply the
+  guidance directly.
 
 ### Out of Scope (MVP)
 Transfer prediction, market-value prediction, tactical team-fit, live match analytics,
@@ -89,6 +102,16 @@ future-potential prediction. Do not add these without explicit re-scoping.
   exception: a commit that touches only docs/, spikes/ and/or CLAUDE.md (no src/ or
   tests/ changes) may be committed directly after explicit user approval, without
   /finish-chunk. Everything else still goes through /finish-chunk.
+- **/finish-chunk is tiered** (.claude/skills/finish-chunk/SKILL.md):
+  - code-reviewer: always, scoped to the chunk's git diff only;
+  - qa-tester: only when src/ or tools/ logic changed (skipped for docs/, spikes/ or tests-only changes);
+  - stats-reviewer: only when a metric definition, cohort/percentile rule, measurement or
+    registry status changed. If the method was reviewed before the code, the end-of-chunk
+    run reviews the produced output only;
+  - after review fixes: code-reviewer on the fix delta only, no full re-run;
+  - fast tests, coverage and (for pipeline changes) integration tests are unchanged.
+
+  The report states which agents ran and why each skipped one was skipped.
 - **Claude never pushes.** Claude commits (and merges locally) only after my explicit
   approval; I push manually. This covers every branch, tags and force pushes.
   Remote: `origin` = github.com/ShonHason/ElevenIQ (private).
@@ -102,9 +125,9 @@ never fix or commit. Fixes happen in the main session after my approval.
 | Agent | Use when |
 |---|---|
 | data-auditor | Evaluating or profiling a data source (new source, league or season) |
-| stats-reviewer | BEFORE implementing a new metric, definition or methodology; AFTER a pipeline run on new data |
-| qa-tester | After code changes: writes tests from the spec (ADRs, docstrings), not from the implementation |
-| code-reviewer | Before every commit, on the git diff |
+| stats-reviewer | BEFORE implementing a new metric, definition or methodology; AFTER a pipeline run on new data (output only, if the method was reviewed before code) |
+| qa-tester | After src/ logic changes: writes tests from the spec (ADRs, docstrings), not from the implementation |
+| code-reviewer | Before every commit, on the chunk's git diff only (after fixes: the fix delta only) |
 
 - Always invoke agents explicitly by name. Do not replace an agent's review
   with your own.
@@ -133,6 +156,47 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 # Season aggregation: data/interim/player_match_stats.parquet → data/processed/player_season_stats.parquet
 .venv/bin/python -m eleveniq.pipeline.build_player_season
+
+# Percentiles (ADR 004 §11): player_season_stats.parquet → data/processed/player_season_percentiles.parquet.
+# Refuses to run unless the season parquet is the one the registry measured (re-run
+# spikes/m4_decision_measurements.py --write-json after rebuilding the season stats)
+.venv/bin/python -m eleveniq.pipeline.build_percentiles
+
+# Measurements (schema 3, plan 005 M4g4d): the writer embeds the M4g4c / M4g4c2 engine outputs
+# (defaults data/interim/m4g4c/ and data/interim/m4g4c2/trust.json; run those engines first)
+.venv/bin/python spikes/m4_decision_measurements.py --write-json src/eleveniq/analytics/measurements/statsbomb_27.json
+
+# M4g4 STOP rule: measurements + registry snapshots before/after vs spikes/expected_m4g4_flips.json
+.venv/bin/python spikes/m4g4_before_after.py --before-measurements data/interim/m4g4d_snapshot/measurements_old.json --after-measurements src/eleveniq/analytics/measurements/statsbomb_27.json --before-registry data/interim/m4g4d_snapshot/registry.json --after-registry data/interim/m4g4d_after/registry.json
+
+# Independent check of the percentiles output (no eleveniq imports)
+.venv/bin/python spikes/m4d_percentiles_reference.py --check-output data/processed/player_season_percentiles.parquet
+
+# DNA (ADR 004 §12): season stats + percentiles → data/processed/player_dna.parquet and
+# player_dna_dimensions.parquet. Refuses percentiles from another registry version or season parquet
+.venv/bin/python -m eleveniq.pipeline.build_player_dna
+
+# Independent check of the DNA output (no eleveniq imports; reads the dimensions file alongside)
+.venv/bin/python spikes/m4f_dna_reference.py --check-output data/processed/player_dna.parquet
+
+# M4g2 multi-split reliability: independent check of the measurements and the cells report;
+# --write-expected writes spikes/expected_m4g2_flips.json from a registry snapshot BEFORE a registry change
+.venv/bin/python spikes/m4g2_reliability_reference.py --check-output src/eleveniq/analytics/measurements/statsbomb_27.json --snapshot data/interim/m4g2_snapshot
+
+# Registry before/after (STOP rule): dump the registry before and after a change, then compare
+.venv/bin/python tools/registry_snapshot.py --out data/interim/m4g2_after/registry.json
+.venv/bin/python spikes/m4g2_before_after.py --before data/interim/m4g2_snapshot/registry.json --after data/interim/m4g2_after/registry.json --measurements src/eleveniq/analytics/measurements/statsbomb_27.json
+
+# Style maps (M4g1, re-run after any DNA change) and the M4g2 reliability review
+.venv/bin/python spikes/m4g_style_map.py
+.venv/bin/python spikes/m4g2_reliability_review.py
+
+# Comparison page (M4e): 2–3 players, one season → data/processed/reports/*.html
+# (--player is a player_id, player_id@team_id, or a name fragment)
+.venv/bin/python tools/compare_page.py --season-id 27 --player 3244 --player "Wes Morgan"
+
+# Rewrite the M4e golden page (prints a diff summary; call the change out in the commit)
+.venv/bin/python -m pytest tests/test_compare_page_integration.py -q -m integration --update-golden
 
 # Fast unit tests (default — no I/O, sub-second)
 .venv/bin/python -m pytest tests/ -q -m "not integration"

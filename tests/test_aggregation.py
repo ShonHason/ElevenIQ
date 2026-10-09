@@ -1055,15 +1055,13 @@ class TestAggregateEventsChunkA:
         r = _aggregate_events([_long_pass_event(length=20.0, pass_type="Corner")], Counter())
         assert r["long_passes_attempted"] == 0
 
-    def test_throw_in_long_pass_counts_as_open_play(self):
-        # ADR 002 §19: only Corner, Goal Kick, Free Kick are excluded.
-        # A Throw-in is not in _SET_PIECE_TYPES and must be counted if >= threshold.
+    def test_throw_in_long_pass_excluded(self):
+        """ADR 004 D14 (amends ADR 002 §19): a throw-in is a restart, so a 35-unit
+        long throw counts toward no long-pass column."""
         event = _long_pass_event(length=35.0, pass_type="Throw-in")
         r = _aggregate_events([event], Counter())
-        assert r["long_passes_attempted"] == 1, (
-            "ADR §19: Throw-in is not in the set-piece exclusion list; "
-            "a 35-yard throw-in must count as a long pass"
-        )
+        assert r["long_passes_attempted"] == 0
+        assert r["long_passes_completed"] == 0
 
     def test_multiple_new_metric_events_accumulate_independently(self):
         # Regression: new metrics added via elif must not prevent each other
@@ -1247,12 +1245,12 @@ class TestAggregateEventsChunkBEntries:
         ], Counter())
         assert r["final_third_entries_pass"] == 0
 
-    def test_throw_in_pass_into_final_third_counted(self):
-        # ADR §27: Throw-in not in SET_PIECE_TYPES → included.
+    def test_throw_in_pass_into_final_third_excluded(self):
+        """ADR 004 D14 (amends ADR 002 §27): a throw-in is a restart, never an entry."""
         r = _aggregate_events([
             _entry_pass_event(start=[70.0, 40.0], end=[85.0, 40.0], pass_type="Throw-in")
         ], Counter())
-        assert r["final_third_entries_pass"] == 1
+        assert r["final_third_entries_pass"] == 0
 
     def test_pass_both_in_final_third_not_counted(self):
         # Start already in final third → no entry.
@@ -1304,12 +1302,12 @@ class TestAggregateEventsChunkBEntries:
         ], Counter())
         assert r["box_entries_pass"] == 0
 
-    def test_throw_in_into_box_counted(self):
-        # ADR §27: throw-ins included (≈4% of pre-exclusion total).
+    def test_throw_in_into_box_excluded(self):
+        """ADR 004 D14 (amends ADR 002 §27): a throw-in is a restart, never an entry."""
         r = _aggregate_events([
             _entry_pass_event(start=[100.0, 40.0], end=[105.0, 40.0], pass_type="Throw-in")
         ], Counter())
-        assert r["box_entries_pass"] == 1
+        assert r["box_entries_pass"] == 0
 
     def test_pass_start_inside_box_not_counted(self):
         # Start already inside the penalty area → NOT an entry.
@@ -1490,3 +1488,58 @@ def test_goals_plus_own_goals_equal_match_scores(ref):
     )
 
 
+
+
+class TestKeyPassAssistSplit:
+    """ADR 004 §9: key_passes and assists split by the key pass's own type."""
+
+    @staticmethod
+    def _kp(ptype=None, goal=False, pattern="Regular Play"):
+        p = {"end_location": [100, 40], "shot_assist": not goal, "goal_assist": goal}
+        if ptype:
+            p["type"] = {"name": ptype}
+        return {"type": {"name": "Pass"}, "player": {"id": 1}, "location": [60, 40],
+                "play_pattern": {"name": pattern}, "pass": p}
+
+    def test_split_by_type_and_parts_add_up(self):
+        r = _aggregate_events([self._kp("Corner", goal=True), self._kp("Free Kick"),
+                               self._kp("Throw-in"), self._kp(None, pattern="From Corner"),
+                               self._kp(None, goal=True)], Counter())
+        assert (r["key_passes"], r["op_key_passes"], r["restart_key_passes"]) == (5, 2, 3)
+        assert (r["assists"], r["op_assists"], r["restart_assists"]) == (2, 1, 1)
+
+    def test_a_restart_without_an_assist_flag_counts_nowhere(self):
+        r = _aggregate_events([{**self._kp("Corner"), "pass": {"end_location": [100, 40],
+                                                               "type": {"name": "Corner"}}}],
+                              Counter())
+        assert r["key_passes"] == r["op_key_passes"] == r["restart_key_passes"] == 0
+
+
+class TestKeyPassSplitNullAndOutcomeFields:
+    """ADR 004 §9 with missing/null fields and non-complete outcomes: the split is
+    decided only by pass.type (RESTART_TYPES); a null type, a type with a null
+    name, a missing play_pattern or an Incomplete / Unknown / Out outcome never
+    drops a key pass from both parts, so op + restart = total."""
+
+    @staticmethod
+    def _kp(pass_type, *, outcome=None, goal=False):
+        p = {"end_location": [100, 40], "shot_assist": not goal, "goal_assist": goal,
+             "type": pass_type}
+        if outcome:
+            p["outcome"] = {"name": outcome}
+        return {"type": {"name": "Pass"}, "player": {"id": 1}, "location": [60, 40],
+                "pass": p}
+
+    def test_null_type_fields_are_open_play(self):
+        r = _aggregate_events([self._kp(None), self._kp({"name": None}, goal=True),
+                               self._kp({}), self._kp({"name": "Recovery"})], Counter())
+        assert (r["key_passes"], r["op_key_passes"], r["restart_key_passes"]) == (4, 4, 0)
+        assert (r["assists"], r["op_assists"], r["restart_assists"]) == (1, 1, 0)
+
+    @pytest.mark.parametrize("outcome", ["Incomplete", "Unknown", "Out", "Injury Clearance"])
+    def test_outcome_does_not_move_a_key_pass_out_of_its_part(self, outcome):
+        """A key pass is counted by its assist flag (ADR 002 §8), whatever the
+        outcome label says; the split must keep it in the part its type picks."""
+        r = _aggregate_events([self._kp({"name": "Corner"}, outcome=outcome),
+                               self._kp(None, outcome=outcome)], Counter())
+        assert (r["key_passes"], r["op_key_passes"], r["restart_key_passes"]) == (2, 1, 1)

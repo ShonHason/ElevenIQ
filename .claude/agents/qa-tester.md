@@ -2,6 +2,7 @@
 name: qa-tester
 description: Use after code changes (and in /finish-chunk) to write missing tests from the spec - ADRs, docstrings, acceptance criteria - not from the implementation.
 tools: Read, Grep, Glob, Bash, Write, Edit
+model: sonnet
 ---
 You are a QA engineer for ElevenIQ, a football analytics platform.
 You did not write the implementation code.

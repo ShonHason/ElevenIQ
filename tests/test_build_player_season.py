@@ -12,6 +12,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from eleveniq.metrics.defensive_actions import DEFENSIVE_ACTIONS, team_column
 from eleveniq.config import COMPETITION_SEASONS, CompetitionSeason
 from eleveniq.pipeline.coverage import CoverageCheckError
 from eleveniq.pipeline.build_player_season import (
@@ -105,6 +106,29 @@ def _match_row(
     minutes_am_winger: float = 0.0,
     minutes_st: float = 0.0,
     minutes_unknown: float = 0.0,
+    # ADR 004 (plan 005 M4b) match columns. The defaults are neutral, so the
+    # pre-M4b expectations hold: a nominal 90-minute match (nominal minutes ==
+    # minutes_played), no penalties, no Injury Clearances, no restarts.
+    match_duration: float = 90.0,
+    match_nominal_duration: float = 90.0,
+    np_shots: int | None = None,
+    np_xg: float | None = None,
+    np_shots_on_target: int | None = None,
+    passes_injury_clearance: int = 0,
+    long_passes_injury_clearance: int = 0,
+    open_play_passes_attempted: int | None = None,
+    team_open_play_passes_while_on: int = 0,
+    # ADR 004 §13.8 (M4g4b): exposure and team-action counts, neutral 0 by default;
+    # team_actions maps an action (DEFENSIVE_ACTIONS) to its team_<action>_while_on.
+    opponent_open_play_passes_while_on: int = 0,
+    team_actions: dict[str, int] | None = None,
+    # ADR 004 §9: neutral defaults, everything open play (no restart key passes).
+    op_xg_assisted: float | None = None,
+    restart_xg_assisted: float = 0.0,
+    op_key_passes: int | None = None,
+    restart_key_passes: int = 0,
+    op_assists: int | None = None,
+    restart_assists: int = 0,
 ) -> dict:
     # Ensure per-group minutes are consistent with minutes_played when caller
     # does not specify them explicitly.
@@ -168,6 +192,23 @@ def _match_row(
         minutes_fb_wb=minutes_fb_wb, minutes_dm_cm=minutes_dm_cm,
         minutes_am_winger=minutes_am_winger, minutes_st=minutes_st,
         minutes_unknown=minutes_unknown,
+        match_duration=match_duration, match_nominal_duration=match_nominal_duration,
+        np_shots=shots if np_shots is None else np_shots,
+        np_xg=xg if np_xg is None else np_xg,
+        np_shots_on_target=shots_on_target if np_shots_on_target is None else np_shots_on_target,
+        passes_injury_clearance=passes_injury_clearance,
+        long_passes_injury_clearance=long_passes_injury_clearance,
+        open_play_passes_attempted=(passes_attempted if open_play_passes_attempted is None
+                                    else open_play_passes_attempted),
+        team_open_play_passes_while_on=team_open_play_passes_while_on,
+        opponent_open_play_passes_while_on=opponent_open_play_passes_while_on,
+        **{team_column(a): (team_actions or {}).get(a, 0) for a in DEFENSIVE_ACTIONS},
+        op_xg_assisted=xg_assisted if op_xg_assisted is None else op_xg_assisted,
+        restart_xg_assisted=restart_xg_assisted,
+        op_key_passes=key_passes if op_key_passes is None else op_key_passes,
+        restart_key_passes=restart_key_passes,
+        op_assists=assists if op_assists is None else op_assists,
+        restart_assists=restart_assists,
     )
 
 
@@ -267,6 +308,24 @@ class TestSafeDivision:
         result = aggregate_player_season(_df(rows))
         row = result.filter(pl.col("player_id") == 1).row(0, named=True)
         assert row["tackle_success_pct"] is None
+
+    def test_zero_defensive_duels_null(self):
+        """ADR 004 §13.2: null when tackles_attempted + dribbled_past is 0."""
+        rows = [_match_row(player_id=1, tackles_attempted=0, tackles_won=0, dribbled_past=0,
+                           minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["defensive_duel_success_pct"] is None
+
+    def test_defensive_duel_success_counts_lost_tackles_and_dribbled_past(self):
+        """tackles_won / (tackles_attempted + dribbled_past), summed over the season."""
+        rows = [_match_row(player_id=1, tackles_attempted=3, tackles_won=2,
+                           dribbled_past=1, minutes_dm_cm=90.0),
+                _match_row(player_id=1, tackles_attempted=0, tackles_won=0,
+                           dribbled_past=2, minutes_dm_cm=90.0)]
+        result = aggregate_player_season(_df(rows))
+        row = result.filter(pl.col("player_id") == 1).row(0, named=True)
+        assert row["defensive_duel_success_pct"] == pytest.approx(2 / 6)
 
 
 # ---------------------------------------------------------------------------
@@ -1018,25 +1077,26 @@ class TestIntegration:
 
     # ADR 002 §15, §19, §30 (2026-09-29): per-league unknown-outcome crosses,
     # unknown-outcome long passes and post-fix shots_on_target.
-    _ADR_H1_COUNTS = {
-        (11, 27): (139, 775, 3263),
-        (2, 27): (64, 570, 3220),
-        (12, 27): (182, 826, 3184),
-        (7, 27): (101, 736, 3103),
-        (9, 27): (3, 91, 317),
-    }
+    # crosses_unknown_outcome is not in the reference files (plan 004 H1 figures);
+    # long_passes_unknown_outcome and shots_on_target are read from the references,
+    # which the independent spikes write (plan 005 M4b2: the long-pass figures changed
+    # with the ADR 004 D14 restart rule).
+    _ADR_H1_CROSSES_UNKNOWN = {(11, 27): 139, (2, 27): 64, (12, 27): 182, (7, 27): 101, (9, 27): 3}
 
     @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
     def test_h1_counts_match_adr_and_ratios_recompute(self, frames, ref):
-        """Regression test, not independent verification: unknown-outcome counts and
-        shots_on_target equal the ADR figures at match and season level, and completion
+        """Unknown-outcome counts and shots_on_target equal the expected figures at
+        match and season level (long passes and shots on target from the reference
+        totals; crosses from the plan 004 H1 figures), and completion
         ratios recompute from stored counts with unknown outcomes excluded from the
         denominator. The ADR figures were measured by this same pipeline and the
         recompute uses the pipeline's formula; independent verification against raw
         JSON is plan 004 H2."""
         match_df, season_df = frames
         m, season = _league(match_df, ref), _league(season_df, ref)
-        crosses_unk, long_unk, sot = self._ADR_H1_COUNTS[(ref["competition_id"], ref["season_id"])]
+        crosses_unk = self._ADR_H1_CROSSES_UNKNOWN[(ref["competition_id"], ref["season_id"])]
+        long_unk = ref["chunk_a"]["long_passes_unknown_outcome"]
+        sot = ref["core"]["shots_on_target"]
         for df in (m, season):
             assert df["crosses_unknown_outcome"].sum() == crosses_unk
             assert df["long_passes_unknown_outcome"].sum() == long_unk
@@ -1067,9 +1127,9 @@ class TestIntegration:
 
     @pytest.mark.parametrize("ref", _REFERENCES, ids=_REF_IDS)
     def test_chunk_b_metrics_reconcile(self, frames, ref):
-        """Chunk B totals must match spikes/verify_chunk_b_metrics.py (ADR 002 §§25-27),
-        which applies its own SET_PIECE_TYPES exclusion without importing entries.py,
-        and equal match-level totals."""
+        """Chunk B totals must match spikes/verify_chunk_b_metrics.py (ADR 002 §§25-27,
+        ADR 004 D14/D16), which applies its own RESTART_TYPES exclusion (set pieces and
+        throw-ins) without importing entries.py, and equal match-level totals."""
         match_df, season_df = frames
         m, season = _league(match_df, ref), _league(season_df, ref)
         for col, expected in ref["chunk_b"].items():
@@ -1082,14 +1142,15 @@ class TestIntegration:
     def test_core_metrics_reconcile(self, frames, ref):
         """Core DNA totals must match spikes/verify_core_metrics.py (plan 004 H2), which
         re-derives them from raw StatsBomb JSON without importing eleveniq, and equal
-        match-level totals. Exact for counts; abs=0.001 for xg. The minutes columns
-        are checked in test_core_minutes_reconcile."""
+        match-level totals. Exact for counts; abs=0.001 for the float xG columns (the
+        references are rounded to 4 decimals). The minutes columns are checked in
+        test_core_minutes_reconcile."""
         match_df, season_df = frames
         m, season = _league(match_df, ref), _league(season_df, ref)
         for col, expected in ref["core"].items():
             if col.startswith("minutes_"):
                 continue
-            if col == "xg":
+            if col in ("xg", "np_xg"):
                 assert season[col].sum() == pytest.approx(expected, abs=0.001), col
                 assert season[col].sum() == pytest.approx(m[col].sum(), abs=0.001), (
                     f"{col}: season sum != match sum"
@@ -1176,6 +1237,32 @@ class TestIntegration:
             f"shot-side xGA {shot_side_xga:.4f} != season xg_assisted "
             f"{season_df['xg_assisted'].sum():.4f}"
         )
+
+    @pytest.mark.parametrize("which", ["match", "season"])
+    def test_open_play_restart_parts_add_up_on_every_row(self, frames, which):
+        """ADR 004 §9 per row (the reference totals only check league sums, where
+        errors of opposite sign could cancel): op + restart = total, counts
+        exactly and xG within float rounding; no part is null or negative."""
+        df = frames[0] if which == "match" else frames[1]
+        for col in ("key_passes", "assists", "xg_assisted"):
+            op, rs = df[f"op_{col}"], df[f"restart_{col}"]
+            assert op.null_count() == 0 and rs.null_count() == 0, col
+            assert (op >= 0).all() and (rs >= 0).all(), col
+            diff = (op + rs - df[col]).abs()
+            tol = 0 if col != "xg_assisted" else 1e-9
+            bad = df.filter(diff > tol)
+            assert bad.is_empty(), f"{col}: {len(bad)} rows where op + restart != total"
+
+    def test_xg_split_agrees_with_key_pass_split_on_every_match_row(self, frames):
+        """The count split (_aggregate_events) and the xG split (xg_assisted.py) are
+        classified in two places: a match row with restart (or open-play) xG
+        assisted must have at least one restart (or open-play) key pass."""
+        match_df, _ = frames
+        for part in ("op", "restart"):
+            bad = match_df.filter((pl.col(f"{part}_xg_assisted") > 0)
+                                  & (pl.col(f"{part}_key_passes") == 0))
+            assert bad.is_empty(), (
+                f"{len(bad)} match rows with {part}_xg_assisted > 0 but no {part} key pass")
 
 
 # ---------------------------------------------------------------------------
@@ -2578,3 +2665,402 @@ class TestDeterministicRowOrder:
         result = aggregate_player_season(_df(self._rows()))
         assert result.select(self._KEY).is_unique().all()
         assert result.select(self._KEY).equals(result.select(self._KEY).sort(self._KEY))
+
+
+# ---------------------------------------------------------------------------
+# ADR 004 (plan 005 M4b) season columns
+# ---------------------------------------------------------------------------
+
+def _season_one(rows: list[dict], min_minutes: int = 900) -> dict:
+    result = aggregate_player_season(_df(rows), min_minutes=min_minutes)
+    assert result.height == 1
+    return result.row(0, named=True)
+
+
+class TestNominalMinutesGate:
+    """ADR 004 D1: meets_min_minutes reads minutes_nominal_equiv = Σ minutes_played ×
+    match_nominal_duration / match_duration, with a 1e-6 tolerance; per-90s keep
+    the elapsed minutes_played."""
+
+    def test_ten_full_matches_of_non_round_length_meet_the_gate(self):
+        """Each full match is worth 90 nominal minutes whatever its length; the float
+        sum lands within 1e-6 of 900 and still passes."""
+        durations = [94.37, 96.41, 93.0 + 1 / 3, 95.05, 97.6833, 92.95, 94.1, 98.35, 93.45, 96.03]
+        row = _season_one([_match_row(minutes_played=d, match_duration=d) for d in durations])
+        assert row["minutes_nominal_equiv"] == pytest.approx(900.0, abs=1e-9)
+        assert row["meets_min_minutes"] is True
+        assert row["minutes_played"] == pytest.approx(sum(durations))
+
+    def test_just_below_the_gate_fails(self):
+        row = _season_one([_match_row(minutes_played=95.0, match_duration=95.0)] * 9
+                          + [_match_row(minutes_played=89.0, match_duration=95.0)])
+        assert row["minutes_nominal_equiv"] < 900
+        assert row["meets_min_minutes"] is False
+
+    def test_elapsed_900_with_stoppage_is_below_the_gate(self):
+        """900 elapsed minutes over 96-minute matches are 843.75 nominal minutes."""
+        row = _season_one([_match_row(minutes_played=96.0, match_duration=96.0)] * 9
+                          + [_match_row(minutes_played=36.0, match_duration=96.0)])
+        assert row["minutes_played"] == pytest.approx(900.0)
+        assert row["minutes_nominal_equiv"] == pytest.approx(843.75)
+        assert row["meets_min_minutes"] is False
+
+    def test_short_match_gives_more_nominal_than_elapsed_minutes(self):
+        row = _season_one([_match_row(minutes_played=85.0, match_duration=85.0)], min_minutes=90)
+        assert row["minutes_nominal_equiv"] == pytest.approx(90.0)
+        assert row["meets_min_minutes"] is True
+
+    def test_extra_time_match_is_worth_120_nominal_minutes(self):
+        row = _season_one([_match_row(minutes_played=126.0, match_duration=126.0,
+                                      match_nominal_duration=120.0)], min_minutes=120)
+        assert row["minutes_nominal_equiv"] == pytest.approx(120.0)
+        assert row["meets_min_minutes"] is True
+
+    def test_per_90_uses_elapsed_minutes(self):
+        row = _season_one([_match_row(minutes_played=96.0, match_duration=96.0, shots=4)],
+                          min_minutes=0)
+        assert row["shots_p90"] == pytest.approx(4 / 96 * 90)
+
+
+class TestPositionMarginColumns:
+    """ADR 004 D5: second group, share, margin and the ambiguous flag (< 5%)."""
+
+    def test_near_tie_is_ambiguous(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="AM-Winger",
+                                      minutes_am_winger=51.0, minutes_st=49.0)], min_minutes=0)
+        assert row["position_group"] == "AM-Winger"
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_share"] == pytest.approx(0.51)
+        assert row["position_group_margin_pct"] == pytest.approx(0.02)
+        assert row["position_group_ambiguous"] is True
+
+    def test_clear_margin_is_not_ambiguous(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=80.0, minutes_fb_wb=20.0)], min_minutes=0)
+        assert row["position_group_margin_pct"] == pytest.approx(0.6)
+        assert row["position_group_ambiguous"] is False
+
+    def test_single_group_has_no_second_group_and_margin_one(self):
+        row = _season_one([_match_row(minutes_played=90.0, position_group="ST")], min_minutes=0)
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx(1.0)
+        assert row["position_group_share"] == pytest.approx(1.0)
+        assert row["position_group_ambiguous"] is False
+
+    def test_three_way_near_tie_second_is_alphabetical_on_equal_minutes(self):
+        """DM-CM 34, AM-Winger 33, ST 33: second goes to AM-Winger (alphabetical)."""
+        row = _season_one([_match_row(minutes_played=100.0, position_group="DM-CM",
+                                      minutes_dm_cm=34.0, minutes_am_winger=33.0,
+                                      minutes_st=33.0)], min_minutes=0)
+        assert row["position_group"] == "DM-CM"
+        assert row["second_position_group"] == "AM-Winger"
+        assert row["position_group_margin_pct"] == pytest.approx(0.01)
+        assert row["position_group_ambiguous"] is True
+
+    def test_gk_is_never_the_second_group_of_an_outfield_row(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=60.0, minutes_gk=30.0, minutes_st=10.0)],
+                          min_minutes=0)
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_margin_pct"] == pytest.approx(0.5)
+
+    def test_outfield_group_can_be_second_for_a_gk_row(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="GK",
+                                      minutes_gk=70.0, minutes_st=30.0)], min_minutes=0)
+        assert row["second_position_group"] == "ST"
+
+
+class TestSecondPositionMinShare:
+    """ADR 004 §8 (plan 005 M4c1): the second_position_group label is null below
+    SECOND_POSITION_MIN_SHARE (10%) of minutes_played; the margin, share and
+    ambiguous flag still use the real second-most minutes."""
+
+    def test_second_group_just_below_ten_percent_is_null_but_margin_uses_it(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=90.1, minutes_st=9.9)], min_minutes=0)
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx(0.802)
+        assert row["position_group_share"] == pytest.approx(0.901)
+
+    def test_second_group_at_exactly_ten_percent_is_kept(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=90.0, minutes_st=10.0)], min_minutes=0)
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_margin_pct"] == pytest.approx(0.8)
+
+    def test_goalkeeper_cameo_of_a_fraction_of_a_minute_has_no_second_group(self):
+        """The Begović shape: a GK season with ~1 outfield minute in ~1,500."""
+        row = _season_one([_match_row(minutes_played=1500.0, position_group="GK",
+                                      minutes_gk=1498.97, minutes_dm_cm=1.03)], min_minutes=0)
+        assert row["position_group"] == "GK"
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx((1498.97 - 1.03) / 1500)
+
+    def test_threshold_does_not_touch_the_ambiguous_flag(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="AM-Winger",
+                                      minutes_am_winger=51.0, minutes_st=49.0)], min_minutes=0)
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_ambiguous"] is True
+
+    def test_threshold_comes_from_config(self, monkeypatch):
+        import eleveniq.pipeline.build_player_season as bps
+        monkeypatch.setattr(bps, "SECOND_POSITION_MIN_SHARE", 0.25)
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=80.0, minutes_fb_wb=20.0)], min_minutes=0)
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx(0.6)
+
+
+class TestM4bRatios:
+    """ADR 004 D12, D13, D15 season ratios, from season totals."""
+
+    def test_np_xg_per_shot_and_null_without_np_shots(self):
+        row = _season_one([_match_row(shots=3, xg=1.2, np_shots=2, np_xg=0.44)], min_minutes=0)
+        assert row["np_xg_per_shot"] == pytest.approx(0.22)
+        assert row["np_xg_p90"] == pytest.approx(0.44)
+        row = _season_one([_match_row(shots=1, xg=0.76, np_shots=0, np_xg=0.0)], min_minutes=0)
+        assert row["np_xg_per_shot"] is None
+
+    def test_np_shots_on_target_summed_with_p90_and_penalties_kept_in_total(self):
+        """M4c2b (D15): np_shots_on_target is summed and gets a p90;
+        shots_on_target still counts the penalties on target."""
+        row = _season_one([
+            _match_row(shots=3, shots_on_target=2, np_shots=2, np_shots_on_target=1),
+            _match_row(shots=2, shots_on_target=1),
+        ], min_minutes=0)
+        assert (row["shots_on_target"], row["np_shots_on_target"]) == (3, 2)
+        assert row["np_shots_on_target_p90"] == pytest.approx(2 / 180 * 90)
+        assert row["shots_on_target_p90"] == pytest.approx(3 / 180 * 90)
+
+    def test_team_pass_share_from_season_totals(self):
+        row = _season_one([
+            _match_row(open_play_passes_attempted=40, team_open_play_passes_while_on=400),
+            _match_row(open_play_passes_attempted=10, team_open_play_passes_while_on=100),
+        ], min_minutes=0)
+        assert row["team_pass_share"] == pytest.approx(50 / 500)
+
+    def test_exposure_and_team_action_counts_are_summed_over_matches(self):
+        row = _season_one([
+            _match_row(opponent_open_play_passes_while_on=300, team_actions={"pressures": 5, "blocks": 1}),
+            _match_row(opponent_open_play_passes_while_on=200, team_actions={"pressures": 7}),
+        ], min_minutes=0)
+        assert row["opponent_open_play_passes_while_on"] == 500
+        assert row["team_pressures_while_on"] == 12
+        assert row["team_blocks_while_on"] == 1
+        assert row["team_interceptions_while_on"] == 0
+
+    def test_team_pass_share_null_without_team_passes(self):
+        row = _season_one([_match_row(team_open_play_passes_while_on=0)], min_minutes=0)
+        assert row["team_pass_share"] is None
+
+    def test_injury_clearances_leave_the_completion_denominators(self):
+        row = _season_one([_match_row(passes_attempted=50, passes_completed=40,
+                                      passes_unknown_outcome=2, passes_injury_clearance=3,
+                                      long_passes_attempted=10, long_passes_completed=6,
+                                      long_passes_unknown_outcome=1,
+                                      long_passes_injury_clearance=1)], min_minutes=0)
+        assert row["pass_completion_pct"] == pytest.approx(40 / 45)
+        assert row["long_pass_completion_pct"] == pytest.approx(6 / 8)
+
+
+# ---------------------------------------------------------------------------
+# QA (plan 005 M4b): per-stint nominal gate, margin edges
+# ---------------------------------------------------------------------------
+
+class TestNominalGatePerStint:
+    """ADR 004 D1-D3: the gate reads minutes_nominal_equiv, each stint on its own,
+    with no combined gate for a player on two teams in one season."""
+
+    def test_two_team_season_is_never_gated_on_combined_minutes(self):
+        """540 + 450 nominal minutes on two teams (990 combined): neither stint meets."""
+        rows = ([_match_row(team_id=1, team_name="A")] * 6
+                + [_match_row(team_id=2, team_name="B")] * 5)
+        result = aggregate_player_season(_df(rows))
+        assert result.height == 2
+        assert result["minutes_nominal_equiv"].sort().to_list() == pytest.approx([450.0, 540.0])
+        assert not result["meets_min_minutes"].any()
+
+    def test_only_the_stint_over_the_gate_meets_it(self):
+        rows = ([_match_row(team_id=1, team_name="A")] * 10
+                + [_match_row(team_id=2, team_name="B")])
+        result = aggregate_player_season(_df(rows)).sort("team_id")
+        assert result["meets_min_minutes"].to_list() == [True, False]
+
+    def test_nominal_minutes_summed_per_match_not_from_season_ratio(self):
+        """Σ(min × nominal / duration) per match, not Σmin × Σnominal / Σduration.
+        96/96 at 90 nominal = 90; a 30-minute extra-time cameo of a 126-minute match
+        at 120 nominal = 30 × 120 / 126."""
+        row = _season_one([_match_row(minutes_played=96.0, match_duration=96.0),
+                           _match_row(minutes_played=30.0, match_duration=126.0,
+                                      match_nominal_duration=120.0)], min_minutes=0)
+        assert row["minutes_nominal_equiv"] == pytest.approx(90.0 + 30 * 120 / 126)
+
+
+class TestPositionMarginEdges:
+    """ADR 004 D5 edges: season totals (not per match), the strict < 5% boundary,
+    and a zero-minute row (zero denominator)."""
+
+    def test_margin_uses_season_group_totals(self):
+        """CB 90 + ST 90 + CB 10 over three matches: CB 100, ST 90 of 190 minutes."""
+        row = _season_one([
+            _match_row(minutes_played=90.0, position_group="CB"),
+            _match_row(minutes_played=90.0, position_group="ST"),
+            _match_row(minutes_played=10.0, position_group="CB"),
+        ], min_minutes=0)
+        assert row["position_group"] == "CB"
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_share"] == pytest.approx(100 / 190)
+        assert row["position_group_margin_pct"] == pytest.approx(10 / 190)
+        assert row["position_group_ambiguous"] is False  # 5.26% is not < 5%
+
+    def test_margin_of_exactly_five_percent_is_not_ambiguous(self):
+        row = _season_one([_match_row(minutes_played=100.0, position_group="FB-WB",
+                                      minutes_fb_wb=52.5, minutes_cb=47.5)], min_minutes=0)
+        assert row["position_group_margin_pct"] == pytest.approx(0.05)
+        assert row["position_group_ambiguous"] is False
+
+    def test_zero_minute_row_has_null_share_and_margin_and_is_not_ambiguous(self):
+        """A substitute on at the final whistle: 0 minutes must not divide by zero."""
+        row = _season_one([_match_row(minutes_played=0.0, started=False)], min_minutes=0)
+        assert row["position_group_share"] is None
+        assert row["position_group_margin_pct"] is None
+        assert row["position_group_ambiguous"] is False
+        assert row["second_position_group"] is None
+        assert row["team_pass_share"] is None
+
+
+class TestSecondPositionMinShareEdges:
+    """ADR 004 §8 (M4c1) edges not covered by TestSecondPositionMinShare: the 10%
+    test reads season totals per stint, and skips GK minutes on an outfield row."""
+
+    def test_one_full_match_elsewhere_is_below_ten_percent_of_the_season(self):
+        """11 full matches at CB + 1 full match at ST: ST is 100% of its match but
+        90/1080 = 8.3% of the season, so no label; the margin still subtracts it."""
+        row = _season_one([_match_row(minutes_played=90.0, position_group="CB")] * 11
+                          + [_match_row(minutes_played=90.0, position_group="ST")],
+                          min_minutes=0)
+        assert row["position_group"] == "CB"
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx((990 - 90) / 1080)
+
+    def test_small_cameos_that_sum_above_ten_percent_are_labelled(self):
+        """Ten matches with 9 ST minutes each: season ST = 90 of 900, exactly the
+        10% boundary on season totals, so the label is kept."""
+        row = _season_one([_match_row(minutes_played=90.0, position_group="CB",
+                                      minutes_cb=81.0, minutes_st=9.0)] * 10,
+                          min_minutes=0)
+        assert row["second_position_group"] == "ST"
+        assert row["position_group_share"] == pytest.approx(0.9)
+
+    def test_outfield_row_with_large_gk_minutes_does_not_use_them_for_the_label(self):
+        """CB 80, GK 15, ST 5: GK is ineligible, the real second is ST at 5% -> null.
+        A threshold read from GK minutes (15%) would wrongly keep a label."""
+        row = _season_one([_match_row(minutes_played=100.0, position_group="CB",
+                                      minutes_cb=80.0, minutes_gk=15.0, minutes_st=5.0)],
+                          min_minutes=0)
+        assert row["second_position_group"] is None
+        assert row["position_group_margin_pct"] == pytest.approx(0.75)
+        assert row["position_group_ambiguous"] is False
+
+    def test_threshold_is_per_team_stint_for_a_player_on_two_teams(self):
+        """Same player and season, two clubs: ST is 5% at team 10 (null) and 50% at
+        team 20 (kept). Pooling the stints would give one shared answer."""
+        result = aggregate_player_season(_df([
+            _match_row(team_id=10, team_name="Team A", minutes_played=100.0,
+                       position_group="CB", minutes_cb=95.0, minutes_st=5.0),
+            _match_row(team_id=20, team_name="Team B", minutes_played=100.0,
+                       position_group="ST", minutes_cb=45.0, minutes_st=55.0),
+        ]), min_minutes=0)
+        by_team = {r["team_id"]: r for r in result.iter_rows(named=True)}
+        assert by_team[10]["second_position_group"] is None
+        assert by_team[20]["second_position_group"] == "CB"
+        assert by_team[20]["position_group_ambiguous"] is False  # margin 0.10
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _SEASON_PARQUET.exists(),
+                    reason="requires data/processed/player_season_stats.parquet")
+class TestSecondPositionMinShareOutput:
+    """ADR 004 §8 (M4c1) invariants on the built season parquet."""
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def season(cls) -> pl.DataFrame:
+        return pl.read_parquet(_SEASON_PARQUET)
+
+    def test_every_ambiguous_row_keeps_its_second_group(self, season):
+        """ADR 004 §8: no ambiguous row loses the label. Guaranteed by the structural
+        bound (see TestSecondPositionShareBound); in 2015/16 the lowest second-group
+        share of an ambiguous row is 0.448 in the gated pool and 0.380 over all rows."""
+        bad = season.filter(pl.col("position_group_ambiguous")
+                            & pl.col("second_position_group").is_null())
+        assert bad.height == 0, bad.select("player_name", "team_id", "season_id").head(10)
+
+    def test_every_label_matches_an_independent_recomputation(self, season):
+        """Full per-row comparison, both directions: the label is recomputed from
+        the per-group minute columns (ADR 004 D5: most minutes after the top group,
+        alphabetical on ties, never GK for an outfield row, none at 0 minutes) and
+        kept only when its share of minutes_played is >= SECOND_POSITION_MIN_SHARE
+        (ADR 004 §8). A label that should be blank and a blank that should be a
+        label both fail."""
+        from eleveniq.config import SECOND_POSITION_MIN_SHARE
+        from eleveniq.metrics.positions import (
+            GK_GROUP, OUTFIELD_GROUPS, POSITION_GROUP_COLUMNS, UNKNOWN_POSITION_GROUP)
+        groups = sorted(g for g in POSITION_GROUP_COLUMNS if g != UNKNOWN_POSITION_GROUP)
+        wrong = []
+        for row in season.iter_rows(named=True):
+            best_group, best_min = None, 0.0
+            for group in groups:
+                if group == row["position_group"]:
+                    continue
+                if group == GK_GROUP and row["position_group"] in OUTFIELD_GROUPS:
+                    continue
+                if row[POSITION_GROUP_COLUMNS[group]] > best_min:
+                    best_group, best_min = group, row[POSITION_GROUP_COLUMNS[group]]
+            minutes = row["minutes_played"]
+            expected = (best_group if minutes > 0 and best_min / minutes >= SECOND_POSITION_MIN_SHARE
+                        else None)
+            if expected != row["second_position_group"]:
+                wrong.append((row["player_name"], row["team_id"], expected,
+                              row["second_position_group"]))
+        assert season.height > 0
+        assert not wrong, f"{len(wrong)} rows differ, e.g. {wrong[:5]}"
+
+
+class TestSecondPositionShareBound:
+    """ADR 004 §8: an ambiguous row (margin < AMBIGUOUS_POSITION_MARGIN) always keeps
+    its second-group label. With n position groups whose minutes sum to
+    minutes_played (UNKNOWN minutes fail the build), the top group holds at least
+    1/n, so an ambiguous row's second group holds more than 1/n - margin. The
+    label threshold must not exceed that bound, or ambiguous rows could lose the
+    label their display-only second-cohort percentile depends on."""
+
+    def test_min_share_does_not_exceed_the_ambiguity_bound(self):
+        from eleveniq.config import AMBIGUOUS_POSITION_MARGIN, SECOND_POSITION_MIN_SHARE
+        from eleveniq.metrics.positions import POSITION_GROUP_COLUMNS, UNKNOWN_POSITION_GROUP
+        n_groups = len([g for g in POSITION_GROUP_COLUMNS if g != UNKNOWN_POSITION_GROUP])
+        bound = 1 / n_groups - AMBIGUOUS_POSITION_MARGIN
+        assert n_groups == 6
+        assert bound == pytest.approx(0.1167, abs=1e-4)
+        assert SECOND_POSITION_MIN_SHARE <= bound, (
+            f"SECOND_POSITION_MIN_SHARE {SECOND_POSITION_MIN_SHARE} exceeds the bound "
+            f"{bound:.4f}: an ambiguous row could lose its second-group label")
+
+
+class TestOpenPlayRestartSeasonColumns:
+    """ADR 004 §9: the six split columns are summed and get p90s; open play +
+    restart = total on the season row (counts exact, xG within 1e-9)."""
+
+    def test_season_sums_p90s_and_invariant(self):
+        row = _season_one([
+            _match_row(xg_assisted=0.5, op_xg_assisted=0.3, restart_xg_assisted=0.2,
+                       key_passes=4, op_key_passes=3, restart_key_passes=1,
+                       assists=1, op_assists=0, restart_assists=1),
+            _match_row(xg_assisted=0.17, op_xg_assisted=0.17, key_passes=2, assists=0),
+        ], min_minutes=0)
+        assert row["op_key_passes"] + row["restart_key_passes"] == row["key_passes"] == 6
+        assert row["op_assists"] + row["restart_assists"] == row["assists"] == 1
+        assert row["op_xg_assisted"] + row["restart_xg_assisted"] == pytest.approx(
+            row["xg_assisted"], abs=1e-9)
+        assert row["restart_key_passes_p90"] == pytest.approx(1 / 180 * 90)
+        assert row["op_xg_assisted_p90"] == pytest.approx(0.47 / 180 * 90)

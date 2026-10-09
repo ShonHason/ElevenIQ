@@ -1,0 +1,386 @@
+"""Spike: M4b before/after with the STOP rule (plan 005 M4b2, ADR 004).
+
+Compares the pre-M4b snapshot (data/interim/m4a_snapshot/) with the rebuilt
+parquets, and the season flags with spikes/expected_m4b_flips.json, which
+spikes/m4b_expected_flips.py wrote from the snapshot BEFORE the rebuild.
+
+STOP rule: the script exits non-zero when
+  - a meets_min_minutes flip is not in the expected list, or an expected flip did
+    not happen;
+  - any flag in the list's unchanged_flags changes on any row;
+  - season rows appear or disappear, or minutes_played / any minutes_<group>
+    changes (M4b changes no minutes);
+  - an independent recomputation disagrees with the pipeline:
+    minutes_nominal_equiv (Σ minutes × match_nominal_duration / match_duration),
+    team_pass_share, np_xg_per_shot and the position margin columns.
+A failure is to be brought to the user, not explained away.
+
+No eleveniq imports (tests/test_spikes_independent.py).
+
+M4b3 (ADR 004 §9) and the M4b3 cleanup run it with --snapshot and
+--all-columns-identical: every column present in the snapshot must be identical in the
+rebuild (exact for non-floats, 1e-9 for floats), and the open-play + restart split must
+add up to its total on every row.
+
+M4c1 (ADR 004 §8, plan 005) adds second_position_group's minimum share. Its expected
+list (spikes/expected_m4c1_second_group.json) has a "second_position_group" entry:
+with --all-columns-identical that column is then compared row by row against the
+list instead (every changed row must be listed with its before/after, and every
+listed row must change), and every other column must stay identical.
+
+M4c2b (ADR 004 D15, plan 005) adds np_shots_on_target (+p90). Once the column exists,
+the spike re-counts penalties on target per (match, player) from the raw events
+(periods 1-4, ADR 002 §30 outcomes, shot.type "Penalty") and requires
+np_shots_on_target + penalties on target = shots_on_target on every match row, a
+penalty on target by a player with no match row to stop, and on every season row
+the match sum, the p90 (from minutes_played) and np_shots_on_target <= np_shots.
+
+Usage: .venv/bin/python spikes/m4b_before_after.py --snapshot DIR [--expected PATH]
+       [--all-columns-identical]
+--snapshot is required: there is one snapshot per chunk (m4a_snapshot for M4b2,
+m4b2_snapshot for M4b3, m4b3c_snapshot for the M4b3 cleanup), and a default would
+compare against the wrong one by mistake.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import polars as pl
+
+ROOT = Path(__file__).resolve().parents[1]
+RAW_EVENTS = ROOT / "data" / "raw" / "statsbomb" / "events"
+NEW_MATCH = ROOT / "data" / "interim" / "player_match_stats.parquet"
+NEW_SEASON = ROOT / "data" / "processed" / "player_season_stats.parquet"
+DEFAULT_EXPECTED = Path(__file__).resolve().parent / "expected_m4b_flips.json"
+
+LEAGUES = {11: "La Liga", 2: "Premier League", 12: "Serie A", 7: "Ligue 1", 9: "Bundesliga"}
+KEY = ["player_id", "team_id", "competition_id", "season_id", "source"]
+MINUTE_COLS = ["minutes_played", "minutes_gk", "minutes_cb", "minutes_fb_wb", "minutes_dm_cm",
+               "minutes_am_winger", "minutes_st", "minutes_unknown"]
+CHANGED_COUNTS = ["progressive_passes", "final_third_entries_pass", "box_entries_pass",
+                  "long_passes_attempted", "long_passes_completed", "long_passes_unknown_outcome",
+                  "xg_assisted_direct"]
+GROUPS = {"AM-Winger": "minutes_am_winger", "CB": "minutes_cb", "DM-CM": "minutes_dm_cm",
+          "FB-WB": "minutes_fb_wb", "GK": "minutes_gk", "ST": "minutes_st"}  # alphabetical
+OUTFIELD = {"CB", "FB-WB", "DM-CM", "AM-Winger", "ST"}
+AMBIGUOUS_MARGIN = 0.05  # ADR 004 D5
+SECOND_POSITION_MIN_SHARE = 0.10  # ADR 004 §8, user U3 2026-10-03 (M4c1)
+TOL = 1e-9
+ON_TARGET = frozenset({"Goal", "Saved", "Saved to Post"})  # ADR 002 §30
+
+problems: list[str] = []
+
+
+def stop(msg: str) -> None:
+    problems.append(msg)
+    print(f"STOP: {msg}")
+
+
+def second_group(row: dict) -> tuple[str | None, float]:
+    """ADR 004 D5 second group, re-implemented: most minutes after the top group,
+    alphabetical on ties, never GK for an outfield row, None at 0 minutes.
+    Returns the group with its minutes; the caller applies the M4c1 label share."""
+    best_g, best_m = None, 0.0
+    for g, col in GROUPS.items():
+        if g == row["position_group"] or (g == "GK" and row["position_group"] in OUTFIELD):
+            continue
+        if row[col] > best_m:
+            best_g, best_m = g, row[col]
+    return best_g, best_m
+
+
+def column_differences(old: pl.DataFrame, new: pl.DataFrame, key: list[str],
+                       skip: frozenset[str] = frozenset()) -> list[str]:
+    """
+    Every column of `old` must be in `new` with identical values on the same rows
+    (sorted by `key`): exact for non-floats, within TOL for floats, the same nulls
+    and NaNs, the same dtype. Returns one message per differing column.
+    """
+    o, n = old.sort(key), new.sort(key)
+    out = []
+    for col in old.columns:
+        if col in skip:
+            continue
+        if col not in new.columns:
+            out.append(f"column {col} is missing after the rebuild")
+            continue
+        a, b = o[col], n[col]
+        if a.dtype != b.dtype:
+            out.append(f"column {col} dtype {a.dtype} → {b.dtype}")
+        elif a.dtype.is_float():
+            nulls_differ = (a.is_null() != b.is_null()).any()
+            nans_differ = (a.is_nan() != b.is_nan()).fill_null(False).any()
+            diff = (a - b).abs().max()
+            if nulls_differ or nans_differ or (diff is not None and diff > TOL):
+                out.append(f"column {col} changed (max |Δ| {diff}, nulls differ {nulls_differ}, "
+                           f"NaNs differ {nans_differ})")
+        elif not a.equals(b, null_equal=True):
+            out.append(f"column {col} changed")
+    return out
+
+
+def split_invariant_problems(df: pl.DataFrame) -> list[str]:
+    """
+    ADR 004 §9: open play + restart = total for key_passes and assists (exact) and
+    xg_assisted (within TOL). A null in any compared column is reported as a
+    problem (a comparison with a null would be dropped silently). "holds" is printed
+    only when every check passed. A frame without the split columns
+    (pre-M4b3) has no problems.
+    """
+    if "op_key_passes" not in df.columns:
+        return []
+    compared = [f"{part}{total}" for total in ("key_passes", "assists", "xg_assisted")
+                for part in ("", "op_", "restart_")]
+    nulls = {c: df[c].null_count() for c in compared if df[c].null_count()}
+    if nulls:
+        # A comparison with a null is itself null and would be dropped silently.
+        return [f"null values in compared columns {nulls}"]
+    problems = []
+    for total in ("key_passes", "assists"):
+        bad = df.filter(pl.col(f"op_{total}") + pl.col(f"restart_{total}") != pl.col(total)).height
+        if bad:
+            problems.append(f"{bad} rows where op + restart {total} != {total}")
+    dx = (df["op_xg_assisted"] + df["restart_xg_assisted"] - df["xg_assisted"]).abs().max()
+    if dx > TOL:
+        problems.append(f"op + restart xg_assisted differs from xg_assisted by {dx}")
+    if not problems:
+        print(f"op + restart = total holds on {df.height} rows (max xG |Δ| {dx:.2e})")
+    return problems
+
+
+def penalties_on_target(match_ids: list[int]) -> dict[tuple[int, int], int]:
+    """(match_id, player_id) → penalties on target, from the raw events (periods 1-4)."""
+    out: dict[tuple[int, int], int] = {}
+    for mid in match_ids:
+        for e in json.loads((RAW_EVENTS / f"{mid}.json").read_text()):
+            if e["period"] == 5 or e["type"]["name"] != "Shot":
+                continue
+            shot = e.get("shot") or {}
+            if ((shot.get("type") or {}).get("name") == "Penalty"
+                    and (shot.get("outcome") or {}).get("name") in ON_TARGET):
+                k = (mid, e["player"]["id"])
+                out[k] = out.get(k, 0) + 1
+    return out
+
+
+def np_shots_on_target_problems(match_df: pl.DataFrame, season_df: pl.DataFrame,
+                                pens: dict[tuple[int, int], int]) -> list[str]:
+    """
+    M4c2b (ADR 004 D15): np_shots_on_target + penalties on target (`pens`, from the raw
+    events) = shots_on_target on every match row; every penalty belongs to a row; on
+    every season row np_shots_on_target is the match sum, np_shots_on_target <= np_shots,
+    and the p90 is the total / minutes_played x 90 (null at 0 minutes). A null in a
+    compared column is a problem. A frame without the column (pre-M4c2b) has none.
+    """
+    if "np_shots_on_target" not in match_df.columns:
+        return []
+    out = []
+    cols = {"match": ["np_shots_on_target", "shots_on_target"],
+            "season": ["np_shots_on_target", "np_shots", "shots_on_target"]}
+    for label, df in (("match", match_df), ("season", season_df)):
+        nulls = {c: df[c].null_count() for c in cols[label] if df[c].null_count()}
+        if nulls:
+            return [f"{label}: null values in compared columns {nulls}"]
+    pen_df = pl.DataFrame([{"match_id": m, "player_id": p, "_pen": n} for (m, p), n in pens.items()],
+                          schema={"match_id": match_df["match_id"].dtype,
+                                  "player_id": match_df["player_id"].dtype, "_pen": pl.Int64})
+    orphans = pen_df.join(match_df.select("match_id", "player_id"), on=["match_id", "player_id"],
+                          how="anti")
+    if orphans.height:
+        out.append(f"{orphans.height} penalties-on-target keys with no match row")
+    m = match_df.join(pen_df, on=["match_id", "player_id"], how="left").with_columns(
+        pl.col("_pen").fill_null(0))
+    bad = m.filter(pl.col("np_shots_on_target") + pl.col("_pen") != pl.col("shots_on_target")).height
+    if bad:
+        out.append(f"{bad} match rows where np_shots_on_target + penalties on target != shots_on_target")
+    summed = match_df.group_by(KEY).agg(pl.col("np_shots_on_target").sum().alias("_sum"))
+    s = season_df.join(summed, on=KEY, how="left")
+    if s.filter(pl.col("_sum").is_null() | (pl.col("_sum") != pl.col("np_shots_on_target"))).height:
+        out.append("season np_shots_on_target differs from the match sum")
+    if s.filter(pl.col("np_shots_on_target") > pl.col("np_shots")).height:
+        out.append("season np_shots_on_target > np_shots")
+    p90 = s.with_columns(pl.when(pl.col("minutes_played") > 0)
+                         .then(pl.col("np_shots_on_target") / pl.col("minutes_played") * 90)
+                         .alias("_p90"))
+    same_nulls = (p90["_p90"].is_null() == p90["np_shots_on_target_p90"].is_null()).all()
+    if not same_nulls or ((p90["_p90"] - p90["np_shots_on_target_p90"]).abs().max() or 0) > TOL:
+        out.append("np_shots_on_target_p90 differs from the recomputation")
+    if not out:
+        print(f"np_shots_on_target + penalties on target = shots_on_target on {m.height} match rows "
+              f"({sum(pens.values())} penalties on target); season sums and p90 agree")
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--expected", type=Path, default=DEFAULT_EXPECTED)
+    ap.add_argument("--snapshot", type=Path, required=True)
+    ap.add_argument("--all-columns-identical", action="store_true")
+    args = ap.parse_args()
+    expected = json.loads(args.expected.read_text())
+
+    old_m = pl.read_parquet(args.snapshot / "player_match_stats.parquet")
+    old_s = pl.read_parquet(args.snapshot / "player_season_stats.parquet")
+    print(f"snapshot: {args.snapshot}; expected: {args.expected}")
+    new_m = pl.read_parquet(NEW_MATCH)
+    new_s = pl.read_parquet(NEW_SEASON)
+    empty = [label for label, df in (("snapshot match", old_m), ("snapshot season", old_s),
+                                      ("new match", new_m), ("new season", new_s))
+             if df.height == 0]
+    if empty:
+        print(f"ERROR: empty input frame(s): {', '.join(empty)}. Nothing to compare: rebuild "
+              "the pipeline or check --snapshot.")
+        return 2
+
+    # Rows: unchanged. A mismatch stops here, before any column-by-column compare
+    # (which assumes the same rows in the same order).
+    rows_differ = []
+    for label, old, new, key in (("match", old_m, new_m, ["match_id", "player_id"]),
+                                 ("season", old_s, new_s, KEY)):
+        if old.height != new.height or old.select(key).sort(key).rows() != new.select(key).sort(key).rows():
+            rows_differ.append(f"{label} rows differ: {old.height} → {new.height}")
+    if rows_differ:
+        for msg in rows_differ:
+            print(f"STOP: {msg}")
+        print("STOP: row sets differ; columns not compared. Bring this to the user.")
+        return 1
+
+    expected_second = expected.get("second_position_group")
+    if args.all_columns_identical:
+        changed = []
+        for label, old, new, key in (("match", old_m, new_m, ["match_id", "player_id"]),
+                                     ("season", old_s, new_s, KEY)):
+            skip = frozenset({"second_position_group"}) if label == "season" and expected_second is not None \
+                else frozenset()
+            changed += [f"{label} {msg}" for msg in column_differences(old, new, key, skip)]
+            added = [c for c in new.columns if c not in old.columns]
+            print(f"{label}: {len(old.columns)} columns identical-checked; new columns: {added}")
+        if changed:
+            for msg in changed:
+                print(f"STOP: {msg}")
+            print("STOP: pre-existing columns changed. Bring this to the user.")
+            return 1
+    joined = old_s.join(new_s, on=KEY, how="inner", suffix="_new")
+    if expected_second is not None:
+        exp_second = {tuple(e[c] for c in KEY): (e["before"], e["after"]) for e in expected_second}
+        moved = joined.filter(pl.col("second_position_group").eq_missing(pl.col("second_position_group_new")).not_())
+        seen_second = set()
+        for r in moved.iter_rows(named=True):
+            k = tuple(r[c] for c in KEY)
+            seen_second.add(k)
+            if exp_second.get(k) != (r["second_position_group"], r["second_position_group_new"]):
+                stop(f"unexpected second_position_group change: {r['player_name']} ({r['team_name']}) "
+                     f"{r['second_position_group']} → {r['second_position_group_new']}")
+        for k in set(exp_second) - seen_second:
+            stop(f"expected second_position_group change did not happen: {k}")
+        print(f"second_position_group changes: {moved.height} (expected {len(exp_second)})")
+    for col in MINUTE_COLS:
+        diff = (joined[col] - joined[f"{col}_new"]).abs().max()
+        if diff > TOL:
+            stop(f"season {col} changed (max |Δ| {diff})")
+
+    # Δ per league for the redefined counts.
+    print("\nΔ per league (season totals, after − before):")
+    rows = []
+    for comp, name in LEAGUES.items():
+        o = old_s.filter(pl.col("competition_id") == comp)
+        n = new_s.filter(pl.col("competition_id") == comp)
+        rows.append({"league": name, **{c: round(float(n[c].sum() - o[c].sum()), 4) for c in CHANGED_COUNTS},
+                     "progressive_passes_%": round(100 * (n["progressive_passes"].sum() / o["progressive_passes"].sum() - 1), 2)})
+    with pl.Config(tbl_cols=20, tbl_width_chars=250, tbl_hide_dataframe_shape=True):
+        print(pl.DataFrame(rows))
+
+    # Completion ratios (ADR 004 D13 + D14) on the pool, mean before/after.
+    pool_old = old_s.filter(pl.col("in_percentile_pool") & pl.col("is_outfield"))
+    pool_new = new_s.filter(pl.col("in_percentile_pool") & pl.col("is_outfield"))
+    print("\nPool outfield means, before → after:")
+    for c in ("pass_completion_pct", "long_pass_completion_pct", "long_passes_attempted_p90",
+              "progressive_passes_p90", "box_entries_pass_p90", "final_third_entries_pass_p90"):
+        print(f"  {c:<32} {pool_old[c].mean():.4f} → {pool_new[c].mean():.4f}")
+
+    # Independent recomputation of the new season columns.
+    nominal = new_m.group_by(KEY).agg(
+        (pl.col("minutes_played") * pl.col("match_nominal_duration") / pl.col("match_duration"))
+        .sum().alias("_nominal"))
+    chk = new_s.join(nominal, on=KEY, how="left")
+    d = (chk["minutes_nominal_equiv"] - chk["_nominal"]).abs().max()
+    if d > 1e-6:
+        stop(f"minutes_nominal_equiv differs from the recomputation (max |Δ| {d})")
+    share = chk.with_columns(
+        pl.when(pl.col("team_open_play_passes_while_on") > 0)
+        .then(pl.col("open_play_passes_attempted") / pl.col("team_open_play_passes_while_on"))
+        .alias("_share"),
+        pl.when(pl.col("np_shots") > 0).then(pl.col("np_xg") / pl.col("np_shots")).alias("_npxs"))
+    for col, mine in (("team_pass_share", "_share"), ("np_xg_per_shot", "_npxs")):
+        both_null = share[col].is_null() == share[mine].is_null()
+        if not both_null.all() or ((share[col] - share[mine]).abs().max() or 0) > TOL:
+            stop(f"{col} differs from the recomputation")
+    if share.filter(pl.col("team_pass_share") > 1).height:
+        stop("team_pass_share > 1")
+    bad_margin = 0
+    for r in new_s.iter_rows(named=True):
+        if r["minutes_played"] <= 0:
+            if r["position_group_margin_pct"] is not None or r["position_group_ambiguous"]:
+                bad_margin += 1
+            continue
+        g2, m2 = second_group(r)
+        exp_label = g2 if m2 / r["minutes_played"] >= SECOND_POSITION_MIN_SHARE else None
+        top = r[GROUPS[r["position_group"]]] if r["position_group"] in GROUPS else 0.0
+        margin = (top - m2) / r["minutes_played"]
+        if (exp_label != r["second_position_group"] or abs(margin - r["position_group_margin_pct"]) > TOL
+                or (margin < AMBIGUOUS_MARGIN) != r["position_group_ambiguous"]
+                or abs(top / r["minutes_played"] - r["position_group_share"]) > TOL):
+            bad_margin += 1
+    if bad_margin:
+        stop(f"{bad_margin} rows: position margin columns differ from the recomputation")
+
+
+    # ADR 004 §9 invariant: open play + restart = total, on both outputs.
+    for label, df in (("match", new_m), ("season", new_s)):
+        for msg in split_invariant_problems(df):
+            stop(f"{label}: {msg}")
+
+    # M4c2b invariant (ADR 004 D15), on the raw events.
+    if "np_shots_on_target" in new_m.columns:
+        pens = penalties_on_target(new_m["match_id"].unique().sort().to_list())
+        for msg in np_shots_on_target_problems(new_m, new_s, pens):
+            stop(msg)
+
+    # Flags (STOP rule).
+    exp_rows = {(e["player_id"], e["team_id"], e["competition_id"], e["season_id"], e["source"]):
+                (e["before"], e["after"]) for e in expected["meets_min_minutes"]}
+    flips = joined.filter(pl.col("meets_min_minutes") != pl.col("meets_min_minutes_new"))
+    seen = set()
+    for r in flips.iter_rows(named=True):
+        k = tuple(r[c] for c in KEY)
+        seen.add(k)
+        if exp_rows.get(k) != (r["meets_min_minutes"], r["meets_min_minutes_new"]):
+            stop(f"unexpected meets_min_minutes flip: {r['player_name']} ({r['team_name']}, "
+                 f"comp {r['competition_id']}) {r['meets_min_minutes']} → {r['meets_min_minutes_new']}, "
+                 f"nominal {r['minutes_nominal_equiv']:.2f}")
+    for k in set(exp_rows) - seen:
+        stop(f"expected meets_min_minutes flip did not happen: {k}")
+    for flag in expected["unchanged_flags"]:
+        changed = joined.filter(pl.col(flag) != pl.col(f"{flag}_new"))
+        for r in changed.iter_rows(named=True):
+            stop(f"unexpected {flag} flip: {r['player_name']} ({r['team_name']}) "
+                 f"{r[flag]} → {r[f'{flag}_new']}")
+    print(f"\nmeets_min_minutes flips: {flips.height} (expected {len(exp_rows)}); "
+          f"down {flips.filter(pl.col('meets_min_minutes_new').not_()).height}")
+
+    gated = new_s.filter(pl.col("in_percentile_pool") & pl.col("is_outfield") & pl.col("meets_min_minutes"))
+    print(f"gated rows: {gated.height}; ambiguous among them: {gated['position_group_ambiguous'].sum()}; "
+          f"second group null: {gated['second_position_group'].null_count()}")
+
+    if problems:
+        print(f"\nSTOP: {len(problems)} problem(s). Bring them to the user; do not explain them away.")
+        return 1
+    print("\nOK: no unexpected flips; recomputations agree.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

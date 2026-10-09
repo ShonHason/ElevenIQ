@@ -11,10 +11,22 @@ xg_assisted_direct:
     Same as xg_assisted, but a shot is excluded if the shooter had:
       - any Dribble event, OR
       - cumulative Carry distance > max_carry_units
-    between their LAST "Ball Receipt*" and the Shot, within the same possession
-    (same possession_team).
+    between his LAST "Ball Receipt*" after the key pass and the Shot, within the
+    same possession (same possession_team).
 
-    No "Ball Receipt*" found → the shot counts as direct (first touch was the shot).
+    Fallbacks (ADR 004 D16): when the window cannot be checked the shot is NOT
+    direct (it still counts toward xg_assisted):
+      - no "Ball Receipt*" by the shooter between the key pass and the shot
+        (a receipt before the key pass never defines the window);
+      - no shooter id or possession on the shot.
+    Each fallback, a dangling assisted_shot_id and a pass with no assister are
+    counted in `fallbacks` (report-only quality issues in the pipeline).
+
+open play vs restart (ADR 004 §9):
+    xg_assisted is also split by the key pass's own pass.type: a restart
+    (RESTART_TYPES) or open play. Never by play_pattern. Both parts use the same
+    linkage as the total, so open play + restart = xg_assisted per player (within
+    float rounding: the three sums are accumulated separately).
 
 See ADR 002 §25 and §26 for the full definition and La Liga 2015/16 reference figures.
 """
@@ -22,9 +34,19 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import MutableMapping
+
+from eleveniq.metrics.pass_types import is_restart
 
 logger = logging.getLogger(__name__)
+
+# Fallback counters (ADR 004 D16), reported per match by the pipeline.
+XGA_NO_RECEIPT = "xga_no_receipt"
+XGA_MISSING_SHOOTER = "xga_missing_shooter"
+XGA_DANGLING_SHOT_ID = "xga_dangling_shot_id"
+XGA_MISSING_ASSISTER = "xga_missing_assister"
+XGA_FALLBACKS = (XGA_NO_RECEIPT, XGA_MISSING_SHOOTER, XGA_DANGLING_SHOT_ID, XGA_MISSING_ASSISTER)
 
 
 def _seg_dist(loc: list[float], end: list[float]) -> float:
@@ -35,6 +57,9 @@ def compute_xg_assisted_per_player(
     events: list[dict],
     *,
     max_carry_units: float,
+    fallbacks: Counter[str],
+    open_play_xga: MutableMapping[int, float],
+    restart_xga: MutableMapping[int, float],
 ) -> dict[int, tuple[float, float]]:
     """
     Return {player_id: (xg_assisted, xg_assisted_direct)} for all passers.
@@ -44,15 +69,15 @@ def compute_xg_assisted_per_player(
         max_carry_units: Cumulative carry-distance threshold for the "direct"
                          classification. Carry sum > this value → not direct.
                          Any Dribble → not direct regardless of carry distance.
+        fallbacks:       Incremented per XGA_FALLBACKS case (required keyword, so
+                         no caller can drop them). 2015/16: 6 no-receipt shots,
+                         all in La Liga 3825848; 0 of the others.
+        open_play_xga, restart_xga:
+                         Filled with each passer's open-play and restart parts of
+                         xg_assisted (ADR 004 §9; required keywords).
 
-    Data-quality logging (all at INFO or WARNING level):
-        - Assisted shots with missing statsbomb_xg: WARNING, excluded from total.
-        - Assisted shots with missing shooter id or possession: WARNING, credited
-          as direct (a permissive fallback: no window to check, so the shot
-          cannot be proved indirect; 0 occurrences in 2015/16, ADR 002 §26).
-        - Assisted shots with no "Ball Receipt*" before the shot: INFO, counted
-          as direct. Expected to be rare: 6 in La Liga 2015/16 and 0 in the
-          other 2015/16 leagues, so a large count points at a linkage problem.
+    Assisted shots with missing statsbomb_xg are logged (WARNING) and excluded
+    from both totals.
 
     Raises:
         KeyError: if any event is missing "id" (used to build id_to_event lookup),
@@ -78,9 +103,7 @@ def compute_xg_assisted_per_player(
 
     xga: dict[int, float] = defaultdict(float)
     xga_direct: dict[int, float] = defaultdict(float)
-    no_receipt_count = 0
     missing_xg_count = 0
-    missing_shooter_count = 0
 
     for e in events:
         if e["type"]["name"] != "Pass":
@@ -92,6 +115,7 @@ def compute_xg_assisted_per_player(
 
         shot_ev = id_to_event.get(aid)
         if shot_ev is None or shot_ev["type"]["name"] != "Shot":
+            fallbacks[XGA_DANGLING_SHOT_ID] += 1
             continue
 
         raw_xg = shot_ev.get("shot", {}).get("statsbomb_xg")
@@ -102,36 +126,37 @@ def compute_xg_assisted_per_player(
         xg: float = raw_xg
         assister_id: int | None = e.get("player", {}).get("id")
         if assister_id is None:
+            fallbacks[XGA_MISSING_ASSISTER] += 1
             continue
 
         xga[assister_id] += xg
+        part = restart_xga if is_restart(p) else open_play_xga
+        part[assister_id] = part.get(assister_id, 0.0) + xg
 
         # ── direct check ─────────────────────────────────────────────────────
         shooter_id: int | None = shot_ev.get("player", {}).get("id")
         shot_poss: int | None = shot_ev.get("possession")
         shot_idx: int = shot_ev["index"]  # raises KeyError on malformed data
+        pass_idx: int = e["index"]
         shooter_team_id = shot_ev.get("possession_team", {}).get("id")
 
         if shooter_id is None or shot_poss is None:
-            # Cannot locate the shooter's possession window; credit as direct.
-            # Permissive, not conservative: it can only raise xg_assisted_direct
-            # (0 occurrences in 2015/16; ADR 002 §26).
-            missing_shooter_count += 1
-            xga_direct[assister_id] += xg
+            # No window to check: not direct (ADR 004 D16).
+            fallbacks[XGA_MISSING_SHOOTER] += 1
             continue
 
         poss_evs = poss_player_events.get((shot_poss, shooter_id), [])
 
-        # Find the LAST "Ball Receipt*" (exact StatsBomb name) before the shot
+        # The LAST "Ball Receipt*" (exact StatsBomb name) after the key pass and
+        # before the shot; an earlier receipt never defines the window (D16).
         receipt_idx: int | None = None
         for pe in poss_evs:
-            if pe["type"]["name"] == "Ball Receipt*" and pe["index"] < shot_idx:
+            if pe["type"]["name"] == "Ball Receipt*" and pass_idx < pe["index"] < shot_idx:
                 receipt_idx = pe["index"]
 
         if receipt_idx is None:
-            # No receipt found: first touch is the shot → direct
-            no_receipt_count += 1
-            xga_direct[assister_id] += xg
+            # The window cannot be checked: not direct (ADR 004 D16).
+            fallbacks[XGA_NO_RECEIPT] += 1
             continue
 
         # Scan between receipt and shot (exclusive on both ends)
@@ -163,18 +188,6 @@ def compute_xg_assisted_per_player(
             "xg_assisted: %d assisted shot(s) had no statsbomb_xg value "
             "(excluded from xg_assisted total).",
             missing_xg_count,
-        )
-    if missing_shooter_count:
-        logger.warning(
-            "xg_assisted: %d assisted shot(s) had no shooter id or possession "
-            "(credited as direct; permissive fallback).",
-            missing_shooter_count,
-        )
-    if no_receipt_count:
-        logger.info(
-            "xg_assisted: %d assisted shot(s) had no Ball Receipt* before the shot "
-            "(counted as direct; expected to be rare).",
-            no_receipt_count,
         )
 
     # Merge: every player with xga gets an entry; default direct to 0

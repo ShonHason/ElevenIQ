@@ -4,8 +4,9 @@ Source of the figures in ADR 003 and the Plan 003 C1 audit (match/team counts,
 xG nulls, key-pass resolution, unmapped positions, starter counts, goals
 reconciliation against matches.json scores, event-type rates).
 
-Reads raw JSON only; imports only POSITION_GROUP_MAP (never eleveniq.pipeline),
-so its numbers are independent of the pipeline.
+Reads raw JSON only and never imports eleveniq (tests/test_spikes_independent.py),
+so its numbers are independent of the pipeline. The known StatsBomb position names
+are the ADR 002 §4 taxonomy, listed here.
 
 Usage: .venv/bin/python spikes/profile_2015_16_leagues.py
 """
@@ -15,7 +16,18 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from eleveniq.metrics.positions import POSITION_GROUP_MAP
+# ADR 002 §4: the StatsBomb position names the taxonomy maps (anything else is unmapped).
+POSITION_GROUP_MAP: frozenset[str] = frozenset({
+    "Goalkeeper",
+    "Center Back", "Left Center Back", "Right Center Back",
+    "Left Back", "Right Back", "Left Wing Back", "Right Wing Back",
+    "Defensive Midfield", "Center Defensive Midfield", "Left Defensive Midfield",
+    "Right Defensive Midfield", "Center Midfield", "Left Center Midfield",
+    "Right Center Midfield",
+    "Attacking Midfield", "Center Attacking Midfield", "Left Midfield", "Right Midfield",
+    "Left Wing", "Right Wing", "Left Attacking Midfield", "Right Attacking Midfield",
+    "Center Forward", "Left Center Forward", "Right Center Forward", "Secondary Striker",
+})
 
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw" / "statsbomb"
 LEAGUES = {"La Liga": 11, "Premier League": 2, "Serie A": 12, "Ligue 1": 7, "Bundesliga": 9}

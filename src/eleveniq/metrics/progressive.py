@@ -22,6 +22,10 @@ A completed pass is progressive if ALL of the following hold:
      (Euclidean), OR the pass ENTERS the opponent's penalty area
      (start is outside the box AND end is inside the box).
 
+  4. The pass is not a restart: pass.type.name is not in RESTART_TYPES
+     (corner, free kick, goal kick, kick-off, throw-in; ADR 004 D14, which
+     amends ADR 002 §1). `pass_type_name` is a required keyword argument.
+
 The penalty-area OR clause (condition 3) requires the pass to cross into
 the box from outside.  Passes where both start and end are inside the box
 are judged by the 10-unit distance rule only.  This prevents backward or
@@ -33,8 +37,7 @@ negative distance reduction, and is NOT progressive.  By contrast,
 This is our own definition.  It is not identical to FBref's:
   - FBref uses 10 metres (~11.4 units) as the distance threshold; we use 10 units.
   - FBref's start-zone exclusion checks both start AND end; ours checks start only.
-  - FBref excludes goal kicks; this function has no pass-type knowledge — the
-    caller must filter by pass.type if needed.
+  - FBref excludes goal kicks; we exclude every restart (condition 4).
 
 Progressive carry (ElevenIQ definition)
 -----------------------------------------
@@ -52,6 +55,8 @@ No start-zone exclusion applies to carries.
 """
 from __future__ import annotations
 import math
+
+from eleveniq.metrics.pass_types import is_restart_type
 
 OPPONENT_GOAL: tuple[float, float] = (120.0, 40.0)
 
@@ -86,6 +91,7 @@ def is_progressive_pass(
     end: tuple[float, float],
     *,
     outcome: str | None,
+    pass_type_name: str | None,
     threshold: float = PROG_PASS_THRESHOLD_UNITS,
 ) -> bool:
     """
@@ -99,11 +105,14 @@ def is_progressive_pass(
                  NO outcome field (None here); an incomplete pass has an outcome
                  string ("Incomplete", "Out", "Unknown", etc.).
                  This is a required keyword argument — omitting it is a TypeError.
+        pass_type_name: value of pass.type.name, or None for open play. A
+                 restart (RESTART_TYPES) is never progressive. Required keyword,
+                 like `outcome`.
         threshold: distance-reduction threshold in StatsBomb units (default 10.0).
 
     See module docstring for the full progressive-pass definition.
     """
-    if outcome is not None:
+    if outcome is not None or is_restart_type(pass_type_name):
         return False
     if start[0] < DEFENSIVE_40_THRESHOLD_X:
         return False

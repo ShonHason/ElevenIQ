@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Spike: core DNA metric reference totals for one competition-season (plan 004 H2, H4a).
+Spike: core DNA metric reference totals for one competition-season (plan 004 H2, H4a;
+plan 005 M4b1, M4b3, M4c2b).
 
 Computes league totals of the core columns from raw StatsBomb JSON and writes
 them to the "core" section of
@@ -34,10 +35,36 @@ at time t is that of the stint with the latest start at or before t (at one
 start instant, a stint started by a Tactical Shift, then the stint listed
 first). The §31 fail-loud rules stop the spike.
 
+M4b (ADR 004): progressive passes exclude restarts (D14: corners, free kicks, goal
+kicks, kick-offs, throw-ins); np_xg / np_shots leave out penalties (D15);
+passes_injury_clearance (D13); open_play_passes_attempted and
+team_open_play_passes_while_on (D12). A team open-play pass is credited to each
+player of the passing team whose credited time holds its instant (pieces
+half-open, a piece ending at its period's end closed there, judged by the event's
+own period) and always to its passer, even outside his own credited time (a
+timeline inconsistency, reported as events_outside_credited_time); every pass must
+be credited to 7-11 players (the Laws minimum on the pitch), otherwise the spike
+fails. Only progressive_passes may change against an
+existing core section; every other value must come out identical.
+
+M4c2b (ADR 004 D15, §10.2): np_shots_on_target is shots_on_target (the §30 outcome
+list) without penalties. Penalties on target are counted on their own, and the
+spike fails unless np_shots_on_target + penalties on target = shots_on_target.
+Only a new key is written; every recorded value must come out identical.
+
 Scope rule shared by every column: period-5 (shootout) events are excluded
 (ADR 002 §3). Events are counted league-wide, not per output row: a dropped
 event (other than an allow-listed bench card, which is not a counted type)
 would make the pipeline total fall short.
+
+M4g4b (ADR 004 §13.8, plan 005): opponent_open_play_passes_while_on (each open-play pass
+credited to every player of the other lineup team whose window holds its instant; no passer
+rule; 7-11 defenders or the spike fails) and team_<action>_while_on for the 8 Defending
+actions (the action rules written out below, ACTIONS; the actor always credited plus each
+teammate whose window holds). The 7-11 check follows the user's rule C: the credited set with
+the actor once, not counted as an extra player at his own exit instant (his window does not
+hold, but a closed segment covers the instant); the same count is applied to the team-pass
+check. Only keys are added (CHANGED_BY_CURRENT_CHUNK is empty).
 
 Minutes structural check (not a second implementation)
 ------------------------------------------------------
@@ -98,6 +125,17 @@ PROG_PASS_UNITS = 10.0
 PROG_CARRY_UNITS = 5.0
 PROG_CARRY_MIN_LENGTH = 5.0
 GOAL_CENTRE = (120.0, 40.0)
+# ADR 004 D12: an open-play pass is credited to 7-11 players of its team. 7 is the
+# Laws of the Game minimum on the pitch (2015/16 observed: 8-11), so a pass credited
+# to fewer (e.g. only its passer) is a timeline or clock error, not football.
+MIN_PLAYERS_PER_PASS = 7
+MAX_PLAYERS_PER_PASS = 11
+# ADR 004 D14: restarts, excluded from progressive passes and the open-play columns.
+RESTART_TYPES = frozenset({"Corner", "Free Kick", "Goal Kick", "Kick Off", "Throw-in"})
+# ADR 004 §9 comparison only (not the definition): possessions that start with a
+# restart, by play_pattern.
+PATTERN_RESTARTS = frozenset(
+    {"From Corner", "From Free Kick", "From Throw In", "From Goal Kick", "From Kick Off"})
 BOX_X_MIN, BOX_Y_MIN, BOX_Y_MAX = 102.0, 18.0, 62.0
 
 # ADR 002 §30: exact StatsBomb casing ("Saved to Post", lower-case "to").
@@ -185,6 +223,20 @@ KINDS = {
     "interceptions": "independent", "clearances": "independent",
     "blocks": "second implementation (§13)",
     "fouls_committed": "independent", "fouls_won": "independent", "carries": "independent",
+    "np_xg": "independent (shot.type, ADR 004 D15)",
+    "np_shots": "independent (shot.type, ADR 004 D15)",
+    "np_shots_on_target": "second implementation (§30) + shot.type (ADR 004 D15)",
+    "passes_injury_clearance": "independent (pass.outcome, ADR 004 D13)",
+    "open_play_passes_attempted": "independent (pass.type, ADR 004 D12)",
+    "team_open_play_passes_while_on": "second implementation (ADR 004 D12) + 7-11 credit check",
+    "opponent_open_play_passes_while_on": "second implementation (ADR 004 §13.8) + 7-11 defenders",
+    **{f"team_{a}_while_on": "second implementation (ADR 004 §13.8) + 7-11 credit check (rule C)"
+       for a in ("ball_recoveries", "tackles_attempted", "pressures", "clearances",
+                 "dribbled_past", "fouls_committed", "blocks", "interceptions")},
+    "op_key_passes": "independent (pass.type, ADR 004 §9)",
+    "restart_key_passes": "independent (pass.type, ADR 004 §9)",
+    "op_assists": "independent (pass.type, ADR 004 §9)",
+    "restart_assists": "independent (pass.type, ADR 004 §9)",
     **{col: "second implementation (§31.4) + event-position oracle"
        for col in GROUP_COLUMN.values()},
 }
@@ -238,21 +290,41 @@ def count_events(events: list[dict], t: Counter) -> None:
         if kind == "Pass":
             p = e.get("pass") or {}
             t["passes_attempted"] += 1
-            completed = (p.get("outcome") or {}).get("name") is None
-            if completed:
+            outcome = (p.get("outcome") or {}).get("name")
+            restart = (p.get("type") or {}).get("name") in RESTART_TYPES
+            if not restart:
+                t["open_play_passes_attempted"] += 1
+            if outcome == "Injury Clearance":
+                t["passes_injury_clearance"] += 1
+            if outcome is None:
                 t["passes_completed"] += 1
-                if _progressive_pass(e["location"], p["end_location"]):
+                if not restart and _progressive_pass(e["location"], p["end_location"]):
                     t["progressive_passes"] += 1
+            split = "restart" if restart else "op"
             if p.get("shot_assist") or p.get("goal_assist"):
                 t["key_passes"] += 1
+                t[f"{split}_key_passes"] += 1
+                # ADR 004 §9 comparison: the pass's play_pattern disagrees with its type.
+                by_pattern = ((e.get("play_pattern") or {}).get("name")) in PATTERN_RESTARTS
+                if by_pattern != restart:
+                    t["key_passes_type_restart_pattern_open" if restart
+                      else "key_passes_type_open_pattern_restart"] += 1
             if p.get("goal_assist"):
                 t["assists"] += 1
+                t[f"{split}_assists"] += 1
         elif kind == "Shot":
             s = e.get("shot") or {}
             t["shots"] += 1
-            if (s.get("outcome") or {}).get("name") in ON_TARGET:
+            on_target = (s.get("outcome") or {}).get("name") in ON_TARGET
+            penalty = (s.get("type") or {}).get("name") == "Penalty"
+            if on_target:
                 t["shots_on_target"] += 1
+                # Report-only (not in KINDS): the identity check in main().
+                t["penalties_on_target" if penalty else "np_shots_on_target"] += 1
             t["xg"] += s["statsbomb_xg"]  # a missing xG raises: H1.4 says 0 occur
+            if not penalty:
+                t["np_shots"] += 1
+                t["np_xg"] += s["statsbomb_xg"]
         elif kind == "Carry":
             t["carries"] += 1
             if _progressive_carry(e["location"], e["carry"]["end_location"]):
@@ -542,6 +614,128 @@ def match_minutes(
     return teams, clock
 
 
+def team_open_play_pass_credits(
+    mid: int, events: list[dict], teams: list[dict], clock: Clock, credits: Counter,
+) -> int:
+    """
+    ADR 004 D12: Σ over the match's open-play passes (periods 1-4) of the number of
+    players credited with each, i.e. the league total of team_open_play_passes_while_on.
+    A player of the passing team (`team.id`) is credited when the pass's elapsed
+    instant t lies in one of his timeline segments [a, b) inside the pass's own
+    period, or t is that period's end and a segment ends there (all comparisons
+    within TIME_EPS); the passer is always credited, even outside his own
+    credited time (a timeline inconsistency, reported as
+    events_outside_credited_time). Fails unless every pass is
+    credited to MIN_PLAYERS_PER_PASS-MAX_PLAYERS_PER_PASS players. `credits` gets the
+    distribution of players per pass.
+    """
+    segments = {t["team_id"]: {p["player_id"]: p["segments"] for p in t["players"]}
+                for t in teams}
+    total = 0
+    for e in events:
+        if (e["period"] > 4 or e["type"]["name"] != "Pass" or not e.get("player")
+                or ((e.get("pass") or {}).get("type") or {}).get("name") in RESTART_TYPES):
+            continue
+        p = e["period"]
+        start = clock.offset[p]
+        end = start + clock.length(p)
+        at = clock.elapsed(_at(e))
+        passer = e["player"]["id"]
+        n = 0
+        for pid, segs in segments[e["team"]["id"]].items():
+            if pid == passer:
+                continue
+            # Compared within TIME_EPS: elapsed() and the segment bounds are built by
+            # different float sums (e.g. 48.633333333333326 vs 48.63333333333333 at a
+            # second-half kick-off). Zero-length segments credit nothing.
+            if any(b - a > TIME_EPS
+                   and ((a - TIME_EPS <= at < b - TIME_EPS
+                         and start - TIME_EPS <= at < end - TIME_EPS)
+                        or (abs(at - end) <= TIME_EPS and abs(b - end) <= TIME_EPS))
+                   for a, b, _ in segs):
+                n += 1
+        n += 1  # the passer
+        bound = _bounds_count(n, segments[e["team"]["id"]].get(passer), at, start, end)  # rule C
+        if not MIN_PLAYERS_PER_PASS <= bound <= MAX_PLAYERS_PER_PASS:
+            raise SystemExit(f"FAIL: match {mid}: pass {e['id']} credited to {bound} players "
+                             "(rule-C count)")
+        credits[n] += 1
+        total += n
+    return total
+
+
+# M4g4b: the 8 Defending actions with a team-share candidate, written out (no eleveniq).
+def _action(e: dict) -> str | None:
+    if e["period"] > 4 or not e.get("player"):
+        return None
+    kind = e["type"]["name"]
+    if kind == "Ball Recovery":
+        return None if (e.get("ball_recovery") or {}).get("recovery_failure") else "ball_recoveries"
+    if kind == "Duel":
+        return "tackles_attempted" if ((e.get("duel") or {}).get("type") or {}).get("name") == "Tackle" else None
+    if kind == "Block":
+        b = e.get("block") or {}
+        return None if b.get("offensive") or b.get("save_block") else "blocks"
+    return {"Pressure": "pressures", "Clearance": "clearances", "Dribbled Past": "dribbled_past",
+            "Foul Committed": "fouls_committed", "Interception": "interceptions"}.get(kind)
+
+
+def _holds(segs, at: float, start: float, end: float) -> bool:
+    """The D12 window: [a, b) inside the event's period, or the period's end closing a segment."""
+    return any(b - a > TIME_EPS
+               and ((a - TIME_EPS <= at < b - TIME_EPS and start - TIME_EPS <= at < end - TIME_EPS)
+                    or (abs(at - end) <= TIME_EPS and abs(b - end) <= TIME_EPS))
+               for a, b, _ in segs)
+
+
+def _bounds_count(n_credited: int, actor_segs, at: float, start: float, end: float) -> int:
+    """Rule C: the actor is not an extra player at his own exit instant (his window does not
+    hold the instant, but a closed segment [a, b] covers it)."""
+    at_exit = (actor_segs is not None and not _holds(actor_segs, at, start, end)
+               and any(a - TIME_EPS <= at <= b + TIME_EPS for a, b, _ in actor_segs))
+    return n_credited - at_exit
+
+
+def exposure_and_action_credits(
+    mid: int, events: list[dict], teams: list[dict], clock: Clock,
+    opp_dist: Counter, action_dist: Counter,
+) -> tuple[int, Counter]:
+    """M4g4b league totals: (Σ over open-play passes of the defenders credited, Σ per action
+    over its events of the players credited). Fails on a defender count or a rule-C action
+    count outside MIN_PLAYERS_PER_PASS-MAX_PLAYERS_PER_PASS."""
+    segments = {t["team_id"]: {p["player_id"]: p["segments"] for p in t["players"]} for t in teams}
+    if len(segments) != 2:
+        raise SystemExit(f"FAIL: match {mid}: {len(segments)} lineup teams")
+    other = dict(zip(segments, reversed(list(segments))))
+    opp_total, actions = 0, Counter()
+    for e in events:
+        if e["period"] > 4:
+            continue
+        p = e["period"]
+        start = clock.offset[p]
+        end = start + clock.length(p)
+        at = clock.elapsed(_at(e))
+        if (e["type"]["name"] == "Pass" and e.get("player")
+                and ((e.get("pass") or {}).get("type") or {}).get("name") not in RESTART_TYPES):
+            n = sum(_holds(segs, at, start, end) for segs in segments[other[e["team"]["id"]]].values())
+            if not MIN_PLAYERS_PER_PASS <= n <= MAX_PLAYERS_PER_PASS:
+                raise SystemExit(f"FAIL: match {mid}: pass {e['id']} credited to {n} defenders")
+            opp_dist[n] += 1
+            opp_total += n
+        a = _action(e)
+        if a is None:
+            continue
+        team, actor = e["team"]["id"], e["player"]["id"]
+        mates = sum(_holds(segs, at, start, end) for pid, segs in segments[team].items() if pid != actor)
+        credited = mates + 1
+        n = _bounds_count(credited, segments[team].get(actor), at, start, end)
+        if not MIN_PLAYERS_PER_PASS <= n <= MAX_PLAYERS_PER_PASS:
+            raise SystemExit(f"FAIL: match {mid}: {a} {e['id']} counts {n} players (rule C)")
+        action_dist[(a, n)] += 1
+        actions[f"team_{a}_while_on"] += credited
+    return opp_total, actions
+
+
 def _group(mid: int, name: str | None, where: str) -> str:
     """§4 group of a position name; an unmapped or missing name fails (as in §31.4)."""
     group = POSITION_GROUP.get(name)
@@ -650,6 +844,9 @@ def main() -> None:
     tactics_rows: list[dict] = []
     outside_rows: list[dict] = []
     match_duration = 0.0
+    pass_credits: Counter = Counter()
+    opp_dist: Counter = Counter()
+    action_dist: Counter = Counter()
     for m in matches:
         mid = m["match_id"]
         events = json.loads((DATA_ROOT / "events" / f"{mid}.json").read_text())
@@ -657,6 +854,12 @@ def main() -> None:
         count_events(events, totals)
         teams, clock = match_minutes(mid, events, lineups, counts)
         match_duration += clock.duration
+        totals["team_open_play_passes_while_on"] += team_open_play_pass_credits(
+            mid, events, teams, clock, pass_credits)
+        opp_total, action_totals = exposure_and_action_credits(
+            mid, events, teams, clock, opp_dist, action_dist)
+        totals["opponent_open_play_passes_while_on"] += opp_total
+        totals.update(action_totals)
         outside_rows.extend({"match_id": mid, **r}
                             for r in events_outside_credited_time(events, teams, clock))
         for t in teams:
@@ -670,6 +873,24 @@ def main() -> None:
         all_events.extend(e for e in events if e["period"] != 5)
 
     reconcile_goals(matches, all_events)
+    for total in ("key_passes", "assists"):
+        if totals[f"op_{total}"] + totals[f"restart_{total}"] != totals[total]:
+            raise SystemExit(f"FAIL: op + restart {total} != {total}")
+    if totals["np_shots_on_target"] + totals["penalties_on_target"] != totals["shots_on_target"]:
+        raise SystemExit("FAIL: np_shots_on_target + penalties on target != shots_on_target")
+    print(f"\nShots on target (ADR 004 D15): non-penalty {totals['np_shots_on_target']:,}, "
+          f"penalties {totals['penalties_on_target']:,}, total {totals['shots_on_target']:,}")
+    print(f"\nKey passes (ADR 004 §9): open play {totals['op_key_passes']:,}, restart "
+          f"{totals['restart_key_passes']:,}; assists open play {totals['op_assists']:,}, "
+          f"restart {totals['restart_assists']:,}")
+    print(f"  play_pattern disagrees: type restart / pattern open "
+          f"{totals['key_passes_type_restart_pattern_open']:,}; type open / pattern restart "
+          f"{totals['key_passes_type_open_pattern_restart']:,}")
+    # Data-consistency guard (ADR 004 §9): a restart key pass is never inside an
+    # open-play-labelled possession; a positive count fails the spike.
+    if totals["key_passes_type_restart_pattern_open"]:
+        raise SystemExit(f"FAIL: {totals['key_passes_type_restart_pattern_open']} restart key "
+                         "pass(es) in an open-play-labelled possession (ADR 004 §9 guard)")
 
     print("\nReport-only counts (ADR 002 §31):")
     for key in ("period_end_before_nominal", "stint_after_period_end",
@@ -682,6 +903,15 @@ def main() -> None:
               f"{r['at'][1]:.2f}")
     print(f"  {'overlap minutes deduplicated':<32} {counts['overlap_minutes']:.2f}")
     print(f"  {'unpaired-Off minutes removed':<32} {counts['unpaired_off_minutes']:.2f}")
+
+    print(f"\nDefenders per open-play pass (M4g4b): "
+          + ", ".join(f"{k}: {v:,}" for k, v in sorted(opp_dist.items())))
+    print("Players per Defending action, rule-C count (M4g4b): "
+          + "; ".join(f"{a} " + ", ".join(f"{n}: {v:,}" for (aa, n), v in sorted(action_dist.items()) if aa == a)
+                      for a in sorted({a for a, _ in action_dist})))
+    n_passes = sum(pass_credits.values())
+    print(f"\nOpen-play passes credited (ADR 004 D12): {n_passes:,} passes; players per pass "
+          + ", ".join(f"{k}: {v:,} ({v / n_passes:.2%})" for k, v in sorted(pass_credits.items())))
 
     # Structural minutes check (the per-period ceiling already ran per team).
     groups_sum = sum(totals[c] for c in GROUP_COLUMN.values())
@@ -743,7 +973,7 @@ def main() -> None:
         raise SystemExit(f"FAIL: {len(unexplained)} player-matches fail the position checks")
 
     core = {col: (round(totals[col], 4)
-                  if col in ("xg", "minutes_played") or col in GROUP_COLUMN.values()
+                  if col in ("xg", "np_xg", "minutes_played") or col in GROUP_COLUMN.values()
                   else totals[col])
             for col in KINDS}
     print()
@@ -758,6 +988,13 @@ def main() -> None:
                      write=not args.no_write)
 
 
+# Recorded core values the current chunk may change; every other recorded value
+# must come out identical, and new keys are added. History: M4b allowed
+# progressive_passes (ADR 004 D14); M4b3 (ADR 004 §9) and M4c2b
+# (np_shots_on_target, ADR 004 D15) only add keys.
+CHANGED_BY_CURRENT_CHUNK: frozenset[str] = frozenset()
+
+
 def update_reference(
     competition_id: int, season_id: int, core: dict, dismissals: int, match_duration: float,
     *, write: bool,
@@ -766,25 +1003,28 @@ def update_reference(
     Write the core section, base.dismissals and base.match_duration (Σ of the
     §31.1 match_duration over the league's matches, for the exact GK identity
     in tests/test_reference_totals.py). When the reference file already
-    has a core section, every non-minutes core value and the dismissal count
-    must come out exactly as recorded (H4 changes only the minutes). A league
-    with no reference file, or none of these sections yet, is written as new.
+    has a core section, every recorded value except those in CHANGED_BY_CURRENT_CHUNK, and
+    the dismissal count, must come out exactly as recorded; new columns are added. A league with no
+    reference file, or none of these sections yet, is written as new.
     """
     path = REFERENCE_DIR / f"{competition_id}_{season_id}.json"
     ref = json.loads(path.read_text()) if path.exists() else {}
     old_core, old_base = ref.get("core", {}), ref.get("base", {})
-    minute_cols = {"minutes_played", *GROUP_COLUMN.values()}
     changed = {col: (old, core.get(col)) for col, old in old_core.items()
-               if col not in minute_cols and core.get(col) != old}
+               if col not in CHANGED_BY_CURRENT_CHUNK and core.get(col) != old}
     old_dismissals = old_base.get("dismissals")
-    if changed or (old_dismissals is not None and old_dismissals != dismissals):
-        raise SystemExit(f"FAIL: non-minutes values changed: {changed}; dismissals "
-                         f"{old_dismissals} → {dismissals}")
+    old_duration = old_base.get("match_duration")
+    if (changed or (old_dismissals is not None and old_dismissals != dismissals)
+            or (old_duration is not None and old_duration != match_duration)):
+        raise SystemExit(f"FAIL: values outside {sorted(CHANGED_BY_CURRENT_CHUNK)} changed: {changed}; "
+                         f"dismissals {old_dismissals} → {dismissals}; match_duration "
+                         f"{old_duration} → {match_duration}")
     print()
-    for col in ["minutes_played", *GROUP_COLUMN.values()]:
+    for col in core:
         old = old_core.get(col)
-        delta = "new" if old is None else f"Δ {core[col] - old:+,.4f}"
-        print(f"  {col:<22} {old} → {core[col]:,} ({delta})")
+        if old is None or col in CHANGED_BY_CURRENT_CHUNK:
+            delta = "new" if old is None else f"Δ {core[col] - old:+,}"
+            print(f"  {col:<30} {old} → {core[col]:,} ({delta})")
     if write:
         write_reference(competition_id, season_id, "core", core)
         write_reference(competition_id, season_id, "base",

@@ -6,21 +6,15 @@ Final third: x >= 80 (last third of the 120-unit pitch).
 Penalty area: x >= 102, 18 <= y <= 62.
 
 All four helpers operate on a single event's locations; they are called per-event
-inside the pipeline aggregation loop.  Set-piece filtering for passes uses the
-shared SET_PIECE_TYPES constant defined here; this constant also replaces the
-former _SET_PIECE_TYPES in build_player_match.py so there is a single source of
-truth for all pass-type exclusions (entries, long passes).
+inside the pipeline aggregation loop.  Pass entries exclude restarts (set pieces
+and throw-ins, ADR 004 D14) with the shared RESTART_TYPES from pass_types.py, the
+single source of truth for pass-type exclusions (progressive passes, entries, long
+passes).
 """
 from __future__ import annotations
 
+from eleveniq.metrics.pass_types import is_restart_type
 from eleveniq.metrics.progressive import in_opponent_penalty_area
-
-# Passes of these types are excluded from final-third and box-entry pass counts,
-# and from long-pass counts in the pipeline.  Throw-ins, Recovery, and Interception
-# types are included (territorial progression).  See ADR 002 §final_third_entries.
-SET_PIECE_TYPES: frozenset[str] = frozenset(
-    {"Corner", "Free Kick", "Goal Kick", "Kick Off"}
-)
 
 FINAL_THIRD_X: float = 80.0
 
@@ -39,7 +33,7 @@ def is_final_third_entry_pass(
     - outcome is None (completed pass — no outcome name in StatsBomb data)
     - start x < FINAL_THIRD_X
     - end x >= FINAL_THIRD_X
-    - pass_type_name not in SET_PIECE_TYPES
+    - pass_type_name not in RESTART_TYPES (set pieces and throw-ins, ADR 004 D14)
 
     The ``outcome`` parameter is required so callers cannot forget the completion
     check — the same contract as ``is_progressive_pass``.
@@ -49,7 +43,7 @@ def is_final_third_entry_pass(
     return (
         start[0] < FINAL_THIRD_X
         and end[0] >= FINAL_THIRD_X
-        and pass_type_name not in SET_PIECE_TYPES
+        and not is_restart_type(pass_type_name)
     )
 
 
@@ -75,7 +69,7 @@ def is_box_entry_pass(
     - outcome is None (completed pass — no outcome name in StatsBomb data)
     - start NOT in penalty area
     - end IN penalty area
-    - pass_type_name not in SET_PIECE_TYPES
+    - pass_type_name not in RESTART_TYPES (set pieces and throw-ins, ADR 004 D14)
 
     The ``outcome`` parameter is required so callers cannot forget the completion
     check — the same contract as ``is_progressive_pass``.
@@ -85,7 +79,7 @@ def is_box_entry_pass(
     return (
         not in_opponent_penalty_area(*start)
         and in_opponent_penalty_area(*end)
-        and pass_type_name not in SET_PIECE_TYPES
+        and not is_restart_type(pass_type_name)
     )
 
 

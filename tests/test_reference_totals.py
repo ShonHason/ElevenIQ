@@ -67,9 +67,10 @@ class TestReferenceTotalsFixtures:
 
     @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
     def test_core_section_present(self, cs):
-        """Plan 004 H2/H4a: every reference file has the core section from
-        spikes/verify_core_metrics.py, including the per-group minutes (ADR 002
-        §31.6), and base carries the dismissal count and Σ match_duration."""
+        """Plan 004 H2/H4a, plan 005 M4b1: every reference file has the core section
+        from spikes/verify_core_metrics.py, including the per-group minutes (ADR 002
+        §31.6) and the ADR 004 columns, and base carries the dismissal count and
+        Σ match_duration."""
         ref = _load(cs)
         assert set(ref["core"]) == {
             "minutes_played", "shots", "shots_on_target", "xg", "passes_attempted",
@@ -77,6 +78,15 @@ class TestReferenceTotalsFixtures:
             "assists", "tackles_attempted", "tackles_won", "dribbles_attempted",
             "dribbles_completed", "interceptions", "clearances", "blocks",
             "fouls_committed", "fouls_won", "carries",
+            "np_xg", "np_shots", "np_shots_on_target", "passes_injury_clearance",
+            "open_play_passes_attempted",
+            "team_open_play_passes_while_on",
+            # ADR 004 §13.8 (M4g4b)
+            "opponent_open_play_passes_while_on",
+            "team_ball_recoveries_while_on", "team_tackles_attempted_while_on",
+            "team_pressures_while_on", "team_clearances_while_on", "team_dribbled_past_while_on",
+            "team_fouls_committed_while_on", "team_blocks_while_on", "team_interceptions_while_on",
+            "op_key_passes", "restart_key_passes", "op_assists", "restart_assists",
             "minutes_am_winger", "minutes_cb", "minutes_dm_cm", "minutes_fb_wb",
             "minutes_gk", "minutes_st",
         }
@@ -118,3 +128,46 @@ class TestReferenceTotalsFixtures:
         assert core["tackles_won"] <= core["tackles_attempted"]
         assert core["dribbles_completed"] <= core["dribbles_attempted"]
         assert core["progressive_carries"] <= core["carries"]
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_m4b_columns_are_subsets_of_their_totals(self, cs):
+        """ADR 004 D12-D15 on the committed totals: penalties are a subset of shots,
+        shots on target and xG; Injury Clearances are incomplete passes; open-play passes are a subset
+        of all passes; long-pass unknown and Injury Clearance outcomes share the
+        long-pass predicate, so both are incomplete long passes."""
+        ref = _load(cs)
+        core, a = ref["core"], ref["chunk_a"]
+        assert core["np_shots"] <= core["shots"]
+        assert 0 <= core["np_xg"] <= core["xg"]
+        # M4c2b: penalties on target are penalties, so at most the penalties taken.
+        assert core["np_shots_on_target"] <= min(core["np_shots"], core["shots_on_target"])
+        assert core["shots_on_target"] - core["np_shots_on_target"] <= core["shots"] - core["np_shots"]
+        assert core["passes_injury_clearance"] <= core["passes_attempted"] - core["passes_completed"]
+        assert core["open_play_passes_attempted"] <= core["passes_attempted"]
+        assert (a["long_passes_unknown_outcome"] + a["long_passes_injury_clearance"]
+                <= a["long_passes_attempted"] - a["long_passes_completed"])
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_team_open_play_passes_credit_seven_to_eleven_players(self, cs):
+        """ADR 004 D12: each team open-play pass is credited to 7-11 players (the
+        Laws minimum to the maximum on the pitch; the spike fails otherwise), so the
+        league total of team_open_play_passes_while_on lies between 7x and 11x the
+        open-play passes (2015/16: about 10.97x)."""
+        core = _load(cs)["core"]
+        n = core["open_play_passes_attempted"]
+        assert 7 * n <= core["team_open_play_passes_while_on"] <= 11 * n
+        assert core["team_open_play_passes_while_on"] / n > 10.5
+
+
+    @pytest.mark.parametrize("cs", COMPETITION_SEASONS, ids=_IDS)
+    def test_open_play_and_restart_parts_add_up_to_their_totals(self, cs):
+        """ADR 004 §9: xg_assisted, key_passes and assists split by the key pass's own
+        type; the parts add up exactly for counts, and within the 4-decimal rounding
+        of the stored figures for xG."""
+        ref = _load(cs)
+        core, b = ref["core"], ref["chunk_b"]
+        for col in ("key_passes", "assists"):
+            assert core[f"op_{col}"] + core[f"restart_{col}"] == core[col]
+        assert b["op_xg_assisted"] + b["restart_xg_assisted"] == pytest.approx(
+            b["xg_assisted"], abs=2e-4)
+        assert b["restart_xg_assisted"] >= 0 and b["op_xg_assisted"] >= 0

@@ -1,0 +1,16 @@
+{
+  "description": "Expected M4g4b flag flips (plan 005 M4g4b): none. Written from data/interim/m4g4b_snapshot before the rebuild; M4g4b adds count columns only (opponent_open_play_passes_while_on, team_<action>_while_on) and changes no existing column.",
+  "gate": 900.0,
+  "gate_tolerance": 1e-06,
+  "unchanged_flags": [
+    "position_group",
+    "is_primary_stint",
+    "is_outfield",
+    "is_gk",
+    "in_percentile_pool",
+    "multi_team_season",
+    "multi_competition_season",
+    "meets_min_minutes"
+  ],
+  "meets_min_minutes": []
+}

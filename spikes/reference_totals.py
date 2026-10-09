@@ -8,6 +8,8 @@ derived from raw StatsBomb JSON independently of the code they verify.
 - load_matches():      matches/{comp}/{season}.json.
 - reconcile_goals():   event goals + own goals must equal the sum of
                        home_score + away_score in matches.json, else SystemExit.
+- load_reference():    the current reference file (or {}).
+- guard_unchanged():   fail when a recorded value outside an allowed set changes.
 - write_reference():   merge a section of totals into
                        tests/fixtures/reference_totals/{comp}_{season}.json.
 """
@@ -67,6 +69,28 @@ def reconcile_goals(matches: list[dict], events: list[dict]) -> tuple[int, int]:
             f"sum of matches.json scores ({official})"
         )
     return goals, own_goals
+
+
+def load_reference(competition_id: int, season_id: int) -> dict:
+    """The reference file's contents, or {} when it does not exist yet."""
+    path = REFERENCE_DIR / f"{competition_id}_{season_id}.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def guard_unchanged(
+    competition_id: int, season_id: int, section: str, totals: dict, may_change: frozenset[str],
+) -> None:
+    """
+    Fail (SystemExit, before anything is written) when a value already recorded
+    under `section` differs in `totals`, or is missing from it, unless its key is in
+    `may_change`. New keys are allowed. A definition change must name the columns it
+    moves; anything else moving is a bug in the spike.
+    """
+    old = load_reference(competition_id, season_id).get(section, {})
+    changed = {k: (v, totals.get(k)) for k, v in old.items()
+               if k not in may_change and totals.get(k) != v}
+    if changed:
+        raise SystemExit(f"FAIL: {section} values outside {sorted(may_change)} changed: {changed}")
 
 
 def write_reference(
