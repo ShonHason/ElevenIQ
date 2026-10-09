@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eleveniq.local/contract/v1/search-index.schema.json",
+  "title": "search-index.json",
+  "description": "One entry per season row. search_key is the accent- and case-folded display name and name (Kanté → kante); the site matches by prefix or substring on it and never sorts by a statistic.",
+  "type": "object", "additionalProperties": false, "required": ["stamps", "entries"],
+  "properties": {
+    "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["key", "player_id", "display_name", "name", "search_key", "team", "league", "group", "minutes_text", "profile"],
+        "properties": {
+          "key": {"$ref": "common.schema.json#/$defs/rowKey"},
+          "player_id": {"type": "integer"},
+          "display_name": {"type": "string"}, "name": {"type": "string"},
+          "search_key": {"type": "string"},
+          "team": {"type": "string"}, "league": {"type": "string"},
+          "group": {"$ref": "common.schema.json#/$defs/anyGroup"},
+          "minutes_text": {"type": "string"},
+          "profile": {"enum": ["dna", "gated", "below_gate"], "description": "dna: has a DNA profile (neighbours, map); gated: over the minutes gate without one (goalkeeper or league outside the pool); below_gate: under the gate."}
+        }
+      }
+    }
+  }
+}

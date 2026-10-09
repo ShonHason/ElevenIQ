@@ -49,7 +49,6 @@ import argparse
 import html
 import math
 import sys
-import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -73,6 +72,7 @@ from eleveniq.export.display import (  # noqa: F401  (re-exported: the page's di
     SPECS_BY_COLUMN,
     STATUS_TEXT,
     dim_status_text,
+    fold,
     format_number,
     format_pct,
     format_value,
@@ -139,11 +139,6 @@ def parse_selector(raw: str) -> Selector:
     if team:
         raise PageError(f"--player {raw!r}: '@team_id' needs a numeric player_id")
     return Selector(raw, name=fold(raw))
-
-
-def fold(text: str) -> str:
-    return "".join(ch for ch in unicodedata.normalize("NFKD", text)
-                   if not unicodedata.combining(ch)).casefold().strip()
 
 
 def resolve(identity: pl.DataFrame, sel: Selector) -> dict[str, Any]:
@@ -396,7 +391,7 @@ def _scope_html(player: Player, row: Mapping[str, Any], scope: str, spec: Metric
     label = "local" if scope == "local" else "global"
     pct = row[f"pct_{scope}"]
     if zero_tie and pct is not None:
-        shown = '<span class="reason">tied at zero, not a rank</span>'
+        shown = f'<span class="reason">{esc(W.ZERO_TIE)}</span>'
     elif pct is not None:
         shown = src_span(row, f"pct_{scope}", format_pct(pct), "num pct")
         if mixed:

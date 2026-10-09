@@ -1,0 +1,253 @@
+"""
+build_export.build on a synthetic DM-CM world (plan 006 W1c fix round; no data/ needed):
+24 complete rows, a mover with two clubs, a partial row, a goalkeeper, a below-gate row and a
+second-group (CB) row whose zero-heavy metric is 0.
+
+- every document validates against contract/v1;
+- export-wide invariant (user, 2026-10-09): every metric cell scope carries a number or a
+  status text, never neither (the zero-tie bug class);
+- search-index profiles, the neighbour list, the style map, the mover, signature traits;
+- write() deletes only the managed files a previous run left, only inside the export
+  directory, and touches nothing else (user, 2026-10-09);
+- compare mode's gap order (option c): a team-possession / long-pass metric with the largest
+  gap is out of the top 6 but in the full table.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import random
+
+import polars as pl
+import pytest
+
+from eleveniq.analytics import dna as D
+from eleveniq.analytics import registry as R
+from eleveniq.analytics.dna import dna_specs, split_weights
+from eleveniq.export import build_export as B
+from eleveniq.export import display as X
+
+G = "DM-CM"
+SPECS = dna_specs(R.REGISTRY, R.SPECS, G)
+DNA_METRICS = [s.column for s in SPECS]
+WEIGHTS = split_weights(SPECS, set(DNA_METRICS))
+SIG = {s.count_column for s in R.SPECS if s.count_column}
+STAMPS = {"contract_version": "1.0.0", "registry_version": R.REGISTRY_VERSION,
+          "measurement_source": "statsbomb", "source": "statsbomb", "season_ids": [27],
+          **{f"{n}_sha256": "0" * 64 for n in ("season_parquet", "percentiles_parquet",
+                                              "dna_parquet", "positions_parquet", "match_parquet")}}
+
+
+def _key(pid: int, tid: int) -> tuple:
+    return (pid, tid, 2, 27, "statsbomb")
+
+
+def _world():
+    rng = random.Random(11)
+    season, pct, dna, dims, pos, match = [], [], [], [], [], []
+    rows = [(_key(100 + i, 10 + i % 4), "dna", "complete") for i in range(24)]
+    rows += [(_key(200, 10), "dna", "complete"), (_key(200, 11), "dna", "complete"),   # mover
+             (_key(300, 12), "dna", "partial"),
+             (_key(400, 13), "gk", None), (_key(500, 13), "below", None)]
+    for k, kind, status in rows:
+        group = "GK" if kind == "gk" else G
+        minutes = 400.0 if kind == "below" else 1800.0
+        season.append({"player_id": k[0], "team_id": k[1], "competition_id": 2, "season_id": 27,
+                       "source": "statsbomb", "player_name": f"Player {k[0]}",
+                       "player_nickname": " Nick " if k[0] == 100 else None,
+                       "team_name": f"Team {k[1]}", "position_group": group,
+                       "second_position_group": "CB" if k[0] == 101 else None,
+                       "minutes_played": minutes, "minutes_nominal_equiv": minutes * 0.95,
+                       "meets_min_minutes": kind != "below",
+                       **{c: 3 for c in SIG}})
+        pos.append({**dict(zip(B.KEY, k)), "position": "Goalkeeper" if kind == "gk"
+                    else "Center Defensive Midfield", "minutes": minutes / 2})
+        if kind != "gk":
+            pos.append({**dict(zip(B.KEY, k)), "position": "Center Midfield", "minutes": minutes / 2})
+        else:
+            pos[-1]["minutes"] = minutes
+        month = 1 if k == _key(200, 11) else 8
+        match.append({**dict(zip(B.KEY, k)), "match_date": dt.date(2016 if month == 1 else 2015, month, 9),
+                      "minutes_played": 90.0})
+        vec = {m: rng.uniform(45, 55) for m in DNA_METRICS}
+        vec["op_key_passes_p90"] = rng.uniform(5, 95)
+        vec["np_xg_p90"] = rng.uniform(20, 80)
+        for role, g in (("primary", group), *((("second", "CB"),) if k[0] == 101 else ())):
+            for s in R.SPECS:
+                cell = R.REGISTRY.cell(s.column, g) if g in B.GROUPS else None
+                scored = kind == "dna"
+                p = vec.get(s.column, rng.uniform(5, 95)) if scored else None
+                value = 0.0 if (role == "second" and s.column == "box_entries_carry_p90") else 1.5
+                st = "ok" if scored else ("goalkeeper" if kind == "gk" else "below_gate")
+                pct.append({**dict(zip(B.KEY, k)), "position_group": g, "cohort_role": role,
+                            "metric": s.column, "value": value,
+                            "percentile_status": "scored" if scored else st,
+                            "pct_local": p, "n_local": 30 if scored else None, "status_local": st,
+                            "pct_global": p, "n_global": 120 if scored else None, "status_global": st,
+                            "basis": "local" if scored else None,
+                            "registry_status": cell.status if cell else None})
+        if kind == "dna":
+            for s in SPECS:
+                missing = status == "partial" and s.column == "np_xg_p90"
+                dna.append({**dict(zip(B.KEY, k)), "position_group": G, "metric": s.column,
+                            "family": s.family, "direction": s.direction, "value": 1.5,
+                            "pct_local": None if missing else vec[s.column], "n_local": 30,
+                            "metric_status": "below_min_attempts" if missing else "ok",
+                            "z": None, "z_median": None, "z_scale": None, "z_scale_method": None,
+                            "z_status": "ok", "weight": None if missing else WEIGHTS[s.column],
+                            "dna_status": status})
+            held = D.withheld_for(G)
+            for fam in sorted({s.family for s in SPECS}):
+                ok = fam not in held
+                dims.append({**dict(zip(B.KEY, k)), "position_group": G, "family": fam,
+                             "score": 50.0 if ok else None,
+                             "score_status": "ok" if ok else held[fam],
+                             "members": [s.column for s in SPECS if s.family == fam] if ok else [],
+                             "dna_status": status})
+    return B.Inputs(pl.DataFrame(season), pl.DataFrame(pct), pl.DataFrame(dna),
+                    pl.DataFrame(dims), pl.DataFrame(pos), pl.DataFrame(match), STAMPS)
+
+
+@pytest.fixture(scope="module")
+def docs():
+    return B.build(_world(), style_groups=(G,))
+
+
+def test_every_document_validates(docs):
+    B.validate(docs)
+
+
+def test_every_metric_cell_has_a_number_or_a_status_text(docs):
+    """Export-wide invariant (user, 2026-10-09): never neither."""
+    n = 0
+    for path, d in docs.items():
+        if not path.startswith("players/"):
+            continue
+        cells = list(d["metrics"]) + (d["second_group"]["metrics"] if d["second_group"] else [])
+        for c in cells:
+            for scope in ("local", "global"):
+                s = c[scope]
+                assert (s["pct_text"] is None) != (s["status_text"] is None), (path, s)
+                n += 1
+    assert n > 1000
+
+
+def test_the_zero_tie_says_so(docs):
+    d = docs["players/101-11-2-27.json"]
+    i = [s.column for s in R.SPECS].index("box_entries_carry_p90")
+    c = d["second_group"]["metrics"][i]
+    assert c["zero_tie"] and c["local"]["pct_text"] is None
+    assert c["local"]["status_text"] == "tied at zero, not a rank"
+
+
+def test_search_index_profiles_and_display_names(docs):
+    e = {x["key"]: x for x in docs["search-index.json"]["entries"]}
+    assert e["100-10-2-27"]["display_name"] == "Nick" and e["100-10-2-27"]["profile"] == "dna"
+    assert e["400-13-2-27"]["profile"] == "gated" and e["500-13-2-27"]["profile"] == "below_gate"
+    assert "nick" in e["100-10-2-27"]["search_key"] and "player 100" in e["100-10-2-27"]["search_key"]
+
+
+def test_neighbours_style_map_and_mover(docs):
+    a = docs["players/200-10-2-27.json"]
+    keys = [n["key"] for n in a["neighbours"]["items"]]
+    assert len(keys) == 10 and "200-11-2-27" not in keys          # own rows left out
+    assert a["neighbours"]["n_candidates"] == 25                    # 24 + the partial row
+    sm = docs[f"style-maps/{G}.json"]
+    assert len(sm["points"]) == 26 and [p["key"] for p in sm["partial"]] == ["300-12-2-27"]
+    assert [m["stints"] for m in sm["movers"]] == [["200-10-2-27", "200-11-2-27"]]
+    assert sm["played_for"]["200-11-2-27"][0]["months"] == "Aug"
+    assert docs["players/400-13-2-27.json"]["dna"] is None
+    assert docs["players/400-13-2-27.json"]["identity"]["group_text"] == "goalkeepers"
+
+
+def test_signature_traits_and_withheld_texts(docs):
+    d = docs["players/100-10-2-27.json"]
+    assert [t["holder_text"] for t in d["signature_traits"]] and all(
+        t["holder_text"] in ("holder", "non-holder") for t in d["signature_traits"])
+    dims = {x["family"]: x for x in d["dna"]["dimensions"]}
+    assert dims["Passing"]["withheld_short"] == "rests on long pass completion alone"
+    assert dims["Defending"]["withheld_full"].endswith("; underpowered")
+    assert dims["Defending"]["defending_note"].startswith("Defending scores are withheld")
+
+
+def test_missing_percentile_rows_raise():
+    inp = _world()
+    inp = B.Inputs(inp.season, inp.pct.filter(pl.col("player_id") != 105), inp.dna, inp.dims,
+                   inp.positions, inp.match, inp.stamps)
+    with pytest.raises(B.ExportError, match="percentile rows missing"):
+        B.build(inp, keys=[_key(105, 11)], style_groups=())
+
+
+# ── write(): only managed files, only inside the export directory ──────────────────
+
+def test_write_removes_stale_managed_files_and_nothing_else(docs, tmp_path):
+    out = tmp_path / "export" / "v1"
+    outside = tmp_path / "export" / "keep.json"
+    (out / "players").mkdir(parents=True)
+    outside.write_text("{}")
+    stale = out / "players" / "999-1-2-27.json"
+    stale.write_text("{}")
+    note = out / "players" / "README.txt"                  # not a managed name
+    note.write_text("x")
+    other = out / "frontend-cache" / "a.json"              # not a managed directory
+    other.parent.mkdir()
+    other.write_text("{}")
+    sizes = B.write(docs, out, "fixture")
+    assert not stale.exists()
+    assert outside.read_text() == "{}" and note.read_text() == "x" and other.read_text() == "{}"
+    on_disk = {p.relative_to(out).as_posix() for p in B.managed_files(out)}
+    assert on_disk == set(sizes)
+
+
+def test_the_path_guard_refuses_a_file_outside(tmp_path):
+    out = tmp_path / "v1"
+    out.mkdir()
+    with pytest.raises(B.ExportError, match="outside the export directory"):
+        B._inside(out, out / ".." / "x.json")
+
+
+# ── Compare mode's gap order (ADR 005 §1 exception; option c) ──────────────────────
+
+def test_a_team_possession_or_long_pass_gap_is_out_of_the_top_6_but_in_the_full_table(docs):
+    metas = docs[f"groups/{G}.json"]["metrics"]
+    order = [m["metric"] for m in metas]
+    biased = next(m["metric"] for m in metas
+                  if not m["gap_eligible"] and m["metric"] != "long_pass_completion_pct"
+                  and m["registry_status"] != "signature")
+    a = [dict(c, local=dict(c["local"])) for c in docs["players/102-12-2-27.json"]["metrics"]]
+    b = [dict(c, local=dict(c["local"])) for c in docs["players/103-13-2-27.json"]["metrics"]]
+    for m, pa in (("long_pass_completion_pct", 1.0), (biased, 2.0)):
+        a[order.index(m)]["local"]["pct"] = pa
+        b[order.index(m)]["local"]["pct"] = 99.0          # the two largest gaps of the pair
+    top = X.gap_order(metas, a, b)
+    assert len(top) == 6
+    assert "long_pass_completion_pct" not in top and biased not in top
+    # The full table is every metric of the group in registry order, these two included,
+    # each with its own percentile text in the player file.
+    full = docs["players/103-13-2-27.json"]["metrics"]
+    for m in ("long_pass_completion_pct", biased):
+        assert m in order and full[order.index(m)]["local"]["pct_text"] is not None
+
+
+def test_gap_order_fixed_expectations():
+    metas = [{"metric": m, "order": i, "direction": d, "gap_eligible": e}
+             for i, (m, d, e) in enumerate([("a", "higher_better", True), ("b", "lower_better", True),
+                                            ("c", "style", True), ("lp", "higher_better", False),
+                                            ("d", "higher_better", True), ("e", "higher_better", True)])]
+    row = lambda *ps: [{"local": {"pct": p}} for p in ps]  # noqa: E731
+    a = row(50, 10, 40, 1, 50, None)
+    b = row(70, 30, 90, 99, 50, 90)
+    # gaps: a 20, b 20 (direction-adjusted: 90 vs 70), c 50, lp 98 (not eligible), d 0, e no pct
+    assert X.gap_order(metas, a, b) == ["c", "a", "b", "d"]
+
+
+def test_an_unscored_zero_keeps_its_status_text_not_the_tie():
+    """A below-gate row at 0 on a zero-heavy metric is not "tied at zero" (code-reviewer)."""
+    base = {"player_id": 1, "team_id": 2, "competition_id": 2, "season_id": 27,
+            "source": "statsbomb", "position_group": "CB", "registry_status": "display",
+            "basis": None}
+    rows = {"box_entries_carry_p90": {**base, "value": 0.0, "pct_local": None, "n_local": None,
+                                      "status_local": "below_gate", "pct_global": None,
+                                      "n_global": None, "status_global": "below_gate"}}
+    c = B.metric_row(rows, "box_entries_carry_p90")
+    assert c["zero_tie"] is False
+    assert c["local"]["status_text"] == "below the minutes gate" and c["local"]["pct_text"] is None

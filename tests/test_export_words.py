@@ -230,16 +230,18 @@ def test_long_pass_note_claims_hold_in_the_registry():
     assert "inconclusive, underpowered" in W.LONG_PASS_NOTE.full
 
 
-def test_spike_tag_words_equal_the_words_table():
+def test_spike_tag_words_equal_the_words_table(monkeypatch):
+    import importlib
     import sys
     from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "spikes"))
-    import m4g_compare as cmpm
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "spikes"))
+    cmpm = sys.modules.get("m4g_compare") or importlib.import_module("m4g_compare")
     assert cmpm.TAG_WORDS == W.TAG_REASON
 
 
-def test_table_grey_rule_matches_the_axis_rule():
-    assert W.GREY_RULE_TABLE == W.GREY_RULE.replace("axes", "metrics").replace("style metrics", "style metrics")
+def test_table_grey_rule_is_the_approved_wording():
+    assert W.GREY_RULE_TABLE == ("style metrics, long pass completion, and metrics associated with "
+                                 "team possession at or above the possession-check level are grey")
 
 
 # ── Pre-registered (plan 006 W0, user condition 11): the near-gate chip ─────────────────

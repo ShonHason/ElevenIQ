@@ -221,6 +221,10 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # (--player is a player_id, player_id@team_id, or a name fragment)
 .venv/bin/python tools/compare_page.py --season-id 27 --player 3244 --player "Wes Morgan"
 
+# Web export (plan 006 W1, ADR 005): parquets + registry → export/v1/*.json (git-ignored),
+# validated against contract/v1/*.schema.json, byte-identical on re-run
+.venv/bin/python -m eleveniq.export.build_export --out export/v1
+
 # Rewrite the M4e golden page (prints a diff summary; call the change out in the commit)
 .venv/bin/python -m pytest tests/test_compare_page_integration.py -q -m integration --update-golden
 

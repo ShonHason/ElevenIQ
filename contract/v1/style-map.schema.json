@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eleveniq.local/contract/v1/style-map.schema.json",
+  "title": "style-maps/<group>.json",
+  "description": "One group's style map (plan 005 M4g1). x / y are PC scores (the site scales them to the screen, nothing else); every word is final.",
+  "type": "object", "additionalProperties": false,
+  "required": ["stamps", "group", "group_text", "caption", "axes", "variance_text", "points", "partial", "played_for", "movers", "texts"],
+  "properties": {
+    "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
+    "group": {"$ref": "common.schema.json#/$defs/group"}, "group_text": {"type": "string"},
+    "caption": {"type": "string"}, "variance_text": {"type": "string"},
+    "axes": {"type": "array", "minItems": 2, "maxItems": 2, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name_positive", "name_negative", "title", "note", "variance_share", "variance_text", "positive_end", "negative_end"],
+      "properties": {"name_positive": {"type": ["string", "null"]}, "name_negative": {"type": ["string", "null"]},
+                     "title": {"type": "string"}, "note": {"type": ["string", "null"]},
+                     "variance_share": {"type": "number"}, "variance_text": {"type": "string"},
+                     "positive_end": {"type": "array", "items": {"type": "string"}},
+                     "negative_end": {"type": "array", "items": {"type": "string"}}}}},
+    "points": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "display_name", "team", "league", "minutes_text", "x", "y", "role", "role_text", "lean", "pushes"],
+      "properties": {
+        "key": {"$ref": "common.schema.json#/$defs/rowKey"},
+        "display_name": {"type": "string"}, "team": {"type": "string"}, "league": {"type": "string"},
+        "minutes_text": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"},
+        "role": {"type": "string"}, "role_text": {"type": "string"},
+        "lean": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string"}},
+        "pushes": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "array", "maxItems": 3, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["metric", "label", "adjective", "phrase", "toward", "push"],
+          "properties": {"metric": {"type": "string"}, "label": {"type": "string"}, "adjective": {"type": "string"},
+                         "phrase": {"type": "string"}, "toward": {"type": "string"}, "push": {"type": "number"}}}}}}}},
+    "partial": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["key", "display_name", "team"],
+      "properties": {"key": {"$ref": "common.schema.json#/$defs/rowKey"}, "display_name": {"type": "string"}, "team": {"type": "string"}}}},
+    "played_for": {"type": "object", "propertyNames": {"$ref": "common.schema.json#/$defs/rowKey"},
+      "additionalProperties": {"type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["key", "team", "league", "minutes_text", "months", "position_text", "note", "note_group", "plotted"],
+        "properties": {"key": {"$ref": "common.schema.json#/$defs/rowKey"}, "team": {"type": "string"},
+                       "league": {"type": "string"}, "minutes_text": {"type": "string"}, "months": {"type": "string"},
+                       "position_text": {"type": "string"}, "note": {"type": ["string", "null"]},
+                       "note_group": {"type": ["string", "null"]}, "plotted": {"type": "boolean"}}}}},
+    "movers": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["player_id", "display_name", "label", "stints", "weights", "weights_text", "x", "y", "lean", "pairs"],
+      "properties": {
+        "player_id": {"type": "integer"}, "display_name": {"type": "string"}, "label": {"type": "string"},
+        "stints": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"$ref": "common.schema.json#/$defs/rowKey"}},
+        "weights": {"type": "array", "items": {"type": "number"}}, "weights_text": {"type": "array", "items": {"type": "string"}},
+        "x": {"type": "number"}, "y": {"type": "number"},
+        "lean": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string"}},
+        "pairs": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["distance", "distance_text", "rank_ab", "n_a", "rank_ba", "n_b", "changed"],
+          "properties": {"distance": {"type": "number"}, "distance_text": {"type": "string", "pattern": "^0\\.[0-9]{4}$"},
+                         "rank_ab": {"type": "integer"}, "n_a": {"type": "integer"},
+                         "rank_ba": {"type": "integer"}, "n_b": {"type": "integer"},
+                         "changed": {"type": "array", "items": {
+                           "type": "object", "additionalProperties": false, "required": ["metric", "label"],
+                           "properties": {"metric": {"type": "string"}, "label": {"type": "string"}}}}}}}}}},
+    "texts": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

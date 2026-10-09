@@ -17,6 +17,9 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-cov",
+    # Web contract validation (ADR 005 §2): the exporter validates every file against
+    # contract/v1/*.schema.json; tests validate the fixture and a full export.
+    "jsonschema>=4.18",
 ]
 
 [tool.setuptools.packages.find]

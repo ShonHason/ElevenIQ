@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eleveniq.local/contract/v1/labels.schema.json",
+  "title": "labels.json",
+  "description": "Group, family and status texts, the registry reason and note texts and the shared words. An unknown status or code has no entry: the exporter fails rather than ship it.",
+  "type": "object", "additionalProperties": false,
+  "required": ["stamps", "groups", "families", "statuses", "dimension_statuses", "reasons", "notes", "words", "metric_order"],
+  "properties": {
+    "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
+    "groups": {"type": "object", "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["plural", "one", "abbr_plural"],
+      "properties": {"plural": {"type": "string"}, "one": {"type": "string"}, "abbr_plural": {"type": "string"}}}},
+    "families": {"type": "object", "additionalProperties": {"type": "string"}},
+    "statuses": {"type": "object", "additionalProperties": {"type": "string"}},
+    "dimension_statuses": {"type": "object", "additionalProperties": {"$ref": "common.schema.json#/$defs/noteText"}},
+    "reasons": {"type": "object", "additionalProperties": {"type": "string"}},
+    "notes": {"type": "object", "additionalProperties": {"$ref": "common.schema.json#/$defs/noteText"}},
+    "words": {"type": "object", "additionalProperties": {"type": "string"}},
+    "metric_order": {"type": "array", "items": {"type": "string"}, "description": "Registry metric order: the order of every metrics array and the compare gap tie-break."}
+  }
+}

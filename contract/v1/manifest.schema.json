@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eleveniq.local/contract/v1/manifest.schema.json",
+  "title": "manifest.json",
+  "description": "Stamps, the exporter's git commit and every file with its sha256 (ADR 005 §2). Production validates this file only.",
+  "type": "object", "additionalProperties": false,
+  "required": ["stamps", "exporter_commit", "attribution", "files"],
+  "properties": {
+    "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
+    "exporter_commit": {"type": "string", "description": "git rev-parse HEAD, \"-dirty\" when tracked files differ; \"fixture\" for the committed fixture."},
+    "attribution": {"type": "string"},
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["path", "sha256", "bytes"],
+        "properties": {"path": {"type": "string"}, "sha256": {"$ref": "common.schema.json#/$defs/sha256"},
+                       "bytes": {"type": "integer", "minimum": 1}}
+      }
+    }
+  }
+}

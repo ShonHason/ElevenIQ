@@ -43,3 +43,20 @@ def test_withheld_reason_adds_underpowered_for_dm_cm_defending():
         "player-vs-team test on club movers inconclusive; underpowered")
     with pytest.raises(X.DisplayError, match="rebuild"):
         X.withheld_reason("Defending", "CB", "mover_stability_inconclusive")
+
+
+def test_gap_eligibility_option_c():
+    """Out: signature traits, team-possession-associated cells, long pass completion; style in."""
+    from eleveniq.analytics.registry import REGISTRY
+    style = next(s for s in S.values() if s.direction == "style")
+    assert X.gap_eligible(style, "dna", False)
+    assert X.gap_eligible(S["progressive_passes_p90"], "dna", False)
+    assert not X.gap_eligible(S["progressive_passes_p90"], "dna", True)
+    assert not X.gap_eligible(S["long_pass_completion_pct"], "display", False)
+    assert not X.gap_eligible(S["progressive_passes_p90"], "signature", False)
+    # the 9 cells with the team-possession note are out
+    noted = [(m, g) for (m, g), c in REGISTRY.cells.items() if "team-style influenced" in c.notes]
+    assert len(noted) == 9
+    for m, g in noted:
+        c = REGISTRY.cell(m, g)
+        assert not X.gap_eligible(S[m], c.status, c.team_style_biased)

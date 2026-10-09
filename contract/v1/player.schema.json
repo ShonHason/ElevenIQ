@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eleveniq.local/contract/v1/player.schema.json",
+  "title": "players/<key>.json",
+  "description": "One season row. metrics are in registry metric order; their shared facts are in groups/<identity.group>.json.",
+  "type": "object", "additionalProperties": false,
+  "required": ["stamps", "identity", "metrics", "second_group", "signature_traits", "dna", "neighbours", "style_map"],
+  "$defs": {
+    "phrasePair": {
+      "type": "object", "additionalProperties": false, "required": ["metric", "label", "a_phrase", "b_phrase"],
+      "properties": {"metric": {"type": "string"}, "label": {"type": "string"},
+                     "a_phrase": {"type": "string"}, "b_phrase": {"type": "string"}}
+    }
+  },
+  "properties": {
+    "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "player_id", "team_id", "competition_id", "season_id", "name", "nickname", "display_name",
+                   "team", "league", "group", "group_text", "second_group", "minutes", "minutes_text",
+                   "nominal_minutes", "meets_gate", "near_gate", "role_text", "dmcm_slot"],
+      "properties": {
+        "key": {"$ref": "common.schema.json#/$defs/rowKey"},
+        "player_id": {"type": "integer"}, "team_id": {"type": "integer"},
+        "competition_id": {"type": "integer"}, "season_id": {"type": "integer"},
+        "name": {"type": "string"}, "nickname": {"type": ["string", "null"]},
+        "display_name": {"type": "string", "description": "The nickname when present, else the name. Never a key."},
+        "team": {"type": "string"}, "league": {"type": "string"},
+        "group": {"$ref": "common.schema.json#/$defs/anyGroup"}, "group_text": {"type": "string"},
+        "second_group": {"type": ["string", "null"]},
+        "minutes": {"type": "number", "minimum": 0}, "minutes_text": {"type": "string"},
+        "nominal_minutes": {"type": "number", "minimum": 0},
+        "meets_gate": {"type": "boolean"},
+        "near_gate": {"type": "boolean", "description": "\"Fewer minutes: less reliable\": only CB and FB-WB rows with 900 ≤ nominal minutes < 1,350 (ADR 004 §14 sign-off note 3)."},
+        "role_text": {"type": ["string", "null"]},
+        "dmcm_slot": {
+          "type": ["object", "null"], "additionalProperties": false,
+          "required": ["label", "label_text", "share6", "share6_text", "pivot", "pivot_text"],
+          "properties": {"label": {"enum": ["6", "8", "mixed"]}, "label_text": {"type": "string"},
+                         "share6": {"type": "number", "minimum": 0, "maximum": 1}, "share6_text": {"type": "string"},
+                         "pivot": {"enum": ["single", "double", "cm", "mixed"]}, "pivot_text": {"type": "string"}}
+        }
+      }
+    },
+    "metrics": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/metricRow"}},
+    "second_group": {
+      "description": "Display only (ADR 004 D5): scored against a population that does not contain the player.",
+      "oneOf": [{"type": "null"}, {
+        "type": "object", "additionalProperties": false, "required": ["group", "metrics"],
+        "properties": {"group": {"$ref": "common.schema.json#/$defs/group"},
+                       "metrics": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/metricRow"}}}}]
+    },
+    "signature_traits": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["metric", "label", "order", "holder", "holder_text", "season_count", "season_count_text", "minimum", "notes"],
+        "properties": {
+          "metric": {"type": "string"}, "label": {"type": "string"}, "order": {"type": "integer"},
+          "holder": {"type": ["boolean", "null"], "description": "null: not assessed (holder_text says why)."},
+          "holder_text": {"type": "string"},
+          "season_count": {"type": ["number", "null"]}, "season_count_text": {"type": "string"},
+          "minimum": {"type": "integer"},
+          "notes": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/noteText"}}
+        }
+      }
+    },
+    "dna": {
+      "oneOf": [{"type": "null"}, {
+        "type": "object", "additionalProperties": false, "required": ["status", "vector", "dimensions"],
+        "properties": {
+          "status": {"enum": ["complete", "partial", "dna_incomplete"]},
+          "vector": {"type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["metric", "label", "family", "direction", "pct", "status", "weight"],
+            "properties": {"metric": {"type": "string"}, "label": {"type": "string"}, "family": {"type": "string"},
+                           "direction": {"enum": ["higher_better", "lower_better", "style"]},
+                           "pct": {"type": ["number", "null"]}, "status": {"type": "string"},
+                           "weight": {"type": ["number", "null"]}}}},
+          "dimensions": {"type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["family", "label", "score", "score_text", "members", "status", "withheld_short", "withheld_full", "defending_note"],
+            "properties": {"family": {"type": "string"}, "label": {"type": "string"},
+                           "score": {"type": ["number", "null"]}, "score_text": {"type": ["string", "null"]},
+                           "members": {"type": "array", "items": {"type": "string"}},
+                           "status": {"type": "string"},
+                           "withheld_short": {"type": ["string", "null"]}, "withheld_full": {"type": ["string", "null"]},
+                           "defending_note": {"type": ["string", "null"]}}}}
+        }}]
+    },
+    "neighbours": {
+      "oneOf": [{"type": "null"}, {
+        "type": "object", "additionalProperties": false, "required": ["label", "n_candidates", "items"],
+        "properties": {
+          "label": {"type": "string"}, "n_candidates": {"type": "integer", "minimum": 0},
+          "items": {"type": "array", "maxItems": 10, "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["key", "display_name", "team", "league", "distance", "distance_text", "rank", "same_team", "most_different", "most_alike"],
+            "properties": {
+              "key": {"$ref": "common.schema.json#/$defs/rowKey"},
+              "display_name": {"type": "string"}, "team": {"type": "string"}, "league": {"type": "string"},
+              "distance": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+              "distance_text": {"type": "string", "pattern": "^0\\.[0-9]{4}$"},
+              "rank": {"type": "integer", "minimum": 1}, "same_team": {"type": "boolean"},
+              "most_different": {"type": "array", "items": {"$ref": "#/$defs/phrasePair"}},
+              "most_alike": {"type": "array", "items": {"$ref": "#/$defs/phrasePair"}}}}}
+        }}]
+    },
+    "style_map": {"type": ["string", "null"], "description": "The style-map file this row is plotted on, if any."}
+  }
+}

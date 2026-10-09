@@ -15,3 +15,6 @@ venv/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
 node_modules/
+
+# Web export output (plan 006 W1; derived data, like data/)
+/export/

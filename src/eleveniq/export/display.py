@@ -19,6 +19,7 @@ name statuses; they compute no statistic.
 from __future__ import annotations
 
 import math
+import unicodedata
 from typing import Any
 
 from eleveniq.analytics import registry as R
@@ -70,6 +71,7 @@ STATUS_TEXT: dict[str, str] = {
 
 
 def format_pct(p: float) -> str:
+    """A stored percentile as text: ">99" for 100, "<1" for 0, else half-up in 1–99."""
     if p == 0:
         return "<1"
     if p == 100:
@@ -80,6 +82,7 @@ def format_pct(p: float) -> str:
 
 
 def format_value(metric: str, v: float | None) -> str:
+    """A metric value as text: percent (1 dp) for shares and _pct, 3 dp for ratios, else 2 dp."""
     if v is None:
         return "—"
     spec = SPECS_BY_COLUMN[metric]
@@ -135,6 +138,16 @@ def uncoloured(spec: MetricSpec, team_style_biased: bool) -> bool:
             or team_style_biased)
 
 
+def gap_eligible(spec: MetricSpec, registry_status: str | None, team_style_biased: bool) -> bool:
+    """May this metric headline compare mode's top-6 gap list (user, 2026-10-09, option c)?
+    Not a signature trait, not associated with team possession (team_style_biased), not long
+    pass completion: those would headline team differences as player differences. Style
+    metrics stay eligible. A missing percentile is checked per row by the caller."""
+    if registry_status == "signature":
+        return False
+    return not (spec.column == "long_pass_completion_pct" or team_style_biased)
+
+
 def adjusted(spec: MetricSpec, p: float) -> float:
     """The direction-adjusted percentile: lower-better as 100 − p (style metrics unchanged)."""
     return 100.0 - p if spec.direction == "lower_better" else p
@@ -162,3 +175,27 @@ def near_gate(group: str, nominal_minutes: float) -> bool:
     """The "Fewer minutes: less reliable" flag: only CB and FB-WB, gate ≤ nominal < 1,350."""
     return (group in NEAR_GATE_GROUPS
             and MIN_MINUTES_THRESHOLD - MIN_MINUTES_TOLERANCE <= nominal_minutes < NEAR_GATE_MAX_MINUTES)
+
+
+def fold(text: str) -> str:
+    """Accent-folded, case-folded text for search (Kanté → kante, Alarcón → alarcon)."""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text)
+                   if not unicodedata.combining(ch)).casefold().strip()
+
+
+def gap_order(metas: list[dict], a: list[dict], b: list[dict], n: int = 6) -> list[str]:
+    """Compare mode's top-n gap list, the Python reference of the browser's ordering (ADR 005
+    §1 exception; user, 2026-10-09, option c): the metrics whose group metadata is
+    gap_eligible and whose local percentile both rows show, by the absolute gap of their
+    direction-adjusted local percentiles (largest first), ties by registry metric order.
+    `metas` is groups/<group>.json's metrics; `a` and `b` the two player files' metrics (same
+    order)."""
+    rows = []
+    for meta, ra, rb in zip(metas, a, b, strict=True):
+        pa, pb = ra["local"]["pct"], rb["local"]["pct"]
+        if not meta["gap_eligible"] or pa is None or pb is None:
+            continue
+        sa = 100.0 - pa if meta["direction"] == "lower_better" else pa
+        sb = 100.0 - pb if meta["direction"] == "lower_better" else pb
+        rows.append((-abs(sa - sb), meta["order"], meta["metric"]))
+    return [m for _, _, m in sorted(rows)[:n]]

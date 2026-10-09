@@ -117,6 +117,23 @@ def in_sentence(label: str) -> str:
 GROUP_PLURAL = {"CB": "centre-backs", "FB-WB": "full-backs and wing-backs",
                 "DM-CM": "central midfielders", "AM-Winger": "attacking midfielders and wingers",
                 "ST": "strikers"}
+# Every group's plural, the goalkeepers included (identity text of any row).
+GROUP_TEXT = {**GROUP_PLURAL, "GK": "goalkeepers"}
+FAMILY_LABELS = {"Progression": "Progressive passing", "Carrying": "Carrying & dribbling"}
+ZERO_TIE = "tied at zero, not a rank"
+NEAR_GATE_CHIP = "Fewer minutes: less reliable"
+HOLDER, NON_HOLDER = "holder", "non-holder"
+NOT_ASSESSED = "not assessed: {reason}"
+NEIGHBOURS_LABEL = ("Statistically similar: DNA distance within position group (provisional "
+                    "until the M5 similarity engine)")
+ATTRIBUTION = "Data: StatsBomb Open Data"
+PORTFOLIO = "A non-commercial portfolio project."
+
+
+def family_label(family: str) -> str:
+    return FAMILY_LABELS.get(family, family)
+
+
 GROUP_ONE = {"CB": "centre-back", "FB-WB": "full-back or wing-back",
              "DM-CM": "central midfielder", "AM-Winger": "attacking midfielder or winger",
              "ST": "striker"}
@@ -143,7 +160,6 @@ def metric_label(column: str, group: str | None = None) -> str:
     if column in METRIC_LABELS:
         return METRIC_LABELS[column]
     return _SPEC_BY_COLUMN[column].display_name
-
 
 
 # ── Roles (user, 2026-10-07; analytics/roles.py) ───────────────────────────────────────

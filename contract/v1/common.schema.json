@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eleveniq.local/contract/v1/common.schema.json",
+  "title": "ElevenIQ contract v1: shared definitions",
+  "description": "Shared parts of contract 1.0.0 (ADR 005 §2). Every number is computed in Python and ships with its display text; the site never computes a statistic. Floats are rounded to 6 decimals. Text fields come from the words table (export/words.py, registry.REASON_TEXT / NOTE_TEXT).",
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "rowKey": {
+      "type": "string", "pattern": "^[0-9]+-[0-9]+-[0-9]+-[0-9]+$",
+      "description": "<player_id>-<team_id>-<competition_id>-<season_id>: ids only, never a name (plan 006 decision 9)."
+    },
+    "group": {"enum": ["CB", "FB-WB", "DM-CM", "AM-Winger", "ST"]},
+    "anyGroup": {"enum": ["CB", "FB-WB", "DM-CM", "AM-Winger", "ST", "GK"]},
+    "stamps": {
+      "type": "object", "additionalProperties": false,
+      "description": "The provenance of the export, repeated in every file. No wall-clock time: two exports of the same data are byte-identical.",
+      "required": ["contract_version", "registry_version", "measurement_source", "source", "season_ids",
+                   "season_parquet_sha256", "percentiles_parquet_sha256", "dna_parquet_sha256",
+                   "positions_parquet_sha256", "match_parquet_sha256"],
+      "properties": {
+        "contract_version": {"const": "1.0.0"},
+        "registry_version": {"$ref": "#/$defs/sha256"},
+        "measurement_source": {"const": "statsbomb"},
+        "source": {"const": "statsbomb"},
+        "season_ids": {"type": "array", "items": {"type": "integer"}, "minItems": 1},
+        "season_parquet_sha256": {"$ref": "#/$defs/sha256"},
+        "percentiles_parquet_sha256": {"$ref": "#/$defs/sha256"},
+        "dna_parquet_sha256": {"$ref": "#/$defs/sha256"},
+        "positions_parquet_sha256": {"$ref": "#/$defs/sha256"},
+        "match_parquet_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "noteText": {
+      "type": "object", "additionalProperties": false, "required": ["short", "full"],
+      "description": "short: for a table cell; full: for its popover (DESIGN decision 7).",
+      "properties": {"short": {"type": "string", "minLength": 1}, "full": {"type": "string", "minLength": 1}}
+    },
+    "nullableText": {"type": ["string", "null"]},
+    "bin": {
+      "description": "DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); \"uncoloured\" for style metrics, long pass completion and cells associated with team possession; null without a percentile.",
+      "oneOf": [{"type": "integer", "minimum": 0, "maximum": 4}, {"const": "uncoloured"}, {"type": "null"}]
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pct", "pct_text", "phrase", "bin", "n", "population_text", "status", "status_text"],
+      "description": "One percentile scope (local: league × group; global: group across the pool leagues). pct is the stored Hazen percentile (0–100); pct_text is \">99\" / \"<1\" for rows outside their population, else half-up 1–99; a null pct shows status_text instead.",
+      "properties": {
+        "pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "pct_text": {"type": ["string", "null"]},
+        "phrase": {"type": ["string", "null"], "description": "words.pct_words: \"top 5%\", \"around average\", \"bottom 12%\"."},
+        "bin": {"$ref": "#/$defs/bin"},
+        "n": {"type": ["integer", "null"], "minimum": 0},
+        "population_text": {"type": ["string", "null"], "description": "\"n 64 of 157 STs with ≥ 43 long passes\" for a ratio, else \"n 157\"."},
+        "status": {"type": "string"},
+        "status_text": {"type": ["string", "null"]}
+      }
+    },
+    "metricRow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "value_text", "local", "global", "basis", "zero_tie"],
+      "description": "The row facts of one metric; its shared facts are in groups/<group>.json at the same index (registry metric order).",
+      "properties": {
+        "value": {"type": ["number", "null"]},
+        "value_text": {"type": "string", "description": "Percent with 1 decimal for shares and _pct metrics, 3 decimals for ratios, else 2; \"—\" when null."},
+        "local": {"$ref": "#/$defs/scope"},
+        "global": {"$ref": "#/$defs/scope"},
+        "basis": {"enum": ["local", "global", null]},
+        "zero_tie": {"type": "boolean", "description": "A zero in a zero-heavy cell: \"tied at zero, not a rank\" instead of a percentile."}
+      }
+    }
+  }
+}

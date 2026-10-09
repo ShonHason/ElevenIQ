@@ -46,7 +46,7 @@ data/processed/*.parquet ──► src/eleveniq/export/ ──► export/<contra
   - **One exception (user, 2026-10-09; plan 006 W1):** compare mode may order metrics for display.
     - The browser subtracts the two players' exported direction-adjusted league (local) percentiles and sorts by the absolute gap.
     - Ties break by registry metric order, which is exported.
-    - Withheld metrics are excluded.
+    - Excluded (user, 2026-10-09, option c): metrics without a percentile, signature traits, metrics associated with team possession (`team_style_biased`) and long pass completion. Style metrics stay in. The exporter flags each metric `gap_eligible`.
     - It is used for display order only; nothing is shown from the subtraction.
     - A test compares the browser's order with Python's on the fixture.
 - **Static JSON now, an API later (M7).** The frontend reads data through one module (`frontend/src/data/`). It exposes typed functions such as `getPlayer(key)`, `getNeighbours(key)` and `getStyleMap(group)`.
@@ -72,16 +72,17 @@ data/processed/*.parquet ──► src/eleveniq/export/ ──► export/<contra
   - the exporter's git commit;
   - a sha256 per file.
   - There is no wall-clock timestamp, so two exports of the same data are byte-identical. Floats are rounded at a fixed precision, as the measurements file does.
-- **Files (sizes are estimates for 2015/16; sharded so a page loads only what it shows):**
+- **Files (sharded so a page loads only what it shows; W1c measured 2015/16: 2,642 files, 77 MB raw in all, every file validated and byte-identical on re-run):**
 
 | File | Content | Approx. size |
 |---|---|---|
 | `manifest.json` | stamps, file list with sha256, group and league labels, attribution text | < 10 KB |
 | `search-index.json` | one entry per season row: key, display name, accent-folded search key (Kanté → kante), team, league, group, minutes, row status | ~250 KB |
-| `players/<key>.json` | identity and context; every registry metric with value, local and global percentile, n, status, basis, registry status and notes; signature traits; the DNA vector; dimension scores with member counts and withheld status; the display strings; neighbours (below) | ~6 KB each, ~2,600 files |
+| `groups/<group>.json` (W1c) | what every row of a group shares per metric, in registry order: label, family, direction, registry status, notes (short / full), reasons, colour and gap rules, withheld-family tag; the Defending note | ≈ 20 KB each, 6 files (5 groups + GK) |
+| `players/<key>.json` | identity and context (display name, near-gate flag, fine role); each registry metric's row facts (value and text, local / global percentile with text, phrase, colour bin, n and population sentence, status); the second group's display-only rows; signature traits; the DNA vector; dimension scores with members and withheld texts; neighbours (below) | **W1c measured: mean 28 KB raw (≈ 2.9 KB gzip), largest 56 KB; 2,628 files** |
 | `neighbours` (inside the player file) | top 10 in-group: key, name, team, league, distance (4 dp), rank, and the reasons (the 3 closest and 2 largest-gap metrics as worded phrases, from `pct_words`) | in the player file |
-| `compare/<group>.json` | all in-group pairs, as in M4g1b: distance codes, ranks both ways, the 8 picked metrics, a phrase table with an index per cell, withheld-family tags | 0.4–1.1 MB per group, loaded on demand |
-| `style-maps/<group>.json` | per point: PC1 and PC2 coordinates, fine role, top-3 pushes per axis with worded phrases; the axis names, pins, legend notes, variance shares, quoted loadings, the explainer text | 0.3–0.6 MB per group |
+| ~~`compare/<group>.json`~~ | **Dropped (user, 2026-10-09):** compare mode has no distance and no pair data; it reads the two player files | — |
+| `style-maps/<group>.json` | per point: PC1 and PC2 coordinates, fine role, lean, top-3 pushes per axis with worded phrases; partial rows; "Played for" and the movers; the axis names, pins, legend notes, variance shares, quoted loadings, the explainer text | **W1c measured: 0.19–0.35 MB per group** |
 | `labels.json` | metric display names (including per-group wording such as ST "Dribbled past while pressing"), the registry reason codes as human text (plan 005 backlog, "M9: human-readable registry reason codes"), the status texts | < 30 KB |
 
 - **Traceability, the M4e / M4g contract carried into React:**
