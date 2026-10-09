@@ -4,7 +4,8 @@ build_player_match.py — aggregate StatsBomb events into one row per player per
 Design notes
 ------------
 - One minutes.player_timeline per player is the ONE source for minutes_played, the
-  group minutes and position_raw.  minutes_played = sum(minutes_per_group(...).values()).
+  group minutes, position_raw and position_minutes (minutes per StatsBomb position, plan 006
+  gate G3).  minutes_played = sum(minutes_per_group(...).values()).
   compute_player_minutes is NOT called separately; the two can never diverge.
 - outcome is passed explicitly to is_progressive_pass (required keyword arg).
 - Raw counts (numerators) and minutes (denominator) are preserved alongside each
@@ -26,6 +27,7 @@ Design notes
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from collections import Counter
 from pathlib import Path
@@ -279,11 +281,16 @@ _SCHEMA: dict[str, type] = {
     "competition_id": pl.Int64,
     "season_id": pl.Int64,
     "source": pl.Utf8,
+    # The match file's match_date (plan 006 gate G3): display only (the mover stints' months).
+    "match_date": pl.Date,
     "minutes_played": pl.Float64,
     "match_duration": pl.Float64,
     "match_nominal_duration": pl.Float64,
     "position_raw": pl.Utf8,
     "position_group": pl.Utf8,
+    # Minutes per StatsBomb position from the same §31 timeline as the group minutes (plan 006
+    # gate G3): positions with minutes > 0, sorted by name. Display only (fine roles).
+    "position_minutes": pl.List(pl.Struct({"position": pl.Utf8, "minutes": pl.Float64})),
     "goals": pl.Int32,
     "shots": pl.Int32,
     "shots_on_target": pl.Int32,
@@ -748,6 +755,12 @@ def _lineup_pass_team(e: dict, team_of: dict[int, int]) -> tuple[int | None, dic
     return lineup_team, None
 
 
+def position_minutes_list(raw_minutes: dict[str, float]) -> list[dict]:
+    """The position_minutes cell (plan 006 gate G3): {position, minutes} for each position
+    with minutes > 0, sorted by position name, so the column is deterministic."""
+    return [{"position": pos, "minutes": m} for pos, m in sorted(raw_minutes.items()) if m > 0]
+
+
 def lineup_nickname(player: dict, match_id: int) -> str | None:
     """The lineup row's player_nickname (plan 006 pre-W1 gate G1), display only. An empty or
     whitespace-only nickname is null, so the display falls back to the name. A row without the
@@ -1092,7 +1105,8 @@ def _process_match(
             position_group = primary_position_group(group_minutes)
             started = any(p.get("start_reason") == "Starting XI" for p in positions)
 
-            position_raw = _primary_raw_position(minutes_per_raw_position(timeline))
+            raw_minutes = minutes_per_raw_position(timeline)
+            position_raw = _primary_raw_position(raw_minutes)
 
             # Dismissal quality check: record every dismissed player and whether
             # the raw StatsBomb lineup data would have overcounted their minutes
@@ -1174,6 +1188,7 @@ def _process_match(
                     "match_nominal_duration": match_nominal_duration,
                     "position_raw": position_raw,
                     "position_group": position_group,
+                    "position_minutes": position_minutes_list(raw_minutes),
                     "started": started,
                     "started_inferred": False,
                     **_group_minutes_to_columns(group_minutes),
@@ -1719,6 +1734,10 @@ def build_competition_season(
             rows, match_report = _process_match(
                 match_id, competition_id, season_id, data_root=data_root
             )
+            # The match file's date (plan 006 gate G3); a missing date fails the match.
+            match_date = dt.date.fromisoformat(match["match_date"])
+            for row in rows:
+                row["match_date"] = match_date
             all_rows.extend(rows)
             quality_report.extend(match_report)
         except Exception:  # noqa: BLE001

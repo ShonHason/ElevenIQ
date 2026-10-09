@@ -14,6 +14,7 @@ import pytest
 
 from eleveniq.metrics.defensive_actions import DEFENSIVE_ACTIONS, team_column
 from eleveniq.config import COMPETITION_SEASONS, CompetitionSeason
+from eleveniq.metrics.positions import POSITION_GROUP_COLUMNS
 from eleveniq.pipeline.coverage import CoverageCheckError
 import eleveniq.pipeline.build_player_season as bps
 from eleveniq.pipeline.build_player_season import (
@@ -871,8 +872,23 @@ def _raw_fixture(tmp_path: Path) -> tuple[Path, tuple[CompetitionSeason, ...]]:
     return root, (CompetitionSeason(11, 27, "Fixture", 2, "PARTIAL", "statsbomb"),)
 
 
+# One StatsBomb position per group, so the I/O wrapper's position_minutes (plan 006 gate G3)
+# agree with the row's group minutes.
+_POSITION_OF_GROUP = {"GK": "Goalkeeper", "CB": "Center Back", "FB-WB": "Left Back",
+                      "DM-CM": "Center Midfield", "AM-Winger": "Left Wing",
+                      "ST": "Center Forward", "UNKNOWN": "Unmapped position"}
+
+
+def _with_position_minutes(row: dict) -> dict:
+    if "position_minutes" in row:
+        return row
+    cells = [{"position": _POSITION_OF_GROUP[g], "minutes": row[col]}
+             for g, col in POSITION_GROUP_COLUMNS.items() if row.get(col, 0.0) > 0]
+    return {**row, "position_minutes": sorted(cells, key=lambda c: c["position"])}
+
+
 def _write_input(path: Path, *rows: dict) -> None:
-    pl.DataFrame([{**r, "match_id": 1} for r in rows]).write_parquet(path)
+    pl.DataFrame([{**_with_position_minutes(r), "match_id": 1} for r in rows]).write_parquet(path)
 
 
 class TestBuildPlayerSeasonIOWrapper:
@@ -3129,3 +3145,83 @@ def test_player_nicknames_on_a_parquet_built_before_g1_asks_for_a_rebuild():
     df = pl.DataFrame([_match_row(player_id=1)]).drop("player_nickname")
     with pytest.raises(ValueError, match="rebuild it with build_player_match --force"):
         bps.player_nicknames(df)
+
+
+def _pm(player_id: int, match_id: int, cells: list[tuple[str, float]], **kw) -> dict:
+    groups: dict[str, float] = {}
+    for pos, m in cells:
+        col = POSITION_GROUP_COLUMNS[bps.assign_position_group(pos)]
+        groups[col] = groups.get(col, 0.0) + m
+    return {**_match_row(player_id=player_id, minutes_played=sum(m for _, m in cells),
+                         **{c: groups.get(c, 0.0) for c in POSITION_GROUP_COLUMNS.values()}, **kw),
+            "match_id": match_id,
+            "position_minutes": [{"position": p, "minutes": m} for p, m in sorted(cells)]}
+
+
+class TestSeasonPositions:
+    """Plan 006 gate G3: minutes per StatsBomb position per season row, summed over the match
+    rows; the build fails when they do not reconcile with the group minutes."""
+
+    def test_sums_per_position_over_matches(self):
+        df = pl.DataFrame([_pm(1, 1, [("Left Back", 60.0), ("Center Back", 30.0)]),
+                           _pm(1, 2, [("Left Back", 90.0)]),
+                           _pm(2, 1, [("Center Forward", 45.5)])])
+        got = bps.season_positions(df)
+        assert got.columns == ["player_id", "team_id", "competition_id", "season_id", "source",
+                               "position", "minutes"]
+        assert got.select("player_id", "position", "minutes").rows() == [
+            (1, "Center Back", 30.0), (1, "Left Back", 150.0), (2, "Center Forward", 45.5)]
+
+    def test_rows_of_different_teams_stay_separate(self):
+        df = pl.DataFrame([_pm(1, 1, [("Left Back", 90.0)], team_id=10),
+                           _pm(1, 2, [("Left Back", 90.0)], team_id=20)])
+        assert bps.season_positions(df).select("team_id", "minutes").rows() == [(10, 90.0), (20, 90.0)]
+
+    def test_missing_column_raises(self):
+        with pytest.raises(ValueError, match="build_player_match --force"):
+            bps.season_positions(pl.DataFrame([_match_row()]))
+
+    def test_check_passes_on_reconciled_rows(self):
+        df = pl.DataFrame([_pm(1, 1, [("Left Back", 60.0), ("Center Back", 30.0)])])
+        season = bps.aggregate_player_season(df, 900, COMPETITION_SEASONS)
+        bps.check_position_minutes(bps.season_positions(df), season)
+
+    def test_check_fails_when_group_minutes_differ(self):
+        df = pl.DataFrame([_pm(1, 1, [("Left Back", 60.0), ("Center Back", 30.0)])])
+        season = bps.aggregate_player_season(df, 900, COMPETITION_SEASONS)
+        season = season.with_columns(pl.col("minutes_cb") + 1e-6)
+        with pytest.raises(ValueError, match="minutes_cb"):
+            bps.check_position_minutes(bps.season_positions(df), season)
+
+    def test_check_fails_when_a_season_row_has_no_positions(self):
+        df = pl.DataFrame([_pm(1, 1, [("Left Back", 90.0)]), _pm(2, 1, [("Left Back", 90.0)])])
+        season = bps.aggregate_player_season(df, 900, COMPETITION_SEASONS)
+        positions = bps.season_positions(df).filter(pl.col("player_id") == 1)
+        with pytest.raises(ValueError, match="keys differ"):
+            bps.check_position_minutes(positions, season)
+
+    def test_io_wrapper_writes_positions_next_to_the_season_file(self, tmp_path):
+        input_path = tmp_path / "player_match_stats.parquet"
+        output_path = tmp_path / "out" / "player_season_stats.parquet"
+        _write_input(input_path, _match_row(player_id=99, minutes_played=90.0, minutes_dm_cm=90.0))
+        root, css = _raw_fixture(tmp_path)
+        build_player_season(input_path=input_path, output_path=output_path,
+                            competition_seasons=css, data_root=root)
+        pos = pl.read_parquet(tmp_path / "out" / "player_season_positions.parquet")
+        assert pos.select("player_id", "position", "minutes").rows() == [(99, "Center Midfield", 90.0)]
+
+
+class TestSeasonPositionsEdges:
+    """Plan 006 gate G3 edges: empty position_minutes cells and multi-team players."""
+
+    def test_empty_cells_contribute_nothing_and_do_not_break_other_rows(self):
+        empty = {**_match_row(player_id=1, minutes_played=0.0), "match_id": 1, "position_minutes": []}
+        df = pl.DataFrame([empty, _pm(1, 2, [("Left Back", 90.0)])])
+        got = bps.season_positions(df)
+        assert got.select("player_id", "position", "minutes").rows() == [(1, "Left Back", 90.0)]
+
+    def test_player_on_two_teams_reconciles_per_team_row(self):
+        df = pl.DataFrame([_pm(1, 1, [("Left Back", 90.0)], team_id=10),
+                           _pm(1, 2, [("Center Forward", 90.0)], team_id=20)])
+        season = bps.aggregate_player_season(df, 900, COMPETITION_SEASONS)
+        bps.check_position_minutes(bps.season_positions(df), season)

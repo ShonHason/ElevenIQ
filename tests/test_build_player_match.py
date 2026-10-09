@@ -16,6 +16,8 @@ Uses a minimal fixture in tests/fixtures/statsbomb/ that covers:
 """
 from __future__ import annotations
 
+import datetime as dt
+import json
 from pathlib import Path
 
 import polars as pl
@@ -657,7 +659,8 @@ def test_build_competition_season_failed_match_fails_league(tmp_path, monkeypatc
         return original_process(match_id, competition_id, season_id, data_root=data_root)
 
     def _patched_load_matches(competition_id, season_id, data_root=None):
-        return [{"match_id": 9998}, {"match_id": 9999}]
+        return [{"match_id": 9998, "match_date": "2015-08-22"},
+                {"match_id": 9999, "match_date": "2015-08-29"}]
 
     monkeypatch.setattr(_bpm, "_process_match", _patched_process)
     monkeypatch.setattr(_bpm, "load_matches", _patched_load_matches)
@@ -745,7 +748,7 @@ def _write_match(root: Path, match_id: int, events: list[dict], lineups: list[di
         (root / sub).mkdir(parents=True, exist_ok=True)
         (root / sub / f"{match_id}.json").write_text(json.dumps(payload))
     (root / "matches" / "99").mkdir(parents=True, exist_ok=True)
-    (root / "matches" / "99" / "1.json").write_text(json.dumps([{"match_id": match_id}]))
+    (root / "matches" / "99" / "1.json").write_text(json.dumps([{"match_id": match_id, "match_date": "2015-08-22"}]))
 
 
 def _xi_event(team_id: int, player_ids: list[int]) -> dict:
@@ -3469,3 +3472,64 @@ class TestLineupNickname:
     @pytest.mark.parametrize("raw, want", [("Isco", "Isco"), (None, None), ("", None), ("   ", None)])
     def test_values(self, raw, want):
         assert _bpm.lineup_nickname({"player_id": 7, "player_nickname": raw}, 1) == want
+
+
+class TestG3MatchDateAndPositionMinutes:
+    """Plan 006 gate G3: every player-match row carries the match file's match_date and its
+    minutes per StatsBomb position (> 0, sorted by name), from the same timeline as the group
+    minutes."""
+
+    def test_match_date_and_position_minutes_are_carried(self, tmp_path):
+        lineups = _team_lineups(_full_match_players(11))
+        xi = _xi_event(_TEAM, [_TEAM_BASE + i for i in range(11)])
+        events = [xi]
+        _write_match(tmp_path, 8100, [*events, *_default_half_end(events)], lineups)
+        df, _ = build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+        assert df.schema["match_date"] == pl.Date
+        assert set(df["match_date"].to_list()) == {dt.date(2015, 8, 22)}
+        for r in df.iter_rows(named=True):
+            cells = r["position_minutes"]
+            assert [c["position"] for c in cells] == sorted(c["position"] for c in cells)
+            assert all(c["minutes"] > 0 for c in cells)
+            assert sum(c["minutes"] for c in cells) == pytest.approx(r["minutes_played"], abs=1e-9)
+
+    def test_position_minutes_list_drops_zero_and_sorts(self):
+        got = _bpm.position_minutes_list({"Right Back": 30.0, "Center Back": 60.0, "Left Back": 0.0})
+        assert got == [{"position": "Center Back", "minutes": 60.0},
+                       {"position": "Right Back", "minutes": 30.0}]
+
+    def test_a_match_without_a_date_fails_the_match(self, tmp_path):
+        lineups = _team_lineups(_full_match_players(11))
+        xi = _xi_event(_TEAM, [_TEAM_BASE + i for i in range(11)])
+        _write_match(tmp_path, 8100, [xi, *_default_half_end([xi])], lineups)
+        (tmp_path / "matches" / "99" / "1.json").write_text(json.dumps([{"match_id": 8100}]))
+        with pytest.raises(MatchProcessingError):
+            build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+
+
+class TestG3PositionMinutesReconcile:
+    """Plan 006 gate G3: with a mid-match position change and a late substitute, each row's
+    position_minutes still sum to minutes_played and map onto the group-minute columns."""
+
+    def test_position_change_and_substitute_reconcile_with_group_minutes(self, tmp_path):
+        from eleveniq.metrics.positions import POSITION_GROUP_COLUMNS, assign_position_group
+        lineups = _quality_lineups(
+            starter_positions=[
+                {**_spell("00:00", "60:00", "Starting XI"), "position": "Center Back"},
+                {**_spell("60:00", None, "Tactical Shift"), "position": "Left Back"}],
+            bench_positions=[{**_spell("60:00", None, "Substitution - On (Tactical)"),
+                              "position": "Center Forward"}])
+        _, (df, _) = _build(tmp_path, [], lineups)
+        for r in df.iter_rows(named=True):
+            cells = r["position_minutes"]
+            assert sum(c["minutes"] for c in cells) == pytest.approx(r["minutes_played"], abs=1e-9)
+            by_group: dict[str, float] = {}
+            for c in cells:
+                g = assign_position_group(c["position"])
+                by_group[g] = by_group.get(g, 0.0) + c["minutes"]
+            for g, col in POSITION_GROUP_COLUMNS.items():
+                assert by_group.get(g, 0.0) == pytest.approx(r[col], abs=1e-9)
+        starter = df.filter(pl.col("player_id") == _STARTER).row(0, named=True)
+        assert {c["position"] for c in starter["position_minutes"]} == {"Center Back", "Left Back"}
+        bench = df.filter(pl.col("player_id") == _BENCH).row(0, named=True)
+        assert [c["position"] for c in bench["position_minutes"]] == ["Center Forward"]

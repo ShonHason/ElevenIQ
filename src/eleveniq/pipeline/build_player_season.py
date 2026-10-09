@@ -8,7 +8,12 @@ aggregate_player_season(df, min_minutes, competition_seasons) -> pl.DataFrame
     Pure function: all aggregation logic.  No I/O.  Unit-testable directly.
 
 build_player_season(input_path, output_path, min_minutes) -> pl.DataFrame
-    Thin I/O wrapper: read parquet → aggregate → write parquet.
+    Thin I/O wrapper: read parquet → aggregate → write parquet. Also writes
+    player_season_positions.parquet (season_positions, plan 006 gate G3).
+
+season_positions(df) -> pl.DataFrame
+    Pure: minutes per StatsBomb position per season row, from the match rows'
+    position_minutes. check_position_minutes reconciles it with the group minutes.
 
 Design notes
 ------------
@@ -67,6 +72,7 @@ from eleveniq.metrics.positions import (
     OUTFIELD_GROUPS,
     POSITION_GROUP_COLUMNS,
     UNKNOWN_POSITION_GROUP,
+    assign_position_group,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +80,10 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INPUT_PATH = _PROJECT_ROOT / "data" / "interim" / "player_match_stats.parquet"
 OUTPUT_PATH = _PROJECT_ROOT / "data" / "processed" / "player_season_stats.parquet"
+POSITIONS_PATH = _PROJECT_ROOT / "data" / "processed" / "player_season_positions.parquet"
+# Position minutes vs the group minutes they map to (plan 006 gate G3): both are sums of the
+# same timeline pieces, so they differ only by summation order.
+POSITION_MINUTES_TOL = 1e-9
 
 _GROUP_KEY = [
     "player_id",
@@ -574,15 +584,69 @@ def aggregate_player_season(
     return season.sort(_GROUP_KEY)
 
 
+def season_positions(match_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Minutes per StatsBomb position per season row (plan 006 gate G3): one row per
+    (player_id, team_id, competition_id, season_id, source, position) with the summed
+    minutes of the match rows' position_minutes. Display input only (fine roles); no metric
+    reads it. Raises ValueError if the position_minutes column is missing (rebuild
+    player_match_stats with build_player_match --force).
+
+    Sorted by key, position; within a group the match rows are summed in match_id order, so
+    the frame is deterministic.
+    """
+    if "position_minutes" not in match_df.columns:
+        raise ValueError("player_match_stats has no position_minutes column; "
+                         "rebuild it with build_player_match --force")
+    return (
+        match_df.select(*_GROUP_KEY, "match_id", "position_minutes")
+        .sort([*_GROUP_KEY, "match_id"])
+        .explode("position_minutes", empty_as_null=True)
+        .drop_nulls("position_minutes")
+        .unnest("position_minutes")
+        .group_by([*_GROUP_KEY, "position"], maintain_order=True)
+        .agg(pl.col("minutes").sum())
+        .sort([*_GROUP_KEY, "position"])
+    )
+
+
+def check_position_minutes(positions: pl.DataFrame, season_df: pl.DataFrame,
+                           tol: float = POSITION_MINUTES_TOL) -> None:
+    """
+    Fail (ValueError) unless the position rows cover exactly the season rows and each
+    row's positions, mapped to their groups (metrics.positions.assign_position_group), equal
+    its minutes_<group> columns within tol.
+    """
+    groups = {p: assign_position_group(p) for p in positions["position"].unique().to_list()}
+    by_group = (
+        positions.with_columns(pl.col("position").replace_strict(groups).alias("_group"))
+        .group_by([*_GROUP_KEY, "_group"]).agg(pl.col("minutes").sum())
+        .pivot(on="_group", index=_GROUP_KEY, values="minutes")
+    )
+    keys = season_df.select(_GROUP_KEY)
+    if keys.join(by_group, on=_GROUP_KEY, how="anti").height or \
+            by_group.join(keys, on=_GROUP_KEY, how="anti").height:
+        raise ValueError("player_season_positions keys differ from the season rows")
+    joined = season_df.select(*_GROUP_KEY, *POSITION_GROUP_COLUMNS.values()).join(
+        by_group, on=_GROUP_KEY, how="left")
+    for group, col in POSITION_GROUP_COLUMNS.items():
+        got = joined[group].fill_null(0.0) if group in joined.columns else pl.Series([0.0] * joined.height)
+        diff = (got - joined[col]).abs()
+        if diff.max() > tol:
+            raise ValueError(f"position minutes differ from {col} by up to {diff.max():.3g}")
+
+
 def build_player_season(
     input_path: Path | None = None,
     output_path: Path | None = None,
     min_minutes: int = MIN_MINUTES_THRESHOLD,
     competition_seasons: tuple[CompetitionSeason, ...] = COMPETITION_SEASONS,
     data_root: Path | None = None,
+    positions_output_path: Path | None = None,
 ) -> pl.DataFrame:
     """
-    Read player_match_stats.parquet, aggregate to season level, write output.
+    Read player_match_stats.parquet, aggregate to season level, write output, and write
+    player_season_positions.parquet (season_positions; plan 006 gate G3).
 
     Fails before writing when the ADR 003 §5 coverage checks disagree with
     config, or when a team_id appears in more than one competition in a season.
@@ -620,8 +684,16 @@ def build_player_season(
             f"team_id(s) in more than one competition in a season: {shared_teams.rows()}"
         )
 
+    positions = season_positions(match_df)
+    check_position_minutes(positions, season_df)
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     season_df.write_parquet(out_path)
+    # Next to the season file unless given (the default run writes POSITIONS_PATH).
+    pos_path = positions_output_path or out_path.parent / POSITIONS_PATH.name
+    pos_path.parent.mkdir(parents=True, exist_ok=True)
+    positions.write_parquet(pos_path)
+    logger.info("Wrote %d position rows → %s", positions.height, pos_path)
     multi_team_rows = int(season_df["multi_team_season"].sum())
     multi_team_players = season_df.filter(pl.col("multi_team_season"))["player_id"].n_unique()
     multi_comp_players = season_df.filter(pl.col("multi_competition_season"))["player_id"].n_unique()
