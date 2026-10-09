@@ -1685,6 +1685,12 @@ The stats-reviewer signs it off; any failure goes back to its decision.
 - **M5: DM-CM 6-share context column** (user, 2026-10-07; plan 005 M4g1 outcome).
   - Show each DM-CM row's lineup-slot share (Defensive Midfield slots against Center Midfield slots) next to it as context, never as a cohort.
   - Today it is computed only in `spikes/m4g_style_map.py` from the raw lineups; the pipeline would need per-position minutes.
+- **For M6 (Gem / rarity engine): capture "hybrid" players with no single style** (user, 2026-10-09; docs only, nothing built). Candidate methods, to compare in M6:
+  1. **Isolation:** distance to the nearest neighbours in the full DNA vector (not the 2D map).
+  2. **Rare combination:** high (e.g. top 25%) in families that rarely co-occur, scored against the families' correlation, so a combination is rare only relative to how often those families go together.
+  3. **For the map (also plan 006 W5):** per-player 2D reconstruction error of the style-map projection; above a bar, flag "not well represented on this map — see full profile".
+  - **Rarity ≠ quality:** rarity is presented next to a profile, never used to rank players.
+  - **Methods and thresholds are pre-registered in M6**, before any rarity number is computed.
 - **For M5 (similarity) before Gem Finder (M6) uses z** (stats-reviewer, user 2026-10-06; ADR 004 §12.8): (C1) mixed-role rows dominate |z| > 5, so handle the main-group minute share first; (C2) z is heavy-tailed and not comparable across metrics, so M5 decides the cap (§12.6).
 - **Carry `player_nickname` through the pipeline** (user, 2026-10-06): bundle with the next pipeline chunk, at the latest before M9. It is only in the raw lineups; adding it changes the season parquet sha256, so it needs a `--write-json` re-run, a new `REGISTRY_VERSION`, a percentiles rebuild and the before/after check. The comparison page keeps `player_name` until then.
 - **M9: human-readable registry reason codes** (user, 2026-10-06): the comparison page shows rule codes as they are stored (`d17_dropped`, `d12b_not_preregistered`, `team_style_biased`, `unreliable`, `low_coverage`, `zero_heavy`, `no_signal`, `possession_untestable`, `allow_listed`); fixed-display cells already show their ADR reason text. The M9 frontend needs a fixed code → text table, with unknown codes raising.
