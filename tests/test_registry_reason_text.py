@@ -25,7 +25,8 @@ APPROVED = {
     "low_coverage": "too few players reach its attempt minimum",
     "no_signal": "differences between players could not be told apart from chance",
     "possession_untestable": "its link to team possession could not be tested",
-    "team_style_biased": "associated with team possession above the possession-check threshold",
+    # W1b: "at or above the possession-check level", one wording site-wide (user, 2026-10-09)
+    "team_style_biased": "associated with team possession at or above the possession-check level",
     "majority_triggered": "associated with team possession in most leagues",
     "allow_listed": "kept in the profile despite an association with team possession (recorded decision)",
     "d12b": "team pass share is judged by its own stricter possession check",

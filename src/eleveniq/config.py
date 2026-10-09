@@ -269,3 +269,17 @@ DNA_NEIGHBOURS_K: int = 10
 DNA_WITHHELD_DIMENSIONS: dict[str, tuple[str, tuple[str, ...]]] = {
     "Passing": ("pending_xpass_deferred", ("CB", "FB-WB", "DM-CM", "AM-Winger")),
 }
+
+# Web v1 (plan 006 W1; moved from the M4g spikes). Display only: no score, rank or population
+# reads these.
+# Fine roles (user, 2026-10-07; docs/reviews/m4g-fine-roles.md) and the DM-CM 6 / 8 / pivot
+# labels (ADR 004 §13.4): a role, slot or pivot holds a row when it has at least this share of
+# the row's (outfield / central-midfield) minutes.
+ROLE_SHARE: float = 0.7
+# Style maps (plan 005 M4g1, user 2026-10-07): an axis end is named by loadings of at least
+# this size (below 1/√k, an even spread over k = 16–24 DNA metrics; page text only), and a
+# player's lean is "near the middle" for |z| < LEAN_NEAR, "slight" below LEAN_STRONG, else
+# "strong" (z = PC score / SD of the plotted scores).
+STYLE_END_MIN_LOADING: float = 0.15
+LEAN_NEAR: float = 0.5
+LEAN_STRONG: float = 1.5

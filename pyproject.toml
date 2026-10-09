@@ -8,16 +8,15 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "polars>=1.0.0",
+    # Style-map PCA and the export (plan 006 W1, ADR 005 §1; ADR 004 §13.5 anticipated this).
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
-    # Spikes only for now (ADR 004 §13.5): style-map PCA (M4g1), seeded RNG. They become
-    # runtime dependencies when src/ first imports them (M4g5, the xPass stage).
-    "numpy>=1.26",
-    "scikit-learn>=1.4",
 ]
 
 [tool.setuptools.packages.find]

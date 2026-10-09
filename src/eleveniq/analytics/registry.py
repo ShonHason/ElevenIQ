@@ -99,7 +99,7 @@ REASON_TEXT: dict[str, str] = {
     R_LOW_COVERAGE: "too few players reach its attempt minimum",
     R_NO_SIGNAL: "differences between players could not be told apart from chance",
     R_UNTESTABLE: "its link to team possession could not be tested",
-    R_TEAM_STYLE: "associated with team possession above the possession-check threshold",
+    R_TEAM_STYLE: "associated with team possession at or above the possession-check level",
     R_MAJORITY: "associated with team possession in most leagues",
     R_ALLOW: "kept in the profile despite an association with team possession (recorded decision)",
     R_D12B: "team pass share is judged by its own stricter possession check",

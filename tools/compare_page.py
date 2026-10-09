@@ -104,12 +104,7 @@ DENOMINATOR_NOUN: dict[str, str] = {
 }
 # Restart deliveries include throw-ins (ADR 004 §10.6): no "set-piece" label until the
 # FB-WB throw-in share is measured (plan 005 backlog). Overrides the registry display name.
-_RESTARTS = "(corners, free kicks, throw-ins)"
-METRIC_LABELS: dict[str, str] = {
-    "restart_key_passes_p90": f"Restart key passes {_RESTARTS}",
-    "restart_xg_assisted_p90": f"Restart xG assisted {_RESTARTS}",
-    "restart_assists_p90": f"Restart assists {_RESTARTS}",
-}
+METRIC_LABELS: dict[str, str] = W.METRIC_LABELS
 # A D5 second-group row is scored against a population that does not contain the player,
 # so no holder verdict is given against it (user, 2026-10-06).
 SECOND_SIGNATURE_TEXT = "not assessed (second group, display only)"
