@@ -411,8 +411,8 @@ def panel(ctx: dict, stints: list[dict], cb: dict, pf_html: str, detail: str,
     out.append(f'<p class="muted">Each percentile places him among the {esc(plural)} of that '
                f'club\'s league{" (each against its own league)" if cross else ""}; metrics are '
                'ordered by the change in league percentile (ties by metric name).</p>')
-    if any_def:
-        out.append(f"<p>{esc(cmp_mod.DEFENDING_NOTE)}</p>")
+    if any_def and (note := cmp_mod.defending_note(g)):
+        out.append(f"<p>{esc(note)}</p>")
     out.append(pf_html)
     out.append(details(detail))
     out.append(f'<p class="muted">{esc(WEIGHT_NOTE)}</p>')

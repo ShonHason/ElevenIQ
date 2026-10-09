@@ -14,6 +14,8 @@ rules with hand-computed expected values:
 """
 from __future__ import annotations
 
+import re
+
 import ast
 import sys
 from pathlib import Path
@@ -93,8 +95,8 @@ def test_dist_code_rejects_one_or_more(d):
 
 # ADR 004 §13.8 (M4g4d): DM-CM Defending is mover_stability_inconclusive, the others
 # possession_criteria_failed.
-MOVER = ' <span class="muted">(team-influenced: mover test inconclusive)</span>'
-POSSESSION = ' <span class="muted">(team-influenced: not shown to be possession-free)</span>'
+MOVER = ' <span class="muted">(team-influenced: player-vs-team test on club movers inconclusive)</span>'
+POSSESSION = ' <span class="muted">(team-influenced: not shown to be free of team-possession effects)</span>'
 PASSING = (' <span class="muted">(team-influenced: depends on the team&#x27;s passing '
            'style)</span>')
 
@@ -188,3 +190,97 @@ def test_withheld_text_carries_the_d5_status_and_the_underpowered_note():
     assert "Passing (team-influenced; xPass deferred until after launch)" in dm
     assert "Defending (not shown to be free of team-possession effects)" in cmpm.withheld_text("CB")
     assert ref.UNDERPOWERED == {"DM-CM"}
+
+
+
+# ── Defending wording: N2 / N3 (ADR 004 §14; user 2026-10-09) ────────────────────
+
+N2 = "not shown to be free of team-possession effects"
+DM_CM_REASON = "player-vs-team test on club movers inconclusive"
+EXPECTED_STATE = ("That is the expected state until a second season adds evidence, not a finding "
+                  "about the player.")
+# Possession stated as fact (the sentence the M4g6d check found, and its relatives).
+FACT_CLAIMS = ("depends heavily", "possession-dependent", "possession dependent",
+               "how much the team has the ball", "rises with possession", "driven by possession",
+               "possession-driven")
+
+
+@pytest.mark.parametrize("group", ["CB", "FB-WB", "AM-Winger", "ST"])
+def test_defending_note_uses_the_n2_wording(group):
+    assert cmpm.defending_note(group) == (
+        "Defending scores are withheld: these metrics are not shown to be free of "
+        "team-possession effects. " + EXPECTED_STATE)
+
+
+def test_defending_note_dm_cm_uses_its_own_reason_with_underpowered():
+    assert cmpm.defending_note("DM-CM") == (
+        "Defending scores are withheld: the player-vs-team test on club movers is inconclusive "
+        "(underpowered). " + EXPECTED_STATE)
+
+
+def test_defending_note_follows_the_reason_code_not_a_fixed_string(monkeypatch):
+    monkeypatch.setitem(ref.WITHHELD["Defending"], "CB", "mover_stability_failed")
+    assert "the player-vs-team test on club movers is failed" not in (cmpm.defending_note("ST") or "")
+    assert cmpm.defending_note("CB").startswith(
+        "Defending scores are withheld: the player-vs-team test on club movers is failed.")
+    monkeypatch.delitem(ref.WITHHELD["Defending"], "CB")
+    assert cmpm.defending_note("CB") is None
+
+
+def test_defending_tags_use_the_withheld_words_exactly():
+    for code, words in cmpm.WITHHELD_WORDS.items():
+        if code != "pending_xpass_deferred":
+            assert cmpm.TAG_WORDS[code] == words
+    assert cmpm.TAG_WORDS["possession_criteria_failed"] == N2
+
+
+def _defending_texts(page: str) -> list[str]:
+    """Every Defending withheld text on a page: tags on Defending metrics are checked through
+    the group's tag set, the footnote's "Defending (…)" and the note's clause."""
+    import html as h
+    t = h.unescape(page)
+    return re.findall(r"Defending \(([^)]*)\)", t) + re.findall(r"Defending scores are withheld: ([^.]*)\.", t)
+
+
+def _check_page(page: str, group: str) -> None:
+    import html as h
+    t = h.unescape(page).lower()
+    for claim in FACT_CLAIMS:
+        assert claim not in t, (group, claim)
+    reason = N2 if group != "DM-CM" else DM_CM_REASON
+    clause = (f"these metrics are {N2}" if group != "DM-CM"
+              else "the player-vs-team test on club movers is inconclusive (underpowered)")
+    for x in _defending_texts(page):
+        assert x in (reason, reason + "; underpowered", clause), (group, x)
+    tags = set(re.findall(r"team-influenced: ([^)<]*)", h.unescape(page)))
+    assert tags <= {reason, "depends on the team's passing style"}, (group, tags)
+
+
+@pytest.mark.parametrize("group", ["CB", "FB-WB", "DM-CM", "AM-Winger", "ST"])
+def test_statics_and_tags_carry_no_possession_fact_and_the_right_reason(group):
+    st = cmpm.statics(group, 20, 49)
+    words = cmpm.cell_words(group, [])
+    _check_page(st["defn"] + st["foot"] + "".join(words["tag"]), group)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("group", ["cb", "fb_wb", "dm_cm", "am_winger", "st"])
+def test_rendered_style_maps_carry_no_possession_fact_and_the_right_reason(group):
+    path = ROOT / "data" / "processed" / "reports" / f"style_map_{group}.html"
+    if not path.exists():
+        pytest.skip("style maps not built")
+    g = {"cb": "CB", "fb_wb": "FB-WB", "dm_cm": "DM-CM", "am_winger": "AM-Winger", "st": "ST"}[group]
+    page = path.read_text()
+    _check_page(page, g)
+    assert _defending_texts(page)                                 # the check is not vacuous
+
+
+def test_golden_compare_pages_carry_no_possession_fact():
+    import html as h
+    for f in (ROOT / "tests" / "fixtures" / "m4e_compare").glob("golden_*.html"):
+        t = h.unescape(f.read_text())
+        for claim in FACT_CLAIMS:
+            assert claim not in t.lower(), (f.name, claim)
+        for x in re.findall(r"withheld \(([^)]*)\)", t):
+            assert x in (N2, DM_CM_REASON + "; underpowered",
+                         "team-influenced; xPass deferred until after launch"), (f.name, x)

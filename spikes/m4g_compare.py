@@ -20,7 +20,7 @@ Facts, computed here and written into the page (the page's JS only indexes and f
   "around average"); the page stores each distinct phrase once and an index per cell;
 - withheld families: a metric whose family score is withheld for the group is tagged
   "(team-influenced: <reason>)"; when a Defending metric is listed, one sentence follows the
-  lists (DEFENDING_NOTE).
+  lists (defending_note: built from the group's Defending withheld code, ADR 004 §14 N2 / N3).
 
 Check (check_page), and what in it is independent of the page build:
 - independent: the distances and the candidate sets are recomputed from player_dna.parquet with
@@ -57,24 +57,39 @@ import m4g_style_page as page_mod  # noqa: E402  (GROUP_PLURAL; it does not impo
 N_DIFF, N_ALIKE = 5, 3
 B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 TIE_TOL = 1e-12
-# Withheld score reasons in words (tools/compare_page.DIM_STATUS_TEXT, written out: no eleveniq).
+# Withheld score reasons in words (tools/compare_page.DIM_STATUS_TEXT, written out: no eleveniq;
+# tests/test_m4g_compare.py checks they are equal). The Defending D5 reasons (ADR 004 §13.8) are
+# built from two parts so that the words and the note sentence cannot drift apart.
+POSSESSION_WORDS = "not shown to be free of team-possession effects"        # ADR 004 §14 N2
+MOVER_TEST = "player-vs-team test on club movers"
+MOVER_OUTCOME = {"mover_stability_failed": "failed",
+                 "mover_stability_inconclusive": "inconclusive",
+                 "mover_seed_sensitive": "not stable across seeds",
+                 "mover_below_model_range": "outside the model's range"}
+UNTESTABLE_WORDS = "too few club movers to test player vs team"
 WITHHELD_WORDS = {"pending_xpass_deferred": "team-influenced; xPass deferred until after launch",
-                  "possession_criteria_failed": "not shown to be free of team-possession effects",
-                  "mover_stability_failed": "player-vs-team test on club movers failed",
-                  "mover_stability_inconclusive": "player-vs-team test on club movers inconclusive",
-                  "mover_stability_untestable": "too few club movers to test player vs team",
-                  "mover_seed_sensitive": "player-vs-team test on club movers not stable across seeds",
-                  "mover_below_model_range": "player-vs-team test on club movers outside the model's range"}
-# The tag's reason per withheld status (user, 2026-10-07).
+                  "possession_criteria_failed": POSSESSION_WORDS,
+                  **{c: f"{MOVER_TEST} {o}" for c, o in MOVER_OUTCOME.items()},
+                  "mover_stability_untestable": UNTESTABLE_WORDS}
+# The tag's reason per withheld status: Passing keeps its tag (user, 2026-10-07); every Defending
+# status uses its withheld words exactly (ADR 004 §14 N2; user 2026-10-09).
 TAG_WORDS = {"pending_xpass_deferred": "depends on the team's passing style",
-             "possession_criteria_failed": "not shown to be possession-free",
-             "mover_stability_failed": "mover test failed",
-             "mover_stability_inconclusive": "mover test inconclusive",
-             "mover_stability_untestable": "mover test not possible",
-             "mover_seed_sensitive": "mover test not stable",
-             "mover_below_model_range": "mover test outside the model's range"}
-# The internal xPass note stays in the footnote (withheld_text, WITHHELD_WORDS) only.
-DEFENDING_NOTE = "Defending volume depends heavily on how much the team has the ball."
+             **{c: w for c, w in WITHHELD_WORDS.items() if c != "pending_xpass_deferred"}}
+# The Defending note's clause per withheld code (the same parts as WITHHELD_WORDS).
+DEFENDING_CLAUSE = {"possession_criteria_failed": f"these metrics are {POSSESSION_WORDS}",
+                    **{c: f"the {MOVER_TEST} is {o}" for c, o in MOVER_OUTCOME.items()},
+                    "mover_stability_untestable": f"there are {UNTESTABLE_WORDS}"}
+
+
+def defending_note(group: str) -> str | None:
+    """The sentence after a list with a Defending metric, from the group's Defending withheld
+    code (ADR 004 §14 N2, N3; user 2026-10-09). None when Defending is not withheld."""
+    code = ref.WITHHELD.get("Defending", {}).get(group)
+    if code is None:
+        return None
+    under = " (underpowered)" if group in ref.UNDERPOWERED else ""
+    return (f"Defending scores are withheld: {DEFENDING_CLAUSE[code]}{under}. That is the expected "
+            "state until a second season adds evidence, not a finding about the player.")
 GROUP_ONE = {"CB": "centre-back", "FB-WB": "full-back or wing-back",
              "DM-CM": "central midfielder", "AM-Winger": "attacking midfielder or winger",
              "ST": "striker"}
@@ -175,7 +190,7 @@ def statics(group: str, n_metrics: int, map_share: int) -> dict[str, str]:
                  f'{n(f"{map_share}%")} of the style differences, so two players can look close '
                  'there and still differ, or look far apart and be neighbours. The distance and '
                  'ranks above use the full profile.</p>'),
-        "defn": f'<p>{esc(DEFENDING_NOTE)}</p>',
+        "defn": f'<p>{esc(note)}</p>' if (note := defending_note(group)) else "",
         "foot": (f'<p class="muted">Metrics are ordered by the gap between the two league '
                  f'percentiles (ties by metric name). Each percentile places a player among the '
                  f'{esc(plural)} of his own league. A rank counts every other '

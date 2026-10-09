@@ -1847,6 +1847,19 @@ Items:
   1. `spikes/m4g6c_before_after.py`: check the expected file's `registry_version` against the data, and fail with a clear "snapshot missing" message when `data/interim/m4g6c_snapshot/` is absent.
   2. `spikes/m4f_dna_reference.py` (about line 292): fix the stale indentation of the continuation line after the `pending_xpass_deferred` count.
 
+### M4g6d — N2 / N3 wording check (user, 2026-10-09)
+- **Comparison page:** already exact. Defending reads "withheld (not shown to be free of team-possession effects)" (CB, FB-WB, AM-Winger, ST) or "withheld (player-vs-team test on club movers inconclusive; underpowered)" (DM-CM).
+- **Style maps (`spikes/m4g_compare.py`):** two deviations were found and fixed.
+  - The short tag "(team-influenced: not shown to be possession-free)" now uses the exact N2 words.
+  - The sentence "Defending volume depends heavily on how much the team has the ball." (from M4g1b, a possession claim stated as fact) is replaced by `defending_note(group)`, built from the group's Defending withheld code, e.g. CB: "Defending scores are withheld: these metrics are not shown to be free of team-possession effects. That is the expected state until a second season adds evidence, not a finding about the player."; DM-CM: "… the player-vs-team test on club movers is inconclusive (underpowered). …".
+- **Tests:** no rendered page or golden page contains a possession claim stated as fact, and every Defending withheld text matches N2 or the group's own reason.
+- **Plan 006 W4 / W5 gate:** web pages take withheld texts from the single words source.
+- **Backlog, gated before the next change to `spikes/m4g_compare.py`** (code-reviewer, M4g6d; user rule: leftovers to the backlog):
+  1. `mover_stability_failed` renders "the player-vs-team test on club movers is failed": use a verb per outcome ("has failed"). Unused in 2015/16, but `test_defending_note_follows_the_reason_code_not_a_fixed_string` locks the wording in; that test's first assertion is near-vacuous (ST is `possession_criteria_failed`).
+  2. `test_defending_tags_use_the_withheld_words_exactly` is partly tautological (`TAG_WORDS` is built from `WITHHELD_WORDS`); only the N2 literal assertion carries information.
+  3. `_check_page` and the golden test: the N2 string stays a literal in the tests, because it is the user's spec and the literal is what makes the tests non-tautological (user, 2026-10-09). Only the per-group reason strings (e.g. DM-CM's mover reason) may be read from the words table instead of being copied. The plan 006 web tests follow the same rule.
+  4. Cosmetic: import order (`re` before `ast`), hoist the local `import html`, an extra blank line.
+
 ### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
 - Folded in above: the leakage decision; the M4g1 lift and pivot label; the M4g3 baseline `min_attempts`, pooling, paired bootstrap and RMS; the M4g4 fixed order, ratios and β̂ fit; the M4g5 subsets and stratified folds; the majority-trigger wording.
 - Recorded in ADR 004: `long_pass_completion_pct` has the same length-truncation bias. A long ball that is intercepted or blocked early is recorded short and drops out of the denominator, which inflates the rate (the Koné example's metric).
