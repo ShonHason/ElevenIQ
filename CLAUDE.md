@@ -102,19 +102,41 @@ future-potential prediction. Do not add these without explicit re-scoping.
   exception: a commit that touches only docs/, spikes/ and/or CLAUDE.md (no src/ or
   tests/ changes) may be committed directly after explicit user approval, without
   /finish-chunk. Everything else still goes through /finish-chunk.
-- **/finish-chunk is tiered** (.claude/skills/finish-chunk/SKILL.md):
-  - code-reviewer: always, scoped to the chunk's git diff only;
-  - qa-tester: only when src/ or tools/ logic changed (skipped for docs/, spikes/ or tests-only changes);
-  - stats-reviewer: only when a metric definition, cohort/percentile rule, measurement or
-    registry status changed. If the method was reviewed before the code, the end-of-chunk
-    run reviews the produced output only;
-  - after review fixes: code-reviewer on the fix delta only, no full re-run;
-  - fast tests, coverage and (for pipeline changes) integration tests are unchanged.
-
-  The report states which agents ran and why each skipped one was skipped.
+- **/finish-chunk is tiered:** see "Speed rules" below (the one place the reviewer tiering
+  lives; .claude/skills/finish-chunk/SKILL.md implements it).
 - **Claude never pushes.** Claude commits (and merges locally) only after my explicit
   approval; I push manually. This covers every branch, tags and force pushes.
   Remote: `origin` = github.com/ShonHason/ElevenIQ (private).
+
+### Speed rules (from plan 006 on; user, 2026-10-09)
+- **Pre-register once.** A milestone's decisions are pre-registered in one document at the
+  start of the milestone. The chunks then run under standing approval.
+- **Standing approval** covers moving from chunk to chunk within the approved plan. Stop only
+  for:
+  - a STOP-rule failure;
+  - an unexpected change;
+  - a decision that is not in the plan;
+  - a commit proposal. Commit approval stays typed by me; I push.
+- **Reviewers** (`/finish-chunk`, .claude/skills/finish-chunk/SKILL.md):
+  - code-reviewer: every chunk, scoped to the chunk's git diff only;
+  - qa-tester: only when src/ or tools/ logic changes;
+  - stats-reviewer: only when metrics, cohorts, the registry or statistical claims change,
+    and at milestone sign-off. UI-only chunks skip it. If the method was reviewed before the
+    code, the end-of-chunk run reviews the produced output only;
+  - after review fixes: code-reviewer on the fix delta only, no full re-run;
+  - fast tests, coverage and (for pipeline changes) integration tests run as before;
+  - the report states which agents ran and why each skipped one was skipped.
+- **One fix round per chunk;** leftovers go to the gated backlog.
+- **Reports:** a results table, the decisions needed, and the commit message. No narration.
+- **Web chunks:** Playwright tests on fixtures. I do a visual review from screenshots at the
+  end of each W step, not per chunk.
+- **Every existing hard rule is unchanged:**
+  - Claude never pushes;
+  - data/ is never committed;
+  - no scraping;
+  - expected values are never changed to make tests pass;
+  - the LLM never produces statistics;
+  - spikes never import eleveniq.
 
 ---
 

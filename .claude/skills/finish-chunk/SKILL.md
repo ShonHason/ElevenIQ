@@ -13,7 +13,11 @@ decides which agents run:
   logic, config constants, or a committed measurement file).
 - `stats_scope`: a metric definition, cohort/percentile rule, measurement, or registry
   status changed (src/eleveniq/metrics/, pipeline aggregation or ratio code,
-  analytics/, config thresholds those use, measurements/*.json, or an ADR rule they implement).
+  analytics/, config thresholds those use, measurements/*.json, or an ADR rule they implement),
+  or a statistical claim changed (a figure, finding or interpretation in docs/reviews/,
+  an ADR or a page text that states a statistical result). A UI-only chunk (layout, styling,
+  interaction, wording that states no statistical result) is never `stats_scope`.
+  The milestone sign-off always runs the stats-reviewer (CLAUDE.md "Speed rules").
 - `method_reviewed`: the stats-reviewer already reviewed this method before the code
   (a recorded verdict in the ADR or plan for this chunk).
 
