@@ -1341,7 +1341,7 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 - **The 8 majority-admitted cells: M4g4 decides nothing.**
   - M4g4's exposure is opponent passing, a defensive exposure. Applying it to on-ball progression volume would test a candidate never pre-registered for them.
   - Their M4g3 verdicts are all inconclusive: `progressive_passes_p90` f̂ 0.32 [−0.15, 1.04], `progressive_carries_p90` 0.25 [−0.11, 0.74], `long_pass_completion_pct` 0.93 [0.06, 2.05], underpowered.
-  - They stay DNA (allow-listed) and move to the M4 sign-off list, next to family weighting and the FAIL list. M4g5's xPass outcome is an input for the two `long_pass_completion_pct` cells.
+  - They stay DNA (allow-listed) and move to the M4 sign-off list, next to family weighting and the FAIL list. M4g5's xPass outcome is an input for the two `long_pass_completion_pct` cells. **M4g5 is deferred (2026-10-09), so the sign-off decides them without it.**
   - This statement satisfies the M4g2 stats-reviewer condition.
 - **D6. A restore-supporting PASS must hold on all six streams**: verdict PASS ∧ ¬`borderline_seed`.
   - **Cost** (n = 24, simulated): 3–4 points of power at f = 0.
@@ -1535,7 +1535,15 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
   - a test that a restored member beats a withheld one.
   The fix delta passed review; fast 2,176 pass; `REGISTRY_VERSION` unchanged.
 
-### M4g5 — xPass (spike, then pipeline)
+### M4g5 — xPass (spike, then pipeline): DEFERRED until after web v1 (user, 2026-10-09; ADR 004 §13.9)
+- **Decision:** deferred until after web v1 launches. It returns as the first post-launch feature, built primarily as a display metric.
+- **On return, step 1 is the go / no-go spike:** execution's within-league possession ρ (both proxies) and multi-split `r_full` per group, before any pipeline work.
+- **Why:** `docs/reviews/m4g5-feasibility.md`.
+  - About a 20–25% chance that execution restores any Passing family on 2015/16 data (AM-Winger at best), and about 5–10% in CB, FB-WB and DM-CM.
+  - D12 and the pooled mover rule bind; a second season roughly doubles the mover power.
+- **Passing status:** stays `pending_mover_stability`, which from now on means "xPass deferred, not tested". It is not a failure code. The rename or rewording of the status and its display text is an M4g6 sign-off item.
+- The spec below stays pre-registered, unchanged, for the return.
+
 - **Passes:**
   - open play only (`pass.type.name` ∉ `RESTART_TYPES`), periods 1–4;
   - completed = null outcome;
@@ -1619,7 +1627,7 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 - **Resolved by M4g4c2 (all 7 adjusted cells stay raw, 2026-10-08), kept for the record — on the M4 sign-off list (user, 2026-10-08, M4g4c stop 1): "accept adjustments with |β̂| > 1?"** AM-Winger `clearances_p90` (β̂ 2.23, bootstrap CI 0.69–3.66) and `dribbled_past_p90` (β̂ 1.34) are selected with |β̂| > 1 (ADR 004 §13.8). Sensitivity (stats-reviewer): the 2.23 rests on three AM-Winger team groups with 3, 5 and 9 clearances; without teams below 10 / 20 group clearances it is 1.10 / 1.08. The pre-registered fit is kept; a group-count gate in the fit is decided here or in a later ADR.
 - **Resolved by M4g4c2 (all 7 stay raw), kept for the record — on the M4 sign-off list (user, 2026-10-08, M4g4c `/finish-chunk`): "accept the 7 adjusted cells given criterion (2)'s ~50% null failure rate and their large per-player moves?"** Evidence: the null calibration (`spikes/m4g4c_null_calibration.py`; criterion (2) fails in 27–83% of no-effect shuffles, mean 57%), 5 of 7 passing near a bar, and raw → adjusted percentile moves (median 4–7.5 points, 90th percentile 13–20) in `docs/reviews/m4g4c-possession.md`.
 - **Evidence:** ADR 004 §13.6 ("Stats-reviewer outcome").
-- **Timing:** decide after M4g4/M4g5, which may add members (Defending, Passing) and change the picture, and before M4g6.
+- **Timing:** decide after M4g4/M4g5, which may add members (Defending, Passing) and change the picture, and before M4g6. **Updated 2026-10-09:** M4g4 added no member and M4g5 is deferred, so the decision is taken in the M4g6 sign-off.
 
 ### M4g6 — Validation write-up (closes M4)
 `spikes/m4_validation.py` → `docs/reviews/m4-validation.md`:

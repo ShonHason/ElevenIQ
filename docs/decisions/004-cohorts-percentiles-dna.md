@@ -1655,3 +1655,17 @@ Adds to §13.1 and §13.2; plan 005 "M4g4 plan" holds the full spec, the power t
     - CB, FB-WB, AM-Winger and ST: "not shown to be free of team-possession effects" (tag "not shown to be possession-free");
     - DM-CM: "player-vs-team test on club movers inconclusive; underpowered" (tag "mover test inconclusive");
     - golden pages changed in this text and the version string only.
+
+### 13.9 M4g5 xPass deferred (user decision, 2026-10-09)
+- **Decision:** M4g5 (xPass) is deferred until after web v1 launches (plan 006). It returns as the first post-launch feature and is built primarily as a display metric (execution, ambition).
+- **Go / no-go first:** the first step on return is the cheap spike stage: execution's within-league possession ρ (both proxies) and multi-split `r_full` per group. Pipeline work follows only if the user decides it, from those numbers.
+- **Evidence:** `docs/reviews/m4g5-feasibility.md`.
+  - About a 20–25% chance that execution restores Passing in any group on 2015/16 data, and about 5–10% in CB, FB-WB and DM-CM.
+  - The binding gates are D12 (completion's possession ρ is 0.57–0.69 in those groups) and the pooled mover rule (every current passing-quality metric is inconclusive; every PASS has f̂ ≤ 0.09).
+- **Passing stays withheld as deferred, not failed.**
+  - In CB, FB-WB, DM-CM and AM-Winger the status stays `pending_mover_stability` (§12.9). It is a pending status, not one of the §13.8 D5 failure codes. From this decision it means "xPass deferred until after web v1": the restore question has not been tested.
+  - No code changes in this decision. The status string and its display text ("team-influenced; xPass candidate pre-registered") are an M4g6 sign-off item (rename, or reword to say "deferred").
+  - ST keeps its Passing score (`pass_completion_pct`).
+- **Consequences:**
+  - The M4 sign-off decides without M4g5 input: family weighting, and the two allow-listed `long_pass_completion_pct` cells (CB, DM-CM; §13.8 "The 8 majority-triggered…"), which M4g5 was to inform.
+  - The §13.3 pre-registration (features, leakage decision, model acceptance, the execution / ambition predictions) stays in force unchanged for when M4g5 returns.
