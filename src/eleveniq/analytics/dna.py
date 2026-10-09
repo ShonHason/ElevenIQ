@@ -18,7 +18,7 @@ the M4d output and the populations from analytics.cohorts.
   present directional members (lower_better as 100 − p), naming them in metric-name order.
   A withheld family is null with its status (withheld_for): Defending with the registry's
   D5 status (ADR 004 §13.8; 2015/16: possession_criteria_failed in CB, FB-WB, AM-Winger
-  and ST, mover_stability_inconclusive in DM-CM); Passing pending_mover_stability where it
+  and ST, mover_stability_inconclusive in DM-CM); Passing pending_xpass_deferred where it
   rests on long_pass_completion_pct alone (config.DNA_WITHHELD_DIMENSIONS, §12.9). A
   family with no present directional member is null (no_directional_metric).
 - Pair distance (the M4f checks' provisional distance; M5 picks the product metric):
@@ -45,8 +45,9 @@ COMPLETE = "complete"
 PARTIAL = "partial"
 DNA_INCOMPLETE = "dna_incomplete"
 NO_DIRECTIONAL_METRIC = "no_directional_metric"
-PENDING_MOVER_STABILITY = "pending_mover_stability"
-WITHHELD_STATUSES: frozenset[str] = frozenset({PENDING_MOVER_STABILITY, *R.D5_STATUSES})
+# ADR 004 §13.9, §14 item 4: Passing's restore is deferred with xPass (not tested, not failed).
+PENDING_XPASS_DEFERRED = "pending_xpass_deferred"
+WITHHELD_STATUSES: frozenset[str] = frozenset({PENDING_XPASS_DEFERRED, *R.D5_STATUSES})
 
 
 class DnaError(ValueError):

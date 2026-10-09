@@ -123,9 +123,9 @@ def test_radar_golden_covers_the_dna_rules(radar_page, golden_page):
     assert "No radar: the players are in different position groups" in golden_page
     assert 'data-gap="3668|1|2|27|statsbomb|long_pass_completion_pct"' in radar_page
     text = re.sub(r"<[^>]+>", "", radar_page)
-    assert "withheld until M4g" in text and "based on 1 metric:" in text
+    assert "withheld (" in text and "withheld until" not in text and "based on 1 metric:" in text
     # Passing withheld for both AM-Wingers (§12.9), incl. Walcott who also lacks the metric
-    assert "team-influenced; xPass candidate pre-registered" in text
+    assert "team-influenced; xPass deferred until after launch" in text
     assert "|Passing|score" not in radar_page
 
 

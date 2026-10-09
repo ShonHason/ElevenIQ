@@ -125,7 +125,7 @@ def test_partial_row_re_splits_the_family_weight():
     assert row.cells["long_passes_attempted_p90"].weight == pytest.approx(1 / 7, abs=1e-15)
     assert math.isclose(sum(c.weight for c in row.cells.values() if c.weight), 1.0, abs_tol=1e-12)
     # AM-Winger Passing is withheld (§12.9); without the withhold it has no directional member.
-    assert row.dimensions["Passing"] == D.Dimension(None, "pending_mover_stability", ())
+    assert row.dimensions["Passing"] == D.Dimension(None, "pending_xpass_deferred", ())
     unheld = _row_dna("AM-Winger", _specs("AM-Winger"),
                       _inputs("AM-Winger", missing=("long_pass_completion_pct",)), withheld={})
     assert unheld.dimensions["Passing"] == D.Dimension(None, "no_directional_metric", ())
@@ -183,25 +183,25 @@ def test_a_restored_defending_is_not_withheld():
                                            "beta_0") for g in GROUPS}
     restored = replace(REGISTRY, family_status=fs)
     assert D.withheld_for("ST", derivation=restored) == {}
-    assert D.withheld_for("CB", derivation=restored) == {"Passing": "pending_mover_stability"}
+    assert D.withheld_for("CB", derivation=restored) == {"Passing": "pending_xpass_deferred"}
 
 
 def test_the_table_cannot_carry_defending():
     with pytest.raises(ValueError, match="comes from the registry"):
-        D.withheld_for("CB", table={"Defending": ("pending_mover_stability", GROUPS)},
+        D.withheld_for("CB", table={"Defending": ("pending_xpass_deferred", GROUPS)},
                        derivation=REGISTRY)
 
 
 def test_a_custom_table_without_its_derivation_is_refused():
     with pytest.raises(ValueError, match="explicit derivation"):
-        D.withheld_for("CB", table={"Passing": ("pending_mover_stability", GROUPS)})
+        D.withheld_for("CB", table={"Passing": ("pending_xpass_deferred", GROUPS)})
 
 
 def test_passing_withheld_exactly_where_long_pass_completion_is_its_only_directional_member():
     """ADR 004 §12.9 (user, 2026-10-07): the configured groups are the groups whose only
     directional Passing DNA member is long_pass_completion_pct; ST keeps its score."""
     status, groups = config.DNA_WITHHELD_DIMENSIONS["Passing"]
-    assert status == D.PENDING_MOVER_STABILITY
+    assert status == D.PENDING_XPASS_DEFERRED
     rule = {g for g in GROUPS if {m for m in REGISTRY.dna_metrics(g)
                                   if _BY_COL[m].family == "Passing"
                                   and _BY_COL[m].direction != "style"}
@@ -210,7 +210,7 @@ def test_passing_withheld_exactly_where_long_pass_completion_is_its_only_directi
     for g in GROUPS:
         d = _row_dna(g, _specs(g), _inputs(g)).dimensions["Passing"]
         if g in groups:
-            assert d == D.Dimension(None, "pending_mover_stability", ())
+            assert d == D.Dimension(None, "pending_xpass_deferred", ())
         else:
             assert d.score_status == "ok" and d.members == ("pass_completion_pct",)
 
@@ -220,13 +220,13 @@ def test_withheld_precedes_no_directional_metric():
     missing (2015/16: the 30 rows below the long-pass minimum)."""
     d = _row_dna("AM-Winger", _specs("AM-Winger"), _inputs(
         "AM-Winger", missing={"long_pass_completion_pct"})).dimensions["Passing"]
-    assert d.score_status == "pending_mover_stability"
+    assert d.score_status == "pending_xpass_deferred"
 
 
 def test_withheld_for_and_unknown_status():
     assert D.withheld_for("ST") == {"Defending": "possession_criteria_failed"}
     assert D.withheld_for("CB") == {"Defending": "possession_criteria_failed",
-                                    "Passing": "pending_mover_stability"}
+                                    "Passing": "pending_xpass_deferred"}
     assert D.withheld_for("DM-CM")["Defending"] == "mover_stability_inconclusive"
     with pytest.raises(ValueError, match="unknown withheld status"):
         _row_dna("ST", _specs("ST"), _inputs("ST"), withheld={"Aerial": "made_up"})
@@ -370,3 +370,11 @@ def test_spike_withheld_equals_the_package():
     assert spike.WITHHELD["Defending"] == {
         g: REGISTRY.defending_status(g).status for g in GROUPS
         if REGISTRY.defending_status(g).status != R.SCORE_OK}
+
+
+def test_old_pending_mover_stability_status_is_no_longer_a_withheld_status():
+    """ADR 004 §14 item 4 rename: the old name must not linger as an accepted status."""
+    assert "pending_mover_stability" not in D.WITHHELD_STATUSES
+    assert D.PENDING_XPASS_DEFERRED in D.WITHHELD_STATUSES
+    with pytest.raises(ValueError, match="unknown withheld status"):
+        _row_dna("CB", _specs("CB"), _inputs("CB"), withheld={"Passing": "pending_mover_stability"})

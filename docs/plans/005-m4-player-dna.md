@@ -1800,6 +1800,7 @@ Items:
   2. `first_dates()` hard-codes the season file `27.json`; read the season from the keys.
   3. `test_same_league_observed_and_expected` cannot catch a K-limiting bug (`top_k` binds its default `k` at definition time): use a fixture where K = 1 and K = 2 differ, and pass `k` explicitly.
   4. Share one P99 helper between `outliers()` and `band_landing()`.
+  5. Item 9 still prints the old Passing status name `pending_mover_stability` (renamed `pending_xpass_deferred` in M4g6c, ADR 004 §14 item 4); update the text before the next run (stats-reviewer, M4g6c).
 
 ### M4g6a2 — outcome (2026-10-09)
 - **Files:**
@@ -1823,6 +1824,28 @@ Items:
   2. `test_same_pos_counts_observed_and_expected`: the `obs` assertion recomputes the formula; pin a hand-counted value.
   3. `render()`: a metric missing from `abs_vs_noise` prints "0.00" (reads as perfect agreement); print "n/a".
   4. `render()`: guard `z['mixed_share_z_rows']` being None (no |z| > 5 cell).
+
+### M4g6b — sign-off decisions (user, 2026-10-09; ADR 004 §14)
+- **Pre-decision record:** `docs/reviews/m4-signoff.md` (`e1838df`).
+- **Decisions:**
+  1. weighting A, accepted and provisional until M5;
+  2. all 8 allow-listed cells kept as DNA (revisit CB / DM-CM long-pass completion at xPass or M5, whichever is first);
+  3. FAIL list empty;
+  4. rename `pending_mover_stability` → `pending_xpass_deferred` with the new page text, in M4g6c, before plan 006 W1;
+  5. N1–N3 confirmed;
+  6. the six deferrals confirmed;
+  7. backlog triage as proposed.
+- The user's face read is recorded verbatim in ADR 004 §14 item 1, with the ST group check (Niang, Muriel, Pléa, Braithwaite, Jovetić: ST by the main-group rule, no mapping error).
+- **Next:** M4g6c is the item-4 rename only; then M4g6d (stats-reviewer sign-off of the write-up, milestone report). Stop before the merge.
+
+### M4g6c — outcome (2026-10-09)
+- **The rename:** `pending_mover_stability` → `pending_xpass_deferred`. Every withheld family reads "withheld (<reason>)"; Passing reads "team-influenced; xPass deferred until after launch".
+- **STOP rule** (`spikes/m4g6c_before_after.py`, expected file written before code): passed. `player_dna.parquet` and the percentiles are byte-identical; only the 1,075 withheld Passing rows changed status; `REGISTRY_VERSION` is unchanged.
+- **Golden pages:** text only.
+- **`/finish-chunk`:** fast 2,212 and integration 140 pass; qa-tester PASS (2 stale-status refusal tests added); stats-reviewer PASS (2 documentation notes fixed: the rename pointers in ADR §12.9, §13.3 and §13.9, and §14 item 7 aligned to before-W5); code-reviewer PASS.
+- **Backlog** (code-reviewer, M4g6c; user 2026-10-09; no gate, the STOP rule has run):
+  1. `spikes/m4g6c_before_after.py`: check the expected file's `registry_version` against the data, and fail with a clear "snapshot missing" message when `data/interim/m4g6c_snapshot/` is absent.
+  2. `spikes/m4f_dna_reference.py` (about line 292): fix the stale indentation of the continuation line after the `pending_xpass_deferred` count.
 
 ### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
 - Folded in above: the leakage decision; the M4g1 lift and pivot label; the M4g3 baseline `min_attempts`, pooling, paired bootstrap and RMS; the M4g4 fixed order, ratios and β̂ fit; the M4g5 subsets and stratified folds; the majority-trigger wording.
@@ -1892,6 +1915,9 @@ Items:
 - **History mode: one player across seasons** (user, 2026-10-07; record only, not built). Show a player's path over seasons on the style map. Prerequisites:
   - full-league, multi-season data from one source (StatsBomb Open Data has one full-league season here, 2015/16);
   - an ADR on aligning maps across seasons. Each season's PCA has its own axes, so positions are not comparable without a fixed projection or an alignment rule.
+- **M5: hub-player check in the self-retrieval work** (user face read, 2026-10-09; ADR 004 §14 item 1): Ben Yedder (ST) and Echiejile (FB-WB) each appear in two of the four face lists. In M5's split-half self-retrieval, measure each row's in-degree (how often it is someone's neighbour) and flag hubs, which crowd neighbour lists in high-dimensional distances.
+- **M5: revisit `long_pass_completion_pct` (CB, DM-CM)** when xPass returns or at M5, whichever is first (ADR 004 §14 item 2).
+- **M5: family weighting is provisional** (ADR 004 §14 item 1): decide it with split-half self-retrieval.
 - **M5: DM-CM 6-share context column** (user, 2026-10-07; plan 005 M4g1 outcome).
   - Show each DM-CM row's lineup-slot share (Defensive Midfield slots against Center Midfield slots) next to it as context, never as a cohort.
   - Today it is computed only in `spikes/m4g_style_map.py` from the raw lineups; the pipeline would need per-position minutes.

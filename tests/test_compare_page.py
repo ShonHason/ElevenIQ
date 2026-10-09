@@ -525,8 +525,9 @@ def test_dimension_scores_show_member_count_and_withheld_defending():
     assert "withheld (not shown to be free of team-possession effects)" in text   # §13.8 D5
     assert "|Defending|score" not in page                                      # never a number
     # Defending (D5) and Passing (pending), two players, in the radar section and the tables
-    assert _radar(page).count("withheld (") == 2 and _radar(page).count("withheld until") == 2
-    assert page.count("withheld (") == 4 and page.count("withheld until") == 4
+    # every withheld family reads "withheld (<reason>)"; nothing says "until M4g" (ADR 004 §14)
+    assert _radar(page).count("withheld (") == 4 and page.count("withheld (") == 8
+    assert "withheld until" not in page and "M4g" not in _text(page)
 
 
 def test_dm_cm_defending_reads_its_mover_verdict_with_the_underpowered_note():
@@ -544,7 +545,7 @@ def test_passing_withheld_where_it_rests_on_long_pass_completion(group):
     """ADR 004 §12.9: a one-metric long-pass Passing score would read a team-style value as
     poor individual passing (§11.5), so it is withheld, never a number."""
     page = P.render(_pair(group))
-    assert "withheld until M4g (team-influenced; xPass candidate pre-registered)" in _text(page)
+    assert "withheld (team-influenced; xPass deferred until after launch)" in _text(page)
     assert "|Passing|score" not in page and "|Passing|members" not in page
 
 
@@ -663,7 +664,7 @@ def test_radar_three_players_one_skipped_keeps_the_other_two_as_s1_s2():
     assert "Player One" not in header and "Player Two" in header and "Player Three" in header
 
 
-@pytest.mark.parametrize("family, status", [("Passing", "ok"), ("Aerial", "pending_mover_stability")])
+@pytest.mark.parametrize("family, status", [("Passing", "ok"), ("Aerial", "pending_xpass_deferred")])
 def test_build_players_refuses_dimensions_built_under_another_withhold_rule(family, status):
     """A dimensions file whose withheld statuses differ from config.DNA_WITHHELD_DIMENSIONS
     (e.g. built before ADR 004 §12.9) is refused, not drawn."""
@@ -675,3 +676,19 @@ def test_build_players_refuses_dimensions_built_under_another_withhold_rule(fami
     with pytest.raises(P.PageError, match="withheld dimensions"):
         P.build_players(pct, identity, [P.parse_selector("1"), P.parse_selector("2")],
                         pl.DataFrame(list(a.dna.values())), pl.DataFrame(dims))
+
+
+def test_stale_pending_mover_stability_dimensions_are_refused():
+    """ADR 004 §14 item 4: the status was renamed; a dimensions parquet built before the rename
+    still says pending_mover_stability and must be refused (rebuild), not drawn or half-read."""
+    a = _player("CB")
+    b = _player("CB", key={**_KEY, "player_id": 2}, name="Player Two")
+    dims = [{**r, "score_status": "pending_mover_stability"} if r["family"] == "Passing" else r
+            for r in a.dims.values()]
+    pct = pl.DataFrame([*a.rows.values(), *b.rows.values()])
+    identity = pl.DataFrame([a.identity, b.identity])
+    with pytest.raises(P.PageError, match="withheld dimensions"):
+        P.build_players(pct, identity, [P.parse_selector("1"), P.parse_selector("2")],
+                        pl.DataFrame(list(a.dna.values())), pl.DataFrame(dims))
+    with pytest.raises(P.PageError, match="unknown dimension score status"):
+        P.dim_status_text("pending_mover_stability")

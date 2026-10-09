@@ -117,7 +117,7 @@ def test_dna_tables_withholds_defending_and_scores_a_single_member_passing(monke
     """Passing is scored on its one member when not withheld (CB Passing is withheld by
     config, §12.9, so the table is narrowed to Defending here; the CB withhold is tested
     below)."""
-    monkeypatch.setitem(config.DNA_WITHHELD_DIMENSIONS, "Passing", ("pending_mover_stability", ()))
+    monkeypatch.setitem(config.DNA_WITHHELD_DIMENSIONS, "Passing", ("pending_xpass_deferred", ()))
     derivation, season, pct = _built()
     rows = dna_rows(season, pct, derivation, specs=SPECS)
     provenance = {"registry_version": derivation.version, "measurement_source": derivation.source,
@@ -156,5 +156,5 @@ def test_dna_tables_withhold_cb_passing_by_config():
     _, dim = dna_tables(rows, provenance)
     passing = dim.filter(pl.col("family") == "Passing")
     assert passing.height == N
-    assert passing["score_status"].unique().to_list() == ["pending_mover_stability"]
+    assert passing["score_status"].unique().to_list() == ["pending_xpass_deferred"]
     assert passing["score"].null_count() == N

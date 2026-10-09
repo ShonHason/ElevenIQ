@@ -185,6 +185,6 @@ def test_withheld_text_carries_the_d5_status_and_the_underpowered_note():
     (the compare page's wording); CB its possession outcome."""
     dm = cmpm.withheld_text("DM-CM")
     assert "Defending (player-vs-team test on club movers inconclusive; underpowered)" in dm
-    assert "Passing (team-influenced; xPass candidate pre-registered)" in dm
+    assert "Passing (team-influenced; xPass deferred until after launch)" in dm
     assert "Defending (not shown to be free of team-possession effects)" in cmpm.withheld_text("CB")
     assert ref.UNDERPOWERED == {"DM-CM"}

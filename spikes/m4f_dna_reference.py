@@ -25,7 +25,7 @@ Rules (ADR 004 §10.8, §12.1, §12.2, §12.6):
   Withheld (null, before any other rule): Defending with its D5 status per group (ADR 004
   §13.8, M4g4d), read from spikes/expected_m4g4_flips.json (written by the independent M4g4c /
   M4g4c2 references), not from eleveniq; Passing in CB, FB-WB, DM-CM and AM-Winger, where
-  its only directional DNA member is long_pass_completion_pct (pending_mover_stability, §12.9).
+  its only directional DNA member is long_pass_completion_pct (pending_xpass_deferred, §12.9).
   A family with no present directional member is null (no_directional_metric).
 - Pair distance (the checks' provisional distance; M5 picks the product metric): weighted
   squared Euclidean on percentile / 100 with pair weights — each family's weight re-split
@@ -76,7 +76,7 @@ def _withheld() -> dict[str, dict[str, str]]:
     (§13.8; "ok" restores it) from the M4g4 expected file, Passing's pending status (§12.9)."""
     d5 = json.loads(EXPECTED_M4G4.read_text())["defending_score_status"]
     return {"Defending": {g: st for g, st in d5.items() if st != "ok"},
-            "Passing": {g: "pending_mover_stability" for g in ("CB", "FB-WB", "DM-CM", "AM-Winger")}}
+            "Passing": {g: "pending_xpass_deferred" for g in ("CB", "FB-WB", "DM-CM", "AM-Winger")}}
 
 
 WITHHELD: dict[str, dict[str, str]] = _withheld()
@@ -131,7 +131,7 @@ DNA: dict[str, tuple[str, ...]] = {g: tuple(sorted(_COMMON + extra)) for g, extr
 Z_TOL = 1e-9          # z, median and scale (plain Python vs polars order of operations)
 W_TOL = 1e-12
 EXPECTED = {"rows": 1233, "partial": 32, "dna_incomplete": 0, "no_directional_metric": 0,
-            "pending_mover_stability": 1075,
+            "pending_xpass_deferred": 1075,
             "zero_spread": 0, "iqr_scale": 0}
 
 # Hand-picked rows: (player_name, team_id, why). Each claim in `why` is asserted below.
@@ -143,7 +143,7 @@ PICKS = (
                                           "box_entries_carry_p90, ≈ 13.7), stored uncapped"),
     ("Theo Walcott", 1, "partial AM-Winger: long_pass_completion_pct below min_attempts, so "
                         "Passing keeps long_passes_attempted_p90 at 1/7; its score is withheld "
-                        "(pending_mover_stability, as for every AM-Winger)"),
+                        "(pending_xpass_deferred, as for every AM-Winger)"),
     ("Antonio Di Natale", 230, "partial ST: aerial_win_pct below min_attempts; Aerial keeps "
                                "aerials_won/lost and its score uses aerials_won_p90 only"),
     ("Jonjo Shelvey", 37, "D3 outsider (Swansea/Newcastle): scored against a local population "
@@ -289,7 +289,7 @@ def season_checks(dna: Dna) -> dict:
         "dna_incomplete": sum(v["dna_status"] == "dna_incomplete" for v in vecs),
         "no_directional_metric": sum(d["score_status"] == "no_directional_metric"
                                      for v in vecs for d in v["dimensions"].values()),
-        "pending_mover_stability": sum(d["score_status"] == "pending_mover_stability"
+        "pending_xpass_deferred": sum(d["score_status"] == "pending_xpass_deferred"
                                        for v in vecs for d in v["dimensions"].values()),
         "zero_spread": sum(c["z_status"] == "zero_spread" for v in vecs for c in v["cells"].values()),
         "iqr_scale": sum(c["z_scale_method"] == "iqr" for v in vecs for c in v["cells"].values()),
@@ -349,8 +349,8 @@ def assert_claims(dna: Dna, picked: dict[str, dict], counts: dict) -> None:
     if wal["dna_status"] != "partial" or \
             wal["cells"]["long_pass_completion_pct"]["metric_status"] != "below_min_attempts" or \
             abs(wal["cells"]["long_passes_attempted_p90"]["weight"] - 1 / 7) > W_TOL or \
-            wal["dimensions"]["Passing"]["score_status"] != "pending_mover_stability":
-        fail("Walcott: partial, long passes at 1/7, Passing withheld (pending_mover_stability)")
+            wal["dimensions"]["Passing"]["score_status"] != "pending_xpass_deferred":
+        fail("Walcott: partial, long passes at 1/7, Passing withheld (pending_xpass_deferred)")
     din = v("Antonio Di Natale")
     if din["dna_status"] != "partial" or \
             din["cells"]["aerial_win_pct"]["metric_status"] != "below_min_attempts" or \

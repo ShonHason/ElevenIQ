@@ -123,7 +123,7 @@ def test_defending_withheld_and_passing_null_counts(built):
                         "AM-Winger": ["possession_criteria_failed"],
                         "ST": ["possession_criteria_failed"]}
     passing = dim.filter(pl.col("family") == "Passing")
-    held = passing.filter(pl.col("score_status") == "pending_mover_stability")
+    held = passing.filter(pl.col("score_status") == "pending_xpass_deferred")
     assert held.height == 1075 and "ST" not in held["position_group"].to_list()
     assert held["score"].null_count() == held.height
     st = passing.filter(pl.col("position_group") == "ST")

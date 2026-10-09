@@ -267,5 +267,5 @@ DNA_NEIGHBOURS_K: int = 10
 #   tests/test_dna.py::test_passing_withheld_exactly_where_long_pass_completion_is_its_only_
 #   directional_member re-derives these groups from the registry: re-check it if they change.
 DNA_WITHHELD_DIMENSIONS: dict[str, tuple[str, tuple[str, ...]]] = {
-    "Passing": ("pending_mover_stability", ("CB", "FB-WB", "DM-CM", "AM-Winger")),
+    "Passing": ("pending_xpass_deferred", ("CB", "FB-WB", "DM-CM", "AM-Winger")),
 }

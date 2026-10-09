@@ -398,7 +398,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "pending_mover_stability"
+     "score_status": "pending_xpass_deferred"
     },
     "Progression": {
      "members": [
@@ -816,7 +816,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "pending_mover_stability"
+     "score_status": "pending_xpass_deferred"
     },
     "Progression": {
      "members": [
@@ -1234,7 +1234,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "pending_mover_stability"
+     "score_status": "pending_xpass_deferred"
     },
     "Progression": {
      "members": [
@@ -1607,7 +1607,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "pending_mover_stability"
+     "score_status": "pending_xpass_deferred"
     },
     "Progression": {
      "members": [
@@ -1629,7 +1629,7 @@
    },
    "player_name": "Theo Walcott",
    "position_group": "AM-Winger",
-   "why": "partial AM-Winger: long_pass_completion_pct below min_attempts, so Passing keeps long_passes_attempted_p90 at 1/7; its score is withheld (pending_mover_stability, as for every AM-Winger)"
+   "why": "partial AM-Winger: long_pass_completion_pct below min_attempts, so Passing keeps long_passes_attempted_p90 at 1/7; its score is withheld (pending_xpass_deferred, as for every AM-Winger)"
   },
   {
    "cells": {
@@ -2366,7 +2366,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "pending_mover_stability"
+     "score_status": "pending_xpass_deferred"
     },
     "Progression": {
      "members": [
@@ -2626,7 +2626,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "pending_mover_stability"
+     "score_status": "pending_xpass_deferred"
     },
     "Progression": {
      "members": [
@@ -3000,7 +3000,7 @@
     "Passing": {
      "members": [],
      "score": null,
-     "score_status": "pending_mover_stability"
+     "score_status": "pending_xpass_deferred"
     },
     "Progression": {
      "members": [
@@ -3042,7 +3042,7 @@
   "no_directional_metric": 0,
   "pairs_checked": 156961,
   "partial": 32,
-  "pending_mover_stability": 1075,
+  "pending_xpass_deferred": 1075,
   "rows": 1233,
   "scale_methods": [
    "mad"

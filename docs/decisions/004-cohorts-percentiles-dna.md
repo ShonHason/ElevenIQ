@@ -1151,7 +1151,7 @@ The four open M4f items in §10.8 and plan 005 M4f were decided from the 2015/16
   - Dropping the family sort alone is an equivalent mutant, because `SPECS` is already contiguous by family.
 - **Passing dimension score withheld where it rests on `long_pass_completion_pct` alone (user, 2026-10-07).**
   - **Why:** in CB, FB-WB, DM-CM and AM-Winger, `long_pass_completion_pct` is the only directional Passing DNA member. §11.5 says a low long-pass completion is never presented as poor individual passing (Koné 0.319 at Sunderland, 0.595 at Lorient). A one-metric Passing score does exactly that (Busquets 98, Kanté 38, Özil 87).
-  - **Rule:** treated like Defending (§12.6). The score is null with `score_status` `pending_mover_stability`, and the page reads "withheld until M4g (team-influenced; xPass candidate pre-registered)". ST keeps its Passing score (`pass_completion_pct`). The metric stays in the vector, so weights, distances and neighbours are unchanged.
+  - **Rule:** treated like Defending (§12.6). The score is null with `score_status` `pending_mover_stability`, and the page reads "withheld until M4g (team-influenced; xPass candidate pre-registered)". ST keeps its Passing score (`pass_completion_pct`). The metric stays in the vector, so weights, distances and neighbours are unchanged. **Renamed in §14 item 4 (2026-10-09):** `pending_xpass_deferred`, page text "withheld (team-influenced; xPass deferred until after launch)".
   - **Code:** `config.DNA_WITHHELD_DIMENSIONS` (family → status and groups) replaces `DNA_WITHHELD_FAMILIES` (§12.8). The build passes `dna.withheld_for(group)` to `row_dna`, and the spike holds the same table written out. A fast test asserts the Passing groups are exactly those whose only directional Passing DNA member is `long_pass_completion_pct`. The page refuses a dimensions file whose withheld statuses differ from the config.
   - **Effect (2015/16):** 1,075 Passing scores withheld (every non-ST row). This includes the 30 rows that were `no_directional_metric` (§12.6): the withhold is checked first, so `no_directional_metric` now occurs 0 times. The 158 ST scores are unchanged, and the vector file's cells are unchanged. The spike's `--check-output` passes (25,121 vector cells, 7,963 dimension scores), and the fixture changes only on the Passing scores of the 7 non-ST rows.
   - **Goldens:** each changes by one line, with 2 `data-dim` cells removed: Ben Arfa Passing 62 in the M4e golden, Özil Passing 87 in the radar golden. 0 `data-src` cells changed. The golden diff summary now counts `data-dim` cells.
@@ -1461,7 +1461,7 @@ Adds to §13.1; plan 005 M4g3 / M4g3c hold the full spec.
   - **If power is low, Defending and Passing may stay withheld for 2015/16. The rule is not relaxed after the results are seen.**
 - **Low power (user, 2026-10-08):** computed per metric at its own n and its R_m, written out before f̂ is computed. P(PASS | f = 0) < 0.8 → the label "underpowered at n". It is a label only: it never changes PASS / FAIL / inconclusive.
 - **Known beforehand:**
-  - M4g3 changes no `registry_status`, note or `score_status`. Passing stays `pending_mover_stability` until M4g5.
+  - M4g3 changes no `registry_status`, note or `score_status`. Passing stays `pending_mover_stability` until M4g5. **Renamed in §14 item 4 (2026-10-09):** `pending_xpass_deferred`, page text "withheld (team-influenced; xPass deferred until after launch)".
   - The verdict is per metric (movers are pooled), the same in every group.
   - `defensive_duel_success_pct` is `untestable`: 0 of 24 movers meet `min_attempts` on both stints. Defending's testable directional DNA member is `ball_recoveries_p90`, as M4g4 adjusts it. **Corrected in §13.8:** `tackles_won_p90` was listed here too, but it is `d17_dropped` in all 5 groups (ρ 0.90–0.93 with `tackles_attempted_p90`), so it is not a DNA member and cannot restore Defending.
   - Also `untestable`: `aerial_win_pct` (4 movers), `np_xg_per_shot` (2). Tested: `pass_completion_pct` (24), `long_pass_completion_pct` (15).
@@ -1663,9 +1663,35 @@ Adds to §13.1 and §13.2; plan 005 "M4g4 plan" holds the full spec, the power t
   - About a 20–25% chance that execution restores Passing in any group on 2015/16 data, and about 5–10% in CB, FB-WB and DM-CM.
   - The binding gates are D12 (completion's possession ρ is 0.57–0.69 in those groups) and the pooled mover rule (every current passing-quality metric is inconclusive; every PASS has f̂ ≤ 0.09).
 - **Passing stays withheld as deferred, not failed.**
-  - In CB, FB-WB, DM-CM and AM-Winger the status stays `pending_mover_stability` (§12.9). It is a pending status, not one of the §13.8 D5 failure codes. From this decision it means "xPass deferred until after web v1": the restore question has not been tested.
+  - In CB, FB-WB, DM-CM and AM-Winger the status stays `pending_mover_stability` (§12.9). It is a pending status, not one of the §13.8 D5 failure codes. From this decision it means "xPass deferred until after web v1": the restore question has not been tested. **Renamed in §14 item 4 (2026-10-09):** `pending_xpass_deferred`, page text "withheld (team-influenced; xPass deferred until after launch)".
   - No code changes in this decision. The status string and its display text ("team-influenced; xPass candidate pre-registered") are an M4g6 sign-off item (rename, or reword to say "deferred").
   - ST keeps its Passing score (`pass_completion_pct`).
 - **Consequences:**
   - The M4 sign-off decides without M4g5 input: family weighting, and the two allow-listed `long_pass_completion_pct` cells (CB, DM-CM; §13.8 "The 8 majority-triggered…"), which M4g5 was to inform.
   - The §13.3 pre-registration (features, leakage decision, model acceptance, the execution / ambition predictions) stays in force unchanged for when M4g5 returns.
+
+## 14. M4 sign-off decisions (user, 2026-10-09; plan 005 M4g6b)
+Evidence and options: `docs/reviews/m4-signoff.md` (committed before the answers, `e1838df`), `docs/reviews/m4-validation.md` (sections `m4_validation`, `m4g6_weighting`), `docs/reviews/m4f-weighting.md`.
+
+1. **Family weighting: A, accept the build** (§10.8, §12.6: each family 1/|F|, split over its members). **Provisional until M5**, where split-half self-retrieval tests weighting (deferred, user 2026-10-09).
+   - **Evidence:** the half-weight cap and the merge keep a median 7–10 of 10 neighbours, the noise share Σw(1−r) differs by ≤ 0.017, and one-member families do not dominate retrieval.
+   - **Face read (user, 2026-10-09; verbatim):** "Neighbours are searched within the position group by design, so 'no other positions' is not evidence. The evidence is discrimination within a group: Kane's and Rubén Castro's lists share only Ben Yedder — Castro gets box finishers (Defoe, Bacca, Di Natale, Maccarone, Gomis), Kane gets mobile link-up forwards (Dybala, Griezmann, Aspas, Jovetić, Niang). Dawson's and Appiah's share only Echiejile — Dawson gets converted CBs and defensive full-backs, which fits his West Brom role. Kane: 0 PL and 6 Serie A neighbours, noted. B does not look better (Kane loses Higuaín and Griezmann; Dawson gains teammate Brunt). Supports A, provisional until M5. For M5: Ben Yedder and Echiejile appear in two lists each — check for hub players in the self-retrieval work."
+   - **Checked before recording (user request):** Niang, Muriel, Pléa, Braithwaite and Jovetić are ST by the main-group minutes rule, with no mapping error (raw positions follow ADR 002 §4). Main-group shares: Niang 0.769, Muriel 0.846, Pléa 0.864, Braithwaite 0.594, Jovetić 0.685. Braithwaite and Jovetić are mixed-role (below 0.70) but correctly ST.
+2. **The 8 majority-admitted allow-listed cells: A, keep all 8 as DNA** (allow-listed, "team-style influenced" note).
+   - Revisit `long_pass_completion_pct` (CB, DM-CM) when xPass returns or at M5, whichever is first.
+   - Evidence: the progression cells have r 0.85–0.90, inconclusive mover verdicts with f̂ 0.25–0.32 and leave-one-out overlap 8–9. Long-pass completion has f̂ 0.93 [0.06, 2.05] at n = 15 (inconclusive).
+3. **FAIL list: confirmed empty.** 0 FAIL among the 34 mover verdicts (§13.7).
+4. **Passing status: A, rename** `pending_mover_stability` → `pending_xpass_deferred`. The page text becomes "withheld (team-influenced; xPass deferred until after launch)". Done before plan 006 W1 (M4g6c). Meaning as §13.9: deferred, not tested.
+5. **N1–N3 confirmed as display rules** (plan 006 W4): a CI next to every possession flag; "not shown to be free of team-possession effects" wording only; withheld Defending is the expected state until a second season.
+6. **The six deferrals are confirmed:**
+   - log-OLS vs Poisson β̂ and a group-count gate in the β̂ fit (later ADR);
+   - the §31 treatment re-entry (before a new source or season);
+   - the second-season levers;
+   - the M5 z handling (C1/C2);
+   - split-half self-retrieval (M5);
+   - xPass (first post-launch feature, §13.9).
+7. **Backlog triage as proposed** (`docs/reviews/m4-signoff.md` §7):
+   - before plan 006 W1: `player_nickname` and human-readable reason codes; before W5 (style maps): the M4g1b page-size and run-time follow-ups;
+   - before M5: the z handling, the DM-CM 6-share column, and empirical-Bayes ratio shrinkage;
+   - before a new source or season: the fail-loud and robustness items;
+   - the rest stays in the feature backlog.

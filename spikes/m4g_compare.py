@@ -58,7 +58,7 @@ N_DIFF, N_ALIKE = 5, 3
 B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 TIE_TOL = 1e-12
 # Withheld score reasons in words (tools/compare_page.DIM_STATUS_TEXT, written out: no eleveniq).
-WITHHELD_WORDS = {"pending_mover_stability": "team-influenced; xPass candidate pre-registered",
+WITHHELD_WORDS = {"pending_xpass_deferred": "team-influenced; xPass deferred until after launch",
                   "possession_criteria_failed": "not shown to be free of team-possession effects",
                   "mover_stability_failed": "player-vs-team test on club movers failed",
                   "mover_stability_inconclusive": "player-vs-team test on club movers inconclusive",
@@ -66,7 +66,7 @@ WITHHELD_WORDS = {"pending_mover_stability": "team-influenced; xPass candidate p
                   "mover_seed_sensitive": "player-vs-team test on club movers not stable across seeds",
                   "mover_below_model_range": "player-vs-team test on club movers outside the model's range"}
 # The tag's reason per withheld status (user, 2026-10-07).
-TAG_WORDS = {"pending_mover_stability": "depends on the team's passing style",
+TAG_WORDS = {"pending_xpass_deferred": "depends on the team's passing style",
              "possession_criteria_failed": "not shown to be possession-free",
              "mover_stability_failed": "mover test failed",
              "mover_stability_inconclusive": "mover test inconclusive",

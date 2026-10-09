@@ -1,0 +1,7 @@
+{
+ "description": "M4g6c expected changes (ADR 004 §14 item 4; plan 005 M4g6b): the Passing withheld status pending_mover_stability is renamed pending_xpass_deferred. Written before any code. Only player_dna_dimensions.parquet changes, in score_status on the withheld Passing rows; player_dna.parquet and the percentiles are byte-identical (no registry, vector or percentile change; REGISTRY_VERSION unchanged).",
+ "registry_version": "91c24b62e53c48d5e9403081bbc844ff823a32b22d32764ebbf681a04d9de2b5",
+ "dimensions": {"family": "Passing", "from": "pending_mover_stability", "to": "pending_xpass_deferred",
+                "rows": 1075, "groups": ["AM-Winger", "CB", "DM-CM", "FB-WB"]},
+ "unchanged_files": ["player_dna.parquet", "player_season_percentiles.parquet"]
+}
