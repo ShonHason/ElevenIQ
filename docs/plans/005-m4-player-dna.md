@@ -1645,6 +1645,162 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 
 The stats-reviewer signs it off; any failure goes back to its decision.
 
+### M4g6 plan (approved by the user, 2026-10-09)
+M4g4 is done and M4g5 is deferred (ADR 004 §13.9), so M4g6 closes M4. Each write-up item answers a brief §20 question. Plan 006 starts only after the sign-off.
+- **M4g6a — validation spike:** the evidence, spec below; the stats-reviewer reviews the spec before any code.
+- **M4g6b — sign-off decisions document** (`docs/reviews/m4-signoff.md`). Each item gives evidence, options and a recommendation; **stop for the user's decisions**. The items:
+  1. family weighting for one-member families;
+  2. the 8 majority-admitted allow-listed cells (incl. the 2 `long_pass_completion_pct` cells, decided without M4g5);
+  3. the FAIL list (today 0 current DNA metrics);
+  4. the Passing status name and the stale "withheld until M4g" display text;
+  5. N1–N3 confirmed as accepted display rules;
+  6. items out of M4 scope, to confirm (log-OLS vs Poisson β̂ and a group-count gate, the §31 re-entry check, the second-season levers, the M5 z handling C1/C2);
+  7. backlog triage (what must close before web v1 or M5).
+- **M4g6c — apply decisions that change code** (only if any do): expected file before code, a before/after STOP rule, rebuild, frame comparisons, references, golden pages, M4f3 re-run if the vector changes, full `/finish-chunk`.
+- **M4g6d — close M4:** ADR 004 §14 "M4 sign-off"; the stats-reviewer signs off the write-up; M4 status in `milestones.md` and here; milestone report. Merging `m4-player-dna` into `main` locally needs separate user approval; the user pushes.
+- **Stops:**
+  1. the spec review;
+  2. the M4g6a output and commit;
+  3. the M4g6b decisions;
+  4. the M4g6c commit, if any;
+  5. the M4 report and the merge question.
+
+### M4g6a spec (for the stats-reviewer's pre-code review)
+`spikes/m4_validation.py` writes its own marked section (`review_sections.write_section`, owner `m4_validation`) of `docs/reviews/m4-validation.md`. It is report only, never imports eleveniq and decides nothing.
+
+**Inputs:**
+- the processed parquets (season, percentiles, DNA, dimensions);
+- the committed measurements;
+- a registry snapshot (`tools/registry_snapshot.py`);
+- the raw events (item 4 only).
+
+**Shared definitions:**
+- "Primary scored rows": `cohort_role = "primary"`, `percentile_status = "scored"`; 1,233 in 2015/16.
+- DNA lists, families, pair weights and the pair distance come from `spikes/m4f_dna_reference.py`.
+- Neighbours (M4f3 definition): same group, primary scored rows, any pool league, excluding the same `player_id`; k = 10; ties broken by the season key.
+
+Items:
+1. **Minutes threshold sensitivity (gates 720 and 1,080 nominal-equivalent minutes; user 2026-10-09).**
+   - **Method:** the gate is `minutes_nominal_equiv ≥ G − 1e-6`, and every other rule stays as in ADR 004 §11. `m4d_percentiles_reference` gains a `gate` parameter (default 900, its output unchanged).
+   - **Ratios:** `min_attempts` stays at the values measured at 900, and that is stated in the section.
+   - **Per gate, reported:**
+     - (a) cohort sizes per league × group;
+     - (b) per DNA metric × group, the Spearman ρ between the 900 and the G local percentiles, on rows scored at both gates (G = 720: the 900 rows; G = 1,080: the 1,080 rows);
+     - (c) the share of rows in a cell's local top 10% at 900 that are still in the top 10% at G, among rows scored at both;
+     - (d) the top-10 neighbour overlap at 900 vs G for the item-7 sample.
+   - The lowest-ρ cells and the largest drops are listed.
+2. **Reliability:** a table from the committed measurements (multi-split `r_full` per DNA cell and the minute-bucket summary). No recompute.
+3. **Correlation and dominance (the family-weighting evidence):**
+   - re-run `spikes/m4f_weighting_checks.py` on the current build. It regenerates `docs/reviews/m4f-weighting.md`, which is stale (registry 930d0019ee11, before M4g2). That gives family shares of the squared distance against nominal weights and the noise baseline, and the family vs equal-metric top-10 overlap;
+   - add per DNA metric × group the metric's share of the squared distance over all within-group pairs (the same decomposition, per metric), against its nominal weight;
+   - add the Spearman matrix of the group's DNA local percentiles, listing every pair with |ρ| ≥ 0.7 (D17 drops at 0.85);
+   - add, for each scored (non-withheld) dimension, each directional member's Spearman ρ with its dimension score.
+   - If the face-validity lists change from M4f3, the user's recorded read is marked "to be re-read on the current build" and not kept as current.
+4. **Outlier audit (D20):**
+   - **Which rows:** gated rows strictly above their group's P99 (numpy linear quantile over the group's gated rows, all leagues) on at least one DNA metric of the group. The count over all per-90 and ratio metrics is reported too, next to D20's 243 (an M4a figure, before M4b).
+   - **Trace for every DNA cell above P99:** recount the season count from the raw events of that player-team-competition with the independent definitions in `spikes/verify_core_metrics.py` (applied to that player's events only), and compare with the parquet count and minutes. Exact equality is expected.
+   - A metric with no independent definition there is listed as "not traced" with its count.
+   - Also the 20 largest |z| rows, with the main-group minute share.
+5. **Multi-position players and club changers:**
+   - D5 rows: per group, the count of `position_group_ambiguous` rows, and for the second-group rows the |primary − second| local percentile difference per DNA metric they share (median, max).
+   - Club changers (a player with two gated primary rows in the same group): the DNA distance between his two stints and its percentile within the group's distribution of distances to the 10th neighbour, plus whether each stint is in the other's top 10.
+6. **Mixed-role |z| > 5:** comes from item 3's re-run (C1 table with the main-group share); the section reports the count and the share below 0.70 against the other rows.
+7. **Neighbours on both bases.**
+   - **Sample (rule fixed before computing, user 2026-10-09), 21 players:**
+     - the 9 M4f3 face-validity players (Kanté, Busquets, Isco, Özil, Payet, Messi, Neymar, Stones, Morgan);
+     - per group, the 2 primary scored rows with the most `minutes_played` not already picked;
+     - the 2 same-group movers (the M4g3 list) with the most combined minutes not already picked.
+   - **Bases:** (a) all local, the build; (b) "global where defined": `pct_global` where `status_global = "ok"`, else `pct_local`.
+   - **Reported:** the top-10 overlap per player, the median overlap, and both lists for the 9 face-validity players.
+8. **Teammate count after M4g4:**
+   - comes from item 3's re-run (same-team neighbours, observed vs expected), next to the M4f3 figure;
+   - the DNA vector is unchanged since M4g2 apart from stamps, which is asserted (the M4g4d frame comparison).
+9. **M4g1–M4g5 outcomes:**
+   - a summary linking the reviews and ADR sections;
+   - every mover verdict shown with its flags ("underpowered at n", "borderline (seed-sensitive)", "PASS (below model range)"), never a bare PASS;
+   - M4g5 reads "deferred (ADR 004 §13.9)".
+
+**Tests:** synthetic tests for the new helpers (gate parameter, per-metric share decomposition summing to the distance, P99 selection, sample rule, overlap).
+
+**`/finish-chunk`:**
+- code-reviewer;
+- qa-tester skipped: spikes and tests only (the `m4d` reference change is a spike);
+- the stats-reviewer on the output.
+
+**Stats-reviewer pre-code review (2026-10-09): APPROVE WITH CONDITIONS.** Conditions 1–12 are folded in below (user, 2026-10-09). They replace the matching parts of the spec above.
+- **User decisions (fixed before any run):**
+  - **Weighting variants for M4g6a2:** (i) the build, family weights; (ii) the half-weight cap: a one-member family gets 0.5/|F|, and the freed weight is split equally over the group's other families; (iii) the merge: Goal threat + Creation become "Attacking output" in every group where either has one member. CB Aerial is never merged (cap only).
+  - **Split-half self-retrieval (condition 13) is deferred to the M5 plan.** The M4 sign-off decides weighting on the noise-share and leave-one-out evidence and marks the decision provisional until M5.
+  - **Split:**
+    - **M4g6a1:** items 1, 2, 4, 5, 7, 9 and the brief §20 map;
+    - **M4g6a2:** items 3, 6, 8 and the weighting variants.
+    Each gets its own `/finish-chunk` and commit.
+- **Item 1 (conditions 1, 2, 3, 12):**
+  - (b) is replaced: on rows scored at both gates, Spearman is 1 by construction (both percentiles are monotone in the same value, and the populations are nested). Instead, per DNA cell, the |pct_900 − pct_G| distribution (median, P95, max), and per group the distribution of each row's median |Δd| over its common partners.
+  - **Rule-faithful outcome:** rows that lose a score at G (e.g. PL ST is 29 rows at 1,080, below the cohort floor), per league × group, and every row that drops below the gate (incl. the mover stints of Shelvey, Khazri and Perotti at 1,080).
+  - **(b), (c) and (d) also run with the cohort floor waived,** with the waived cells flagged.
+  - **Held at the 900 registry:** the DNA lists, families, weights, zero-heavy exclusions, `min_attempts` and D9. Local percentiles only; global / D9 is not recomputed.
+  - **The m4d reference `gate` parameter replaces only the row-status test.** The guard still checks the stored `meets_min_minutes` against 900.
+  - **(c):** "top 10%" is `pct_local` ≥ 90, reported as k of n.
+  - **(d) on all rows** (median and P10 overlap per group):
+    - at 720: the overlap with candidates restricted to rows scored at both gates (percentile shifts), and the share of new neighbours from the 720–900 band (new candidates);
+    - at 1,080: the share of 900 neighbours lost because they fall below the gate.
+- **Item 4 (conditions 5, 6, recommendation 11):**
+  - **Rows:** P99 for a ratio is taken over its eligible rows only (≥ `min_attempts`).
+  - **Recount:** every DNA metric is recounted per player from raw events (periods 1–4). The independent definitions are written out from `verify_core_metrics.py` (`count_events`), `verify_chunk_a_metrics.py` (aerials, pressures, dribbled past, ball recoveries, long passes) and `verify_chunk_b_metrics.py` (final-third and box entries). For a ratio, both numerator and denominator are recounted.
+    - Exception, justified: `team_pass_share`'s denominator (`team_open_play_passes_while_on`) is credit-based; its league total is verified by `verify_core_metrics`, so only its numerator is recounted per row.
+    - Minutes are verified at league level by the same spike, so they are not re-derived per row.
+  - **Per outlier cell:**
+    - the top match's share of the season count, and the value without that match (still above P99?);
+    - the 900–1,350 bucket flag;
+    - the main-group share;
+    - duplicate events of that player (same match, timestamp, type).
+  - **Classification, first match wins:** coding error (recount ≠) → data anomaly (duplicates) → single-match spike (below P99 without the top match) → mixed role (share < 0.70) → near-gate (900–1,350) → genuine.
+  - **Lower tail:** P1 rows for `passes_attempted_p90`, `pressures_p90` and `ball_recoveries_p90`, and player-matches with ≥ 45 minutes and no on-ball event.
+- **Item 5 (condition 7):**
+  - "In the other's top 10" becomes the rank of the other stint among all same-group rows, with that stint admitted.
+  - Benchmarks: the 1st and 10th neighbour distances.
+  - n = 5, described without inference.
+  - Plus the D2/D3 counts: multi-stint players with no stint ≥ 900 nominal, and those whose combined minutes would pass (no profile).
+- **Item 7 (condition 8):**
+  - every scored stint of a sampled mover is included, and the row count is stated;
+  - both lists, on both bases, for all 21 players;
+  - the same-league neighbour share on each basis (all rows, observed vs expected).
+- **Write-up (condition 8d):** a brief §20 map, all 14 questions, each pointing to an item or an ADR section:
+  - "cosine similarity" is deferred to M5 (M4's distance is weighted squared Euclidean);
+  - Gem stability and rare combinations are deferred to M6;
+  - totals reconciliation points to the goals + own goals check in the reference spikes.
+- **Item 3 for M4g6a2 (conditions 4, 9, 10):**
+  - per-metric shares over neighbour pairs against the noise baseline (all-pairs as a check only);
+  - leave-one-family-out top-10 overlap, plus leave-one-metric-out for the one-member families and the 8 majority-admitted cells;
+  - the three variants: effective metrics 1/Σw², overlap with the build, teammate ratio, same-league share, face lists, and the expected noise share Σ w·(1 − r_full);
+  - item–rest correlations (one-member families "not assessable");
+  - |ρ| ≥ 0.7 pairs tagged within-family or cross-family.
+
+### M4g6a1 — outcome (2026-10-09)
+- **Files:**
+  - `spikes/m4_validation.py` → the `m4_validation` section of `docs/reviews/m4-validation.md`, figures in `data/interim/m4g6a1/validation.json`;
+  - `spikes/m4g6_recount.py`, the per-player recount;
+  - `spikes/m4d_percentiles_reference.py` gains `gate` and `min_cohort` parameters; the defaults reproduce the build, and both references pass.
+- **Findings:**
+  - **Gate 720:** shifts are small (cell medians about 1 point, 93–97% of the top 10% kept, top-10 overlap median 8–9). The 126 rows of the 720–900 band are 9.3% of the rows, but 1.2× their share of the top-10% cells and 1.9× their share above P99. This is consistent with low-minute noise at the extremes and **supports not lowering the 900-minute gate**; 900 vs 1,080 is decided by the coverage loss (e.g. PL ST).
+  - **Gate 1,080:** 137 rows drop out, 6 of them mover stints. Rule-faithful, all 29 PL ST rows lose their cells to the cohort floor.
+  - **Reliability caveat:** near-gate CB and FB-WB measures have a median r_full of about 0.60.
+  - **Outliers:** 277 cells in 191 rows above P99; 0 recount mismatches and 0 duplicate events. The pre-registered "single-match spike" class (130) reads as marginal exceedance: 128 stay above P95 without the top match. Only 7 cells have a top-match share of 25% or more. Near-gate rows are not over-represented at 900 (24.4% of rows, 24.2% of cells).
+  - **Club changers** (n = 5, date order): described only.
+  - **D2 / D3:** 15 players would pass on combined minutes but get no profile.
+  - **Two bases:** median top-10 overlap 8. On the local basis, same-league neighbours fall below expectation, partly for a mechanical reason.
+- **`/finish-chunk`:**
+  - qa-tester skipped (spikes, tests and docs only);
+  - stats-reviewer, output only: CONCERNS, all fixed in the one round (single-match reading, flag totals, band landing, r caveat, same-league caveat, date order, top-20 |z|, smaller wording);
+  - code-reviewer: PASS, should-fix items done (mover-rule note, empty-population guard, hoisted 10th-neighbour list, annotations, clean FAIL on an old snapshot, tests incl. thresholds read from `config`);
+  - fix delta: PASS. One fix-delta item was applied because the text it flagged was wrong: the band "about twice" claim now prints the computed ratios (1.2× / 1.9×).
+- **Backlog, gated before the next run of `spikes/m4_validation.py` (M4g6a2 or later; code-reviewer, M4g6a1 fix delta; user rule: one fix round):**
+  1. `multi_position`: `first_date.get(x, "")` sorts a stint without a date first. Fail, or record it, instead; `first_dates()` should count the match ids it skips.
+  2. `first_dates()` hard-codes the season file `27.json`; read the season from the keys.
+  3. `test_same_league_observed_and_expected` cannot catch a K-limiting bug (`top_k` binds its default `k` at definition time): use a fixture where K = 1 and K = 2 differ, and pass `k` explicitly.
+  4. Share one P99 helper between `outliers()` and `band_landing()`.
+
 ### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
 - Folded in above: the leakage decision; the M4g1 lift and pivot label; the M4g3 baseline `min_attempts`, pooling, paired bootstrap and RMS; the M4g4 fixed order, ratios and β̂ fit; the M4g5 subsets and stratified folds; the majority-trigger wording.
 - Recorded in ADR 004: `long_pass_completion_pct` has the same length-truncation bias. A long ball that is intercepted or blocked early is recorded short and drops out of the denominator, which inflates the rate (the Koné example's metric).

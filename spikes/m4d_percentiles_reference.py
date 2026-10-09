@@ -170,7 +170,10 @@ def global_ok(cell: dict | None, pool: list[str], sizes: dict[str, int] | None) 
 
 # ── Rows ─────────────────────────────────────────────────────────────────────
 
-def load_rows(meas: dict) -> list[dict]:
+def load_rows(meas: dict, gate: float = GATE) -> list[dict]:
+    """Season rows with their D1 row status. `gate` (plan 005 M4g6a1, sensitivity only) moves
+    the minutes test of the row status; the guard below still checks the stored
+    meets_min_minutes against the 900 gate (D1)."""
     prov = meas["provenance"]
     if sha256(SEASON_PARQUET) != prov["season_parquet_sha256"]:
         fail("season parquet sha256 differs from the measurements provenance")
@@ -178,9 +181,11 @@ def load_rows(meas: dict) -> list[dict]:
     for r in rows:
         if r["source"] != prov["source"]:
             fail(f"row {key_of(r)} has source {r['source']!r}, measurements are {prov['source']!r}")
-        gate = r["minutes_nominal_equiv"] >= GATE - GATE_TOLERANCE
-        if gate != r["meets_min_minutes"]:
+        at_900 = r["minutes_nominal_equiv"] >= GATE - GATE_TOLERANCE
+        if at_900 != r["meets_min_minutes"]:
             fail(f"meets_min_minutes differs from the recomputed gate on {key_of(r)}")
+        passes = r["meets_min_minutes"] if gate == GATE else \
+            r["minutes_nominal_equiv"] >= gate - GATE_TOLERANCE
         outfield = sum(r[GROUP_MINUTES[g]] for g in OUTFIELD)
         if r["minutes_gk"] >= MIXED_POSITION_MINUTES and outfield >= MIXED_POSITION_MINUTES:
             fail(f"D6: mixed GK/outfield row {key_of(r)}")
@@ -188,7 +193,7 @@ def load_rows(meas: dict) -> list[dict]:
             r["_status"] = "not_in_pool"
         elif r["is_outfield"] is not True:
             r["_status"] = "goalkeeper"
-        elif r["meets_min_minutes"] is not True:
+        elif passes is not True:
             r["_status"] = "below_gate"
         else:
             r["_status"] = "scored"
@@ -217,8 +222,11 @@ class Cohorts:
     """Every reference population, built once from the scored rows."""
 
     def __init__(self, rows: list[dict], metrics: dict[str, Metric], pool: list[str],
-                 meas: dict) -> None:
+                 meas: dict, min_cohort: int = MIN_COHORT_SIZE) -> None:
+        """min_cohort: the D11 floor (plan 005 M4g6a1 waives it, flagged, in the sensitivity
+        variant only)."""
         self.rows, self.metrics, self.pool, self.meas = rows, metrics, pool, meas
+        self.min_cohort = min_cohort
         # The stored ratio is the one whose min_attempts is checked: num / den, null at den 0.
         for m in metrics.values():
             if m.num is None:
@@ -275,7 +283,7 @@ class Cohorts:
             if why == "ok":
                 pop = self.population(m, group, league)
                 n = len(pop)
-                if n < MIN_COHORT_SIZE:
+                if n == 0 or n < self.min_cohort:      # a waived floor never ranks an empty population
                     status = "cohort_too_small"
                 elif scope == "global" and self.global_ok(m, group) is None:
                     status = "d9_undefined"
