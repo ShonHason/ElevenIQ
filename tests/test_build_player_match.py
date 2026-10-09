@@ -3440,3 +3440,32 @@ class TestM4g4bBacklog:
         credits, out_of_range, mismatches = _bpm.team_open_play_pass_credits(
             [self._pass(99, team=10)], tl, {1: 10, 2: 10}, self._CLOCK)
         assert not credits and out_of_range == [] and mismatches == []
+
+
+class TestPlayerNickname:
+    """Plan 006 pre-W1 gate G1: the lineup's player_nickname is carried on every player-match
+    row (null when the lineup has none); display only, never a key."""
+
+    def test_nickname_is_carried_and_null_when_absent(self, tmp_path):
+        lineups = _team_lineups(_full_match_players(11))
+        lineups[0]["lineup"][0]["player_nickname"] = "Nick"
+        lineups[0]["lineup"][1]["player_nickname"] = None
+        xi = _xi_event(_TEAM, [_TEAM_BASE + i for i in range(11)])
+        events = [xi]
+        _write_match(tmp_path, 8100, [*events, *_default_half_end(events)], lineups)
+        df, _ = build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
+        by = {r["player_id"]: r["player_nickname"] for r in df.iter_rows(named=True)}
+        assert by[_TEAM_BASE] == "Nick" and by[_TEAM_BASE + 1] is None and by[_TEAM_BASE + 2] is None
+        assert df.schema["player_nickname"] == pl.Utf8
+
+
+class TestLineupNickname:
+    """G1 fix round (code-reviewer): an empty or whitespace-only nickname is null; a row without
+    the field reads as null (detection is a "before a new source" backlog item)."""
+
+    def test_missing_field_reads_as_null(self):
+        assert _bpm.lineup_nickname({"player_id": 7, "player_name": "X"}, 1) is None
+
+    @pytest.mark.parametrize("raw, want", [("Isco", "Isco"), (None, None), ("", None), ("   ", None)])
+    def test_values(self, raw, want):
+        assert _bpm.lineup_nickname({"player_id": 7, "player_nickname": raw}, 1) == want

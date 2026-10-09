@@ -29509,7 +29509,7 @@
    12
   ],
   "match_parquet": "data/interim/player_match_stats.parquet",
-  "match_parquet_sha256": "a8cc1eb69e9f568bd9315a86461c9e29de6ccb58017b0ef1377357c18659c2b7",
+  "match_parquet_sha256": "b322d23b7957b7446467b8ffb202eaff1661b12b69d444589fd2f466235d5603",
   "pool_competition_ids": [
    11,
    2,
@@ -29603,6 +29603,7 @@
    "player_name",
    "player_name_variants",
    "team_name",
+   "player_nickname",
    "position_group",
    "second_position_group",
    "position_group_share",
@@ -29674,7 +29675,7 @@
   ],
   "season_id": 27,
   "season_parquet": "data/processed/player_season_stats.parquet",
-  "season_parquet_sha256": "cfb8819d8650842b31e9772e738b3b83e5d79bd4c5ba237db6fb8a97cde1c198",
+  "season_parquet_sha256": "572ee7948d2fc89a7ff7bea3e6db0abd6308b767f06cf6f9ba58bf79dc82b7f0",
   "source": "statsbomb"
  },
  "ratios": {

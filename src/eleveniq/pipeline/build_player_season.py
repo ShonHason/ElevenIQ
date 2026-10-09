@@ -254,6 +254,25 @@ def _canonical_names(df: pl.DataFrame, id_col: str, name_col: str) -> pl.DataFra
     return canonical.join(variants, on=key, how="left")
 
 
+def player_nicknames(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    One row per (player_id, source): the player's nickname from the lineups, or null
+    (plan 006 pre-W1 gate G1). Display only: player pages, URLs and data keys use player_id,
+    never a name or nickname (several players share a nickname). Raises ValueError when one
+    player has two different nicknames, which a display attribute cannot resolve silently.
+    """
+    if "player_nickname" not in df.columns:
+        raise ValueError("the player-match parquet has no player_nickname column (built before "
+                         "plan 006 G1): rebuild it with build_player_match --force")
+    nicks = df.group_by(["player_id", "source"]).agg(
+        pl.col("player_nickname").drop_nulls().unique().sort().alias("_nicks"))
+    bad = nicks.filter(pl.col("_nicks").list.len() > 1)
+    if bad.height:
+        raise ValueError(f"players with more than one nickname: {bad.rows()[:10]}")
+    return nicks.select("player_id", "source",
+                        pl.col("_nicks").list.first().alias("player_nickname"))
+
+
 def find_name_variants(df: pl.DataFrame) -> pl.DataFrame:
     """
     Data-quality check: every player_id / team_id spelled more than one way.
@@ -363,6 +382,7 @@ def aggregate_player_season(
     season = (
         season.join(player_names, on=["player_id", "source"], how="left")
         .join(team_names, on=["team_id", "source"], how="left")
+        .join(player_nicknames(df), on=["player_id", "source"], how="left")
     )
 
     # ------------------------------------------------------------------

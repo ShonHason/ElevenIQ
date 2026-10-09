@@ -15,6 +15,7 @@ import pytest
 from eleveniq.metrics.defensive_actions import DEFENSIVE_ACTIONS, team_column
 from eleveniq.config import COMPETITION_SEASONS, CompetitionSeason
 from eleveniq.pipeline.coverage import CoverageCheckError
+import eleveniq.pipeline.build_player_season as bps
 from eleveniq.pipeline.build_player_season import (
     aggregate_player_season,
     build_player_season,
@@ -46,6 +47,7 @@ def _league(df: pl.DataFrame, ref: dict) -> pl.DataFrame:
 def _match_row(
     player_id: int = 1,
     player_name: str = "Player A",
+    player_nickname: str | None = None,
     team_id: int = 10,
     team_name: str = "Team A",
     competition_id: int = 11,
@@ -158,7 +160,7 @@ def _match_row(
         minutes_unknown = locals_copy["minutes_unknown"]
 
     return dict(
-        player_id=player_id, player_name=player_name,
+        player_id=player_id, player_name=player_name, player_nickname=player_nickname,
         team_id=team_id, team_name=team_name,
         competition_id=competition_id, season_id=season_id, source=source,
         minutes_played=minutes_played, position_group=position_group,
@@ -3064,3 +3066,66 @@ class TestOpenPlayRestartSeasonColumns:
             row["xg_assisted"], abs=1e-9)
         assert row["restart_key_passes_p90"] == pytest.approx(1 / 180 * 90)
         assert row["op_xg_assisted_p90"] == pytest.approx(0.47 / 180 * 90)
+
+
+class TestPlayerNicknames:
+    """Plan 006 pre-W1 gate G1: one nickname (or null) per player and source; two different
+    nicknames for one player fail loudly; the season row carries it."""
+
+    def test_one_nickname_per_player_and_null_when_none(self):
+        df = pl.DataFrame([_match_row(player_id=1, player_nickname="Isco"),
+                           _match_row(player_id=1, player_nickname="Isco"),
+                           _match_row(player_id=2, player_nickname=None)])
+        got = dict(bps.player_nicknames(df).select("player_id", "player_nickname").iter_rows())
+        assert got == {1: "Isco", 2: None}
+
+    def test_a_null_in_some_matches_does_not_hide_the_nickname(self):
+        df = pl.DataFrame([_match_row(player_id=1, player_nickname=None),
+                           _match_row(player_id=1, player_nickname="Isco")])
+        assert bps.player_nicknames(df)["player_nickname"].to_list() == ["Isco"]
+
+    def test_two_nicknames_for_one_player_raise(self):
+        df = pl.DataFrame([_match_row(player_id=1, player_nickname="A"),
+                           _match_row(player_id=1, player_nickname="B")])
+        with pytest.raises(ValueError, match="more than one nickname"):
+            bps.player_nicknames(df)
+
+
+@pytest.mark.integration
+def test_nickname_is_not_a_key_and_player_id_is():
+    """Decision 9 (user, 2026-10-09): pages, URLs and data keys use player_id, never a name or
+    nickname. The data shows why: one nickname per player_id, but several players share one."""
+    path = Path(__file__).resolve().parents[1] / "data" / "processed" / "player_season_stats.parquet"
+    if not path.exists():
+        pytest.skip("season parquet missing")
+    s = pl.read_parquet(path)
+    if "player_nickname" not in s.columns:
+        pytest.skip("season parquet built before G1")
+    per_id = s.group_by("player_id").agg(pl.col("player_nickname").drop_nulls().n_unique().alias("n"))
+    assert per_id["n"].max() <= 1
+    shared = (s.drop_nulls("player_nickname").group_by("player_nickname")
+              .agg(pl.col("player_id").n_unique().alias("ids")).filter(pl.col("ids") > 1))
+    assert shared.height > 0           # a nickname cannot identify a player
+    assert s.select(["player_id", "team_id", "competition_id", "season_id", "source"]).is_duplicated().sum() == 0
+
+
+class TestSeasonRowCarriesNickname:
+    """Plan 006 G1 decisions 1 and 3: the season row gains player_nickname without changing the
+    grain; a player on two teams keeps one nickname on both rows; null stays null."""
+
+    def test_nickname_on_every_season_row_incl_two_teams(self):
+        df = pl.DataFrame([
+            _match_row(player_id=1, team_id=10, player_nickname="Isco"),
+            _match_row(player_id=1, team_id=20, team_name="Team B", player_nickname=None),
+            _match_row(player_id=2, team_id=10, player_nickname=None),
+        ])
+        out = aggregate_player_season(df)
+        assert out.height == 3
+        got = {(r["player_id"], r["team_id"]): r["player_nickname"] for r in out.iter_rows(named=True)}
+        assert got == {(1, 10): "Isco", (1, 20): "Isco", (2, 10): None}
+
+
+def test_player_nicknames_on_a_parquet_built_before_g1_asks_for_a_rebuild():
+    df = pl.DataFrame([_match_row(player_id=1)]).drop("player_nickname")
+    with pytest.raises(ValueError, match="rebuild it with build_player_match --force"):
+        bps.player_nicknames(df)

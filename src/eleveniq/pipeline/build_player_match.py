@@ -271,6 +271,9 @@ _SCHEMA: dict[str, type] = {
     "match_id": pl.Int64,
     "player_id": pl.Int64,
     "player_name": pl.Utf8,
+    # The lineup's player_nickname (nullable; plan 006 pre-W1 gate G1): display only, never a
+    # key (14 nicknames are shared by several players in 2015/16).
+    "player_nickname": pl.Utf8,
     "team_id": pl.Int64,
     "team_name": pl.Utf8,
     "competition_id": pl.Int64,
@@ -745,6 +748,15 @@ def _lineup_pass_team(e: dict, team_of: dict[int, int]) -> tuple[int | None, dic
     return lineup_team, None
 
 
+def lineup_nickname(player: dict, match_id: int) -> str | None:
+    """The lineup row's player_nickname (plan 006 pre-W1 gate G1), display only. An empty or
+    whitespace-only nickname is null, so the display falls back to the name. A row without the
+    field also reads as null: every 2015/16 lineup row has it, and detecting its absence is a
+    "before a new source" backlog item (plan 006, G1 outcome)."""
+    nick = player.get("player_nickname")
+    return nick if nick is not None and nick.strip() else None
+
+
 def _players_by_team(team_of: dict[int, int]) -> dict[int, list[int]]:
     """Lineup players per team, in team_of order: the one grouping every team credit uses."""
     team_players: dict[int, list[int]] = {}
@@ -1151,6 +1163,7 @@ def _process_match(
                     "match_id": match_id,
                     "player_id": player_id,
                     "player_name": player_name,
+                    "player_nickname": lineup_nickname(player, match_id),
                     "team_id": team_id,
                     "team_name": team_name,
                     "competition_id": competition_id,
