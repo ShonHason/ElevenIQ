@@ -39,6 +39,10 @@ LONG_PASS_NOTE = NoteText(
 GREY_RULE = ("style axes, long pass completion, and axes associated with team possession at or "
              "above the possession-check level are grey")
 
+# The same rule for a table legend (rows are metrics, not axes).
+GREY_RULE_TABLE = ("style metrics, long pass completion, and metrics associated with team "
+                   "possession at or above the possession-check level are grey")
+
 PASSING_REASON = "rests on long pass completion alone"
 
 # Plain literals (the spike tests read this table as source text; spikes never import eleveniq).
@@ -129,6 +133,9 @@ GROUP_LABELS: dict[tuple[str, str], str] = {
 }
 
 
+_SPEC_BY_COLUMN = {s.column: s for s in R.SPECS}
+
+
 def metric_label(column: str, group: str | None = None) -> str:
     """The display name of a metric (the registry's, with the overrides above)."""
     if group is not None and (group, column) in GROUP_LABELS:
@@ -137,8 +144,6 @@ def metric_label(column: str, group: str | None = None) -> str:
         return METRIC_LABELS[column]
     return _SPEC_BY_COLUMN[column].display_name
 
-
-_SPEC_BY_COLUMN = {s.column: s for s in R.SPECS}
 
 
 # ── Roles (user, 2026-10-07; analytics/roles.py) ───────────────────────────────────────
@@ -241,8 +246,9 @@ STINT_NOTE: dict[str, str] = {
     movers.NOTE_PARTIAL: "partial coverage — minutes undercounted",
     movers.NOTE_INCOMPLETE: "profile incomplete (not plotted)",
     movers.NOTE_UNDER_GATE: "no profile (under 900 min)",
+    movers.NOTE_GOALKEEPER: "goalkeeper: no outfield profile",
+    movers.NOTE_OTHER_GROUP: "also on the {group} map",
 }
-OTHER_GROUP_NOTE = "also on the {group} map"
 SEASON_DOT_LABEL = "Season profile, weighted by minutes (display only)"
 CLOCK_RULE = ("The 900-minute gate counts full-match equivalents: each match's minutes are "
               "scaled to a 90-minute match (120 with extra time), so stoppage time does not add "
@@ -266,14 +272,15 @@ def stint_note(code: str | None, group: str | None) -> str:
     """The text of a movers.stint_note code ("" for a stint with a dot)."""
     if code is None:
         return ""
+    try:
+        text = STINT_NOTE[code]
+    except KeyError:
+        raise KeyError(f"no text for stint note {code!r}") from None
     if code == movers.NOTE_OTHER_GROUP:
         if group is None:
             raise ValueError("other_group note without a group")
-        return OTHER_GROUP_NOTE.format(group=group)
-    try:
-        return STINT_NOTE[code]
-    except KeyError:
-        raise KeyError(f"no text for stint note {code!r}") from None
+        return text.format(group=group)
+    return text
 
 
 # ── The Defending note (ADR 004 §14 N2, N3 as narrowed to the mover-test groups) ─────────

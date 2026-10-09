@@ -60,10 +60,25 @@ from eleveniq import config
 from eleveniq.analytics import cohorts as C
 from eleveniq.analytics import dna as D
 from eleveniq.analytics import registry as R
-from eleveniq.export import words as W
 from eleveniq.analytics.registry import (
     MEASUREMENT_SOURCE, REGISTRY, REGISTRY_VERSION, SPECS, MetricSpec,
     is_signature_holder,
+)
+from eleveniq.export import display as X
+from eleveniq.export import words as W
+from eleveniq.export.display import (  # noqa: F401  (re-exported: the page's display rules)
+    DENOMINATOR_NOUN,
+    POPULATION_REFERENCE_METRIC,
+    SECOND_SIGNATURE_TEXT,
+    SPECS_BY_COLUMN,
+    STATUS_TEXT,
+    dim_status_text,
+    format_number,
+    format_pct,
+    format_value,
+    status_text,
+    uncoloured,
+    withheld_reason,
 )
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -76,12 +91,9 @@ OUTPUT_DIR = _ROOT / "data" / "processed" / "reports"
 KEY: tuple[str, ...] = C.SEASON_KEY
 PRIMARY, SECOND = "primary", "second"
 
-# The n of this metric in a population is that population's size: its value is never null,
-# so every scored row is eligible and carries n in both scopes (2015/16: 1,246 of 1,246; its
-# global percentile can still be null by D9). Ratio labels read N from it (ADR 004 §11.5).
-POPULATION_REFERENCE_METRIC = "passes_attempted_p90"
+# Display rules (formats, status texts, ratio nouns, the population reference metric) live
+# in eleveniq.export.display, shared with the web export; the trace test re-applies them.
 
-SPECS_BY_COLUMN: dict[str, MetricSpec] = {s.column: s for s in SPECS}
 SIGNATURE_COUNT_COLUMNS: tuple[str, ...] = tuple(sorted(
     {s.count_column for s in SPECS if s.count_column
      and any(c.status == "signature" for (col, _), c in REGISTRY.cells.items() if col == s.column)}))
@@ -92,108 +104,20 @@ IDENTITY_COLUMNS: tuple[str, ...] = (
 FAMILY_LABELS: dict[str, str] = {"Progression": "Progressive passing",
                                  "Carrying": "Carrying & dribbling"}   # ADR 004 §10.7
 FAMILY_ORDER: tuple[str, ...] = tuple(dict.fromkeys(s.family for s in SPECS))
-GROUP_PLURAL: dict[str, str] = {"CB": "CBs", "FB-WB": "FB-WBs", "DM-CM": "DM-CMs",
-                                "AM-Winger": "AM-Wingers", "ST": "STs", "GK": "GKs"}
-# The denominator of each ratio, as a noun for "with ≥ k <noun>".
-DENOMINATOR_NOUN: dict[str, str] = {
-    "pass_completion_pct": "passes", "long_pass_completion_pct": "long passes",
-    "team_pass_share": "team open-play passes", "dribble_success_pct": "dribbles",
-    "cross_completion_pct": "crosses", "np_xg_per_shot": "non-penalty shots",
-    "xg_per_shot": "shots", "tackle_success_pct": "tackles", "aerial_win_pct": "aerial duels",
-    "defensive_duel_success_pct": "defensive duels (tackles + times dribbled past)",
-}
+GROUP_PLURAL: dict[str, str] = X.GROUP_ABBR_PLURAL
 # Restart deliveries include throw-ins (ADR 004 §10.6): no "set-piece" label until the
 # FB-WB throw-in share is measured (plan 005 backlog). Overrides the registry display name.
-METRIC_LABELS: dict[str, str] = W.METRIC_LABELS
-# A D5 second-group row is scored against a population that does not contain the player,
-# so no holder verdict is given against it (user, 2026-10-06).
-SECOND_SIGNATURE_TEXT = "not assessed (second group, display only)"
+METRIC_LABELS: dict[str, str] = dict(W.METRIC_LABELS)
 LONG_PASS_NOTE = W.LONG_PASS_NOTE.full
 
-# Every status the percentiles table can hold, as text. An unknown status raises.
-STATUS_TEXT: dict[str, str] = {
-    "not_in_pool": "league outside the percentile pool",
-    "goalkeeper": "goalkeeper: no outfield percentiles",
-    "below_gate": "below the minutes gate",
-    "no_signal": "no reliable signal for this ratio in this group",
-    "no_min_attempts": "no minimum attempts measured (display only)",
-    "below_min_attempts": "below the minimum attempts",
-    "null_value": "no value",
-    "cohort_too_small": "population below the minimum size",
-    "d9_undefined": "not testable (league populations too small or unmeasured)",
-    "league_inconsistent": "not used: league means differ",
-}
 # Static text that carries a digit; the trace test accepts exactly these.
 STATIC_REFS: frozenset[str] = frozenset({"D9", "D5", "ADR 004 §11", "ADR 004 §12", "M4e", "M4f4",
                                          ">99", "<1", "25", "50", "75"})
 
-# Dimension score statuses other than "ok" as text: the words table (export/words.py). A
-# withheld status reads "withheld (<text>)"; a D5 status adds "; underpowered" when the registry
-# notes it (the n stays off the page: no untraced digits).
-DIM_STATUS_TEXT: dict[str, str] = W.WITHHELD_TEXT
 
-
-class PageError(ValueError):
-    """The inputs cannot produce an honest page (stale registry, ambiguous player, ...)."""
-
-
-# ── Formatting (the trace test re-applies these to the parquet cells) ──────────────
-
-def format_pct(p: float) -> str:
-    if p == 0:
-        return "<1"
-    if p == 100:
-        return ">99"
-    if not 0 < p < 100:
-        raise PageError(f"percentile out of range: {p}")
-    return str(min(99, max(1, math.floor(p + 0.5))))
-
-
-def format_value(metric: str, v: float | None) -> str:
-    if v is None:
-        return "—"
-    spec = SPECS_BY_COLUMN[metric]
-    if metric.endswith("_pct") or spec.unit == "share":
-        return f"{v * 100:.1f}%"
-    if spec.unit == "ratio":
-        return f"{v:.3f}"
-    return f"{v:.2f}"
-
-
-def format_number(v: Any) -> str:
-    """Counts, minutes and other identity numbers (never negative; half-up rounding)."""
-    if isinstance(v, (int, float)) and not isinstance(v, bool) and v < 0:
-        raise PageError(f"negative identity number: {v}")
-    if isinstance(v, float):
-        return str(math.floor(v + 0.5)) if not v.is_integer() else str(int(v))
-    return str(v)
-
-
-def dim_status_text(status: str) -> str:
-    try:
-        return DIM_STATUS_TEXT[status]
-    except KeyError:
-        raise PageError(f"unknown dimension score status {status!r}") from None
-
-
-def withheld_reason(family: str, group: str, status: str) -> str:
-    """A D5 status as text, with "; underpowered" when the registry notes it (ADR 004 §13.8)."""
-    text = dim_status_text(status)
-    if family == "Defending":
-        fs = REGISTRY.defending_status(group)
-        if fs.status != status:
-            raise PageError(f"{group} Defending status {status!r} ≠ the registry's {fs.status!r}: "
-                            "rebuild with build_player_dna")
-        if any(n.startswith("underpowered") for n in fs.notes):
-            text += "; underpowered"
-    return text
-
-
-def status_text(status: str) -> str:
-    try:
-        return STATUS_TEXT[status]
-    except KeyError:
-        raise PageError(f"unknown percentile status {status!r}") from None
+# The inputs cannot produce an honest page (stale registry, ambiguous player, ...); the shared
+# display rules raise the same error.
+PageError = X.DisplayError
 
 
 # ── Inputs ──────────────────────────────────────────────────────────────────────
@@ -424,13 +348,6 @@ def metric_label(spec: MetricSpec) -> str:
     return METRIC_LABELS.get(spec.column, spec.display_name)
 
 
-def uncoloured(spec: MetricSpec, team_style_biased: bool) -> bool:
-    """Style metrics, long pass completion and every team-style-biased cell are never
-    coloured good/poor (ADR 004 §10.7, §11.5). The registry flag covers both kinds: DNA cells
-    admitted by the allow-list (reasons "allow_listed") and display cells moved by the
-    possession trigger (reason "team_style_biased")."""
-    return (spec.direction == "style" or spec.column == "long_pass_completion_pct"
-            or team_style_biased)
 
 
 def _tone(spec: MetricSpec, team_style_biased: bool, pct: float) -> str:
@@ -952,7 +869,7 @@ def render(players: Sequence[Player]) -> str:
     legend = ('<p class="muted">Raw value, then the local (league × group) and global (group across '
               'the pool leagues) percentile with its population size n. The registry basis is '
               'highlighted and drawn as the bar. Percentiles rank the raw value (high = more); the '
-              'bar colour follows the metric direction; ' + esc(W.GREY_RULE)
+              'bar colour follows the metric direction; ' + esc(W.GREY_RULE_TABLE)
               + f'. {static(">99")} / {static("<1")} mark rows ranked against a population they are not in. '
               'A family\'s dimension score is the mean local percentile of its directional DNA '
               'members and says how many metrics it rests on.</p>')

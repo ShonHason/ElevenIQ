@@ -62,7 +62,7 @@ def test_defending_tag_keeps_the_n2_wording():
 
 def test_every_stored_note_has_page_text():
     used = {n for c in R.REGISTRY.cells.values() for n in c.notes}
-    used |= {n for s in R.SPECS for n in (getattr(s, "notes", ()) or ())}
+    used |= {n for s in R.SPECS for n in s.notes}
     for note in used:
         assert R.note_text(note).full
 
@@ -195,8 +195,9 @@ def test_defending_note_dm_cm():
 
 
 def test_rules_text_uses_neutral_pronouns():
-    for t in (W.ROLE_RULE, W.SLOT_RULE, W.WEIGHT_NOTE, W.CLOCK_RULE):
-        assert not {" his ", " he ", " him "} & {f" {w} " for w in t.lower().replace(";", " ").split()}
+    import re
+    for t in (W.ROLE_RULE, W.SLOT_RULE, W.WEIGHT_NOTE, W.CLOCK_RULE, *W.AXIS_NOTES.values()):
+        assert not re.search(r"\b(he|his|him|himself)\b", t, re.IGNORECASE), t
 
 
 def test_month_range_years_start_at_twelve_months_and_pct_words_just_outside_middle():
@@ -211,3 +212,44 @@ def test_end_name_describes_an_unnamed_axis_by_metrics(monkeypatch):
     monkeypatch.setitem(W.AXIS_NAMES, "DM-CM", (None, None))
     assert W.end_name("DM-CM", m, 0, 1).startswith("the PC1 + end (")
     assert W.end_name("DM-CM", m, 0, -1).startswith("the PC1 − end (low ")   # no loading reaches 0.15
+
+
+# ── W1a backlog (code-reviewer): claims tied to their measurements; spike parity ──────
+
+def test_long_pass_note_claims_hold_in_the_registry():
+    """LONG_PASS_NOTE.full names the groups where long pass completion is associated with team
+    possession at or above the possession-check level (the registry's team_style_biased flag)
+    and says the club-mover test is inconclusive and underpowered: a measurement change that
+    breaks either claim fails here."""
+    groups = {g for (m, g), c in R.REGISTRY.cells.items()
+              if m == "long_pass_completion_pct" and c.team_style_biased}
+    assert groups == {"CB", "FB-WB", "DM-CM"}
+    assert "centre-backs, full-backs and central midfielders" in W.LONG_PASS_NOTE.full
+    v = R.REGISTRY.movers["long_pass_completion_pct"]
+    assert (v.verdict, v.underpowered) == ("inconclusive", True)
+    assert "inconclusive, underpowered" in W.LONG_PASS_NOTE.full
+
+
+def test_spike_tag_words_equal_the_words_table():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "spikes"))
+    import m4g_compare as cmpm
+    assert cmpm.TAG_WORDS == W.TAG_REASON
+
+
+def test_table_grey_rule_matches_the_axis_rule():
+    assert W.GREY_RULE_TABLE == W.GREY_RULE.replace("axes", "metrics").replace("style metrics", "style metrics")
+
+
+# ── Pre-registered (plan 006 W0, user condition 11): the near-gate chip ─────────────────
+
+@pytest.mark.parametrize("group", ["CB", "FB-WB", "DM-CM", "AM-Winger", "ST", "GK"])
+@pytest.mark.parametrize("minutes", [899.0, 899.9999995, 900.0, 1100.0, 1349.99, 1350.0, 2500.0])
+def test_near_gate_chip_only_cb_fbwb_900_1350(group, minutes):
+    """The "Fewer minutes: less reliable" flag appears only for CB and FB-WB profiles with
+    900 ≤ nominal minutes < 1,350 (the gate's 1e-6 tolerance included), where it was measured
+    (ADR 004 §14 sign-off note 3). Literal bounds: the user's spec."""
+    from eleveniq.export import display as X
+    want = group in ("CB", "FB-WB") and 900.0 - 1e-6 <= minutes < 1350.0
+    assert X.near_gate(group, minutes) is want

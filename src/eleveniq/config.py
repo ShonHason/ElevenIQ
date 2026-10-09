@@ -283,3 +283,9 @@ ROLE_SHARE: float = 0.7
 STYLE_END_MIN_LOADING: float = 0.15
 LEAN_NEAR: float = 0.5
 LEAN_STRONG: float = 1.5
+# Near-gate reliability (user, 2026-10-09; ADR 004 §14 sign-off note 3): CB and FB-WB profiles
+# with MIN_MINUTES_THRESHOLD ≤ nominal minutes < NEAR_GATE_MAX_MINUTES carry the "Fewer
+# minutes: less reliable" flag (their DNA measures: median r_full ≈ 0.60 in that bucket). Only
+# where it was measured: no other group, no other minutes.
+NEAR_GATE_GROUPS: tuple[str, ...] = ("CB", "FB-WB")
+NEAR_GATE_MAX_MINUTES: float = 1350.0

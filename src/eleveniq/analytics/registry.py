@@ -485,6 +485,8 @@ def note_text(note: str) -> NoteText:
         return NOTE_TEXT[note]
     except KeyError:
         raise KeyError(f"no page text for registry note {note!r}") from None
+
+
 _XG_COUNTS = frozenset({"xg", "np_xg", "xg_assisted", "xg_assisted_direct",
                         "op_xg_assisted", "restart_xg_assisted"})
 

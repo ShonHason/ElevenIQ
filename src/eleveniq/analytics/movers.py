@@ -26,7 +26,7 @@ from typing import Mapping, Sequence
 import polars as pl
 
 from eleveniq.analytics import pairs, style_map
-from eleveniq.analytics.dna import COMPLETE, RowDna, pair_distance
+from eleveniq.analytics.dna import COMPLETE, DNA_INCOMPLETE, RowDna, pair_distance
 from eleveniq.analytics.roles import FineRole, fine_role
 from eleveniq.config import COMPETITION_SEASONS, MIN_MINUTES_THRESHOLD, MIN_MINUTES_TOLERANCE
 
@@ -40,6 +40,7 @@ NOTE_PARTIAL = "partial_coverage"
 NOTE_OTHER_GROUP = "other_group"
 NOTE_INCOMPLETE = "profile_incomplete"
 NOTE_UNDER_GATE = "under_gate"
+NOTE_GOALKEEPER = "goalkeeper"
 
 
 class MoversError(ValueError):
@@ -105,7 +106,12 @@ def stints(season: pl.DataFrame, match: pl.DataFrame,
             k = r["key"]
             if k not in span:
                 raise MoversError(f"{k}: no match with minutes")
-            role = None if r["position_group"] == "GK" else fine_role(positions[k])
+            if r["position_group"] == "GK":
+                role = None
+            elif k not in positions:
+                raise MoversError(f"{k}: no player_season_positions rows")
+            else:
+                role = fine_role(positions[k])
             sts.append(Stint(k, r["team_name"], k[2], r["position_group"], r["minutes_played"],
                              r["minutes_nominal_equiv"], *span[k], role))
         out[p] = sorted(sts, key=lambda s: (s.first, s.last, s.key))
@@ -116,8 +122,11 @@ def stints(season: pl.DataFrame, match: pl.DataFrame,
 
 def stint_note(st: Stint, group: str, plotted: set[Key], dna_group: Mapping[Key, str],
                dna_status: Mapping[Key, str]) -> tuple[str | None, str | None]:
-    """(note code, other group) for a stint on `group`'s map; (None, None) when it has a dot."""
+    """(note code, other group) for a stint on `group`'s map; (None, None) when it has a dot.
+    A goalkeeper stint has no DNA row by design (ADR 002 §12): NOTE_GOALKEEPER."""
     k = st.key
+    if st.group == "GK":
+        return NOTE_GOALKEEPER, None
     if st.competition_id in partial_competitions():
         return NOTE_PARTIAL, None
     if k in plotted:
@@ -149,12 +158,12 @@ def changed_most(a: RowDna, b: RowDna, metrics: Sequence[str]) -> tuple[str, ...
 
 def rank_both(a: Key, b: Key, rows: Mapping[Key, RowDna]) -> tuple[int, int, int, int]:
     """(rank of b in a's order, N for a, rank of a in b's order, N for b): where the other stint
-    would sit among the candidates (other players' rows of the group, partial rows included);
-    ties share a rank."""
+    would sit among the candidates: other players' rows of the group with dna_status complete or
+    partial (dna_incomplete rows have no distance, ADR 004 §12.2); ties share a rank."""
     out: list[int] = []
     for x, y in ((a, b), (b, a)):
         cand = [(pair_distance(rows[x], rows[c]), c) for c in rows
-                if c[0] != x[0] and rows[c].dna_status != "dna_incomplete"]
+                if c[0] != x[0] and rows[c].dna_status != DNA_INCOMPLETE]
         rk = pairs.ranks(cand + [(pair_distance(rows[x], rows[y]), y)])[y]
         out += [rk, len(cand)]
     return out[0], out[1], out[2], out[3]

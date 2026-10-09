@@ -43,6 +43,12 @@ data/processed/*.parquet ──► src/eleveniq/export/ ──► export/<contra
   - **The frontend does no arithmetic on data:** no distances, ranks, percentiles, sorting by a statistic, aggregation or rounding of statistics.
   - **It may only:** index, filter by an exported key, format an exported value with an exported format rule, and lay out.
   - This is the M4g1b "no math in JS" rule, applied to the whole site.
+  - **One exception (user, 2026-10-09; plan 006 W1):** compare mode may order metrics for display.
+    - The browser subtracts the two players' exported direction-adjusted league (local) percentiles and sorts by the absolute gap.
+    - Ties break by registry metric order, which is exported.
+    - Withheld metrics are excluded.
+    - It is used for display order only; nothing is shown from the subtraction.
+    - A test compares the browser's order with Python's on the fixture.
 - **Static JSON now, an API later (M7).** The frontend reads data through one module (`frontend/src/data/`). It exposes typed functions such as `getPlayer(key)`, `getNeighbours(key)` and `getStyleMap(group)`.
   - v1 implements them as `fetch` calls on the static files.
   - In M7 they call the FastAPI service, which serves the same contract. Pages and components do not change.
@@ -83,6 +89,10 @@ data/processed/*.parquet ──► src/eleveniq/export/ ──► export/<contra
   - A Vitest helper and a Playwright check assert that the visible text equals the contract value under the exported format rule.
   - A digit outside a traced span fails, as in `m4g_compare.check_page`.
 - **Mixed groups:** a distance and a compare exist only within one position group (ADR 004 §12). The contract offers no cross-group pair. The UI says so, as the style maps do.
+- **Compare mode (user, 2026-10-09; plan 006 W1):**
+  - same position group only; no distance or similarity score; no pair data in the contract;
+  - `compare/<group>.json` above is dropped: compare reads the two player files, showing the top 6 metrics by gap (the §1 exception), then the full table;
+  - the style map's mover panel keeps its distance and ranks: it compares one player across two clubs, not two players.
 
 ## 3. Pages (v1)
 Wayfinding on every page: a persistent header with the site name, "Find similar players", "Style maps", the season selector (2015/16 only for now) and breadcrumbs. Labels are specific ("Similar players", "Style map: centre-backs"), never "Home".

@@ -125,3 +125,26 @@ def test_rank_both_counts_incomplete_out_and_partial_in():
     rab, na, rba, nb = M.rank_both(a, b, rows)
     assert (na, nb) == (2, 2)            # own player's other row and the incomplete row left out
     assert rab == 2 and rba == 2         # the 51 row is nearer to each than the other stint
+
+
+def test_a_goalkeeper_stint_gets_its_own_note_whatever_its_minutes():
+    k = (1, 10, 2, 27, "statsbomb")
+    gk = M.Stint(k, "T", 2, "GK", 1260.0, 1260.0, dt.date(2015, 8, 1), dt.date(2016, 5, 1), None)
+    assert M.stint_note(gk, "CB", set(), {}, {}) == (M.NOTE_GOALKEEPER, None)
+
+
+def test_a_goalkeeper_stint_needs_no_position_rows_but_an_outfield_stint_does():
+    g1, g2 = (7, 10, 2, 27, "statsbomb"), (7, 20, 2, 27, "statsbomb")
+    season = _season((g1, "A", 900.0, "GK"), (g2, "B", 500.0, "GK"))
+    match = _match((g1, dt.date(2015, 8, 9), 90.0), (g2, dt.date(2016, 2, 6), 90.0))
+    out = M.stints(season, match, {})                      # a GK has no outfield role
+    assert [s.role for s in out[(7, 27, "statsbomb")]] == [None, None]
+    season = _season((g1, "A", 900.0, "CB"), (g2, "B", 500.0, "CB"))
+    with pytest.raises(M.MoversError, match="player_season_positions"):
+        M.stints(season, match, {g1: {"Center Back": 900.0}})
+
+
+def test_every_stint_note_code_has_page_text():
+    from eleveniq.export import words as W
+    codes = {getattr(M, n) for n in dir(M) if n.startswith("NOTE_")}
+    assert codes <= set(W.STINT_NOTE)

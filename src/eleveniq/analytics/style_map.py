@@ -164,6 +164,8 @@ def top_loadings(model: Model, axis: int, n: int = TOP_LOADINGS) -> list[tuple[s
 
 def lean_band(score: float, sd: float) -> str:
     """"near", "slight" or "strong" (z = score / sd)."""
+    if sd <= 0:
+        raise StyleMapError(f"no spread on the axis (sd {sd})")
     z = abs(score / sd)
     return "near" if z < LEAN_NEAR else "slight" if z < LEAN_STRONG else "strong"
 
@@ -180,7 +182,8 @@ def check_quoted(model: Model) -> None:
                 raise StyleMapError(f"quoted: {g} PC{a + 1} {'+' if value > 0 else '−'} end "
                                     f"now has {hit}")
             continue
-        assert metric is not None
+        if metric is None:
+            raise StyleMapError(f"quoted: {g} PC{a + 1} {claim} claim without a metric")
         if round(comp[metric], 2) != value:
             raise StyleMapError(f"quoted: {g} PC{a + 1} {metric} is {comp[metric]:+.3f}, the "
                                 f"text says {value:+.2f}")

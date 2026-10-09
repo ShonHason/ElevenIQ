@@ -111,3 +111,17 @@ def test_quoted_loading_claims_pass_and_catch_end_and_extreme_changes():
         S.check_quoted(_cb_model(pc2_extra=-0.2))          # a negative end appears on PC2
     with pytest.raises(S.StyleMapError, match="quoted"):
         S.check_quoted(_cb_model(pc1_first=-0.50))
+
+
+@pytest.mark.parametrize("sd", [0.0, -1.0])
+def test_lean_band_refuses_an_axis_without_spread(sd):
+    with pytest.raises(S.StyleMapError, match="spread"):
+        S.lean_band(1.0, sd)
+
+
+def test_a_value_claim_without_a_metric_is_an_error_not_an_assert(monkeypatch):
+    m = S.Model("CB", ("aerials_won_p90", "clearances_p90"), (0.5, 0.5), (0.0, 0.0),
+                ((-0.40, -0.19), (0.82, 0.0)), (0.3, 0.2), (1.0, 1.0))
+    monkeypatch.setattr(S, "QUOTED_LOADINGS", (("CB", 1, "value", None, 0.5),))
+    with pytest.raises(S.StyleMapError, match="without a metric"):
+        S.check_quoted(m)
