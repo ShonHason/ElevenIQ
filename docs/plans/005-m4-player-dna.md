@@ -1801,6 +1801,29 @@ Items:
   3. `test_same_league_observed_and_expected` cannot catch a K-limiting bug (`top_k` binds its default `k` at definition time): use a fixture where K = 1 and K = 2 differ, and pass `k` explicitly.
   4. Share one P99 helper between `outliers()` and `band_landing()`.
 
+### M4g6a2 — outcome (2026-10-09)
+- **Files:**
+  - `spikes/m4g6_weighting.py` → the `m4g6_weighting` section of `docs/reviews/m4-validation.md`, figures in `data/interim/m4g6a2/weighting.json`;
+  - `spikes/m4f_weighting_checks.py` re-run, which regenerated `docs/reviews/m4f-weighting.md` (items 6, 8). Only the header and stamps changed: the figures already matched M4g2. The user's 2026-10-07 read is marked as history, to be re-read.
+- **Findings (evidence for sign-off item 1, provisional until M5's self-retrieval):**
+  - **Cap and merge stay close to the build.** Median top-10 overlap is 8–10, except FB-WB cap at 7 (P10 6–10). DM-CM is unchanged (no one-member family). ST merge equals the build (no Creation member).
+  - **One-member families do not dominate retrieval.** Leaving one out moves neighbours like any other family. Neighbours agree on them only slightly better than noise selection (absolute real / noise 0.79–1.04).
+  - **Noise share Σ w (1 − r) differs by at most 0.017** (AM-Winger 0.196 → 0.184 cap / 0.179 merge). A reliability case exists only for Creation (`op_key_passes`, r ≈ 0.67–0.68) in AM-Winger and FB-WB.
+  - **Double counting:** 4 cross-family pairs at |ρ| ≥ 0.7, two of them Creation ~ `box_entries_pass`.
+  - Defending coherence is untested (one directional member).
+  - Item 6: 94 cells in 63 rows, 34.9% mixed. Item 8: CB 47 → 52, FB-WB 47 → 41, DM-CM 28 → 29, AM-Winger 45 → 45, ST 10 → 9.
+- **Correction (fix round):** the first run's cap split freed weight into the other capped families. In FB-WB (3 capped families) each ended at 0.667/|F|, against the pre-registered 0.5/|F|, and its test encoded the implementation rather than the rule. The code and the test now follow the rule; only FB-WB changed (cap: effective metrics 13.8 → 14.3, noise share 0.231 → 0.229, overlap 8/7 → 7/6).
+- **`/finish-chunk`:**
+  - qa-tester skipped (spikes, tests and docs only);
+  - stats-reviewer, output only: CONCERNS 1–8, all fixed (cap rule, noise-share label, absolute ratios, "approximately", item–rest labels, FB-WB / ST face lists checked in the data, item 6/8 figures, spread note);
+  - code-reviewer: PASS, should-fix items done (majority-admitted cells from the registry snapshot, r estimator labelled, synthetic tests for `Pairs`, the shares, `same_pos` and the sign flip, weight cache);
+  - fix delta: PASS.
+- **Backlog, gated before the next run of `spikes/m4g6_weighting.py` (code-reviewer, M4g6a2 fix delta; user rule: one fix round):**
+  1. `weights()` writes the capped weight as (1 − CAP)/n and the test as CAP/n; they agree only at CAP = 0.5. Use CAP/n in the code, matching "0.5/|F|".
+  2. `test_same_pos_counts_observed_and_expected`: the `obs` assertion recomputes the formula; pin a hand-counted value.
+  3. `render()`: a metric missing from `abs_vs_noise` prints "0.00" (reads as perfect agreement); print "n/a".
+  4. `render()`: guard `z['mixed_share_z_rows']` being None (no |z| > 5 cell).
+
 ### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
 - Folded in above: the leakage decision; the M4g1 lift and pivot label; the M4g3 baseline `min_attempts`, pooling, paired bootstrap and RMS; the M4g4 fixed order, ratios and β̂ fit; the M4g5 subsets and stratified folds; the majority-trigger wording.
 - Recorded in ADR 004: `long_pass_completion_pct` has the same length-truncation bias. A long ball that is intercepted or blocked early is recorded short and drops out of the denominator, which inflates the rate (the Koné example's metric).
