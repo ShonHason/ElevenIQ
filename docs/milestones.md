@@ -404,6 +404,39 @@ scouting league coverage require a paid API.
 **Candidate:** Sportmonks Growth plan (€99/mo) + xG add-on (€29/mo).  See ADR 001
 Paid API comparison table for metric-by-metric coverage analysis.
 
+#### v2: Sportmonks data source — user intent (2026-10-09)
+**Status: backlog, post-launch.** This records the user's intent, not a pre-registered decision. The plan for this milestone pre-registers its rules when the milestone opens. Until then the CLAUDE.md rule holds: no Sportmonks ingestion code before a new source ADR is approved and the milestone is open. The plan choice is open (the Growth candidate above was an earlier note; question 2 asks about Starter).
+
+**Scope (user intent):**
+- **Source:** the Sportmonks API, one-time pull (no live updates), cached locally like StatsBomb; `data/` is never committed.
+- **Leagues** (Europe only, 10): Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Eredivisie, Primeira Liga, Belgian Pro League, Championship, Danish Superliga.
+- **Seasons:** the most recent available on the chosen plan (target 3).
+- **Percentiles** are computed within each league (league-local, as in M4). Similar-player search runs across all leagues, within the Sportmonks source only: the CLAUDE.md within-source rule still forbids mixing with StatsBomb rows.
+- **Display:**
+  - the league and its strength ranking next to every neighbour;
+  - filters "development leagues only" / "top 5 only";
+  - similarity is style, not level, and the page must say so.
+- **Possession adjustment candidate:** a per-match, StatsBomb-style fixed formula. It is tested with the M4 checks (possession criteria, movers), not assumed.
+
+**Open questions to resolve before the milestone plan:**
+1. **Licence:** may the pulled data be stored, and may percentiles derived from it be shown on a public portfolio site after the subscription ends?
+2. **Seasons:** exactly which seasons Starter includes for these leagues; whether the current season counts as one of the three; the cost of the historical add-on.
+3. **Per-match player statistics:** availability per league and season (season totals are the minimum); stat-type coverage gaps in smaller leagues.
+4. **Free plan:** can the free plan's Danish Superliga be combined with a paid plan?
+5. **League format rules:** Belgian and Danish play-off splits; the Championship's 46 rounds (+ play-offs). Proposed default: all league matches count.
+6. **Small cohorts** (e.g. Denmark): pool seasons for the reference distribution, or keep the existing `min_cohort` rule?
+7. **Cross-league thresholds:** M4 rules written for 4 leagues ("3 of 4", leave-one-league-out) must be re-specified for 10 before any run.
+8. **League-strength adjustment** (e.g. estimated from players moving into the top 5): a later milestone. v2 shows the league ranking as context only.
+
+**First step when the milestone opens:**
+- a 1–2 day spike on the free plan (Danish Superliga), inspecting the per-player fields of one fixture against the M4 metric families;
+- a re-check against the "before a new source" gates. These are the new-source checklist in Milestone 4's pre-conditions above, and plan 005's backlog items triaged "before a new source or season" (ADR 004 §14 item 7), including the ADR 002 §31 treatment re-entry check.
+
+**Speed rules for this milestone (user intent):**
+- reuse the M4 validation as one automated run;
+- pre-register all decisions in one document up front;
+- the stats-reviewer at gates only.
+
 ---
 
 ### Historical Legends Mode
