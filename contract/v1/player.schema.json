@@ -18,7 +18,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["key", "player_id", "team_id", "competition_id", "season_id", "name", "nickname", "display_name",
                    "team", "league", "group", "group_text", "second_group", "minutes", "minutes_text",
-                   "nominal_minutes", "meets_gate", "near_gate", "role_text", "dmcm_slot"],
+                   "nominal_minutes", "nominal_minutes_text", "meets_gate", "near_gate", "role_text", "dmcm_slot"],
       "properties": {
         "key": {"$ref": "common.schema.json#/$defs/rowKey"},
         "player_id": {"type": "integer"}, "team_id": {"type": "integer"},
@@ -30,6 +30,7 @@
         "second_group": {"type": ["string", "null"]},
         "minutes": {"type": "number", "minimum": 0}, "minutes_text": {"type": "string"},
         "nominal_minutes": {"type": "number", "minimum": 0},
+        "nominal_minutes_text": {"type": "string", "description": "The minutes on the gate's clock (nominal-equivalent, ADR 004 D1): the 900-minute gate counts these, so a row can show 900+ minutes played and still be below the gate."},
         "meets_gate": {"type": "boolean"},
         "near_gate": {"type": "boolean", "description": "\"Fewer minutes: less reliable\": only CB and FB-WB rows with 900 ≤ nominal minutes < 1,350 (ADR 004 §14 sign-off note 3)."},
         "role_text": {"type": ["string", "null"]},

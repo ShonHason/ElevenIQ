@@ -1502,3 +1502,64 @@ def is_signature_holder(cell: Cell, season_count: float | None, row_status: str)
     if season_count is None:
         raise ValueError(f"{cell.column} × {cell.group}: a gated row has no season count")
     return season_count >= cell.signature_min_count
+
+
+# ── Measured cell checks for display (plan 006 W1d; user, 2026-10-09) ──────────────────────
+# The registry judges a cell with the possession check (step 5) or the zero share (step 3) only
+# when it reaches that step; a cell that leaves earlier (fixed display, D17, low coverage, …)
+# is never tested. The web export applies the same rules, with the same Rules thresholds, to
+# every measured cell: a zero is "tied at zero" wherever the measured zero share is above
+# Rules.zero_heavy_share, and compare mode's top-6 gap list leaves out every cell whose
+# measured possession check triggers. Read-only: no cell, status or REGISTRY_VERSION changes.
+
+_MEASUREMENTS: dict[str, Any] | None = None
+
+
+def _measured(col: str, grp: str) -> Mapping[str, Any] | None:
+    global _MEASUREMENTS
+    if _MEASUREMENTS is None:
+        _MEASUREMENTS = load_measurements()
+    for section in ("metrics", "ratios"):
+        m = _MEASUREMENTS.get(section, {}).get(col, {}).get("groups", {}).get(grp)
+        if m is not None:
+            return m
+    return None
+
+
+def measured_zero_share(col: str, grp: str) -> float | None:
+    """The cell's measured share of zero values, or None when not measured (ratios, GK)."""
+    m = _measured(col, grp)
+    return None if m is None else m.get("zero_share")
+
+
+def measured_zero_heavy(col: str, grp: str, rules: Rules = Rules()) -> bool:
+    """Measured zero share above Rules.zero_heavy_share (the step-3 threshold)."""
+    z = measured_zero_share(col, grp)
+    return z is not None and z > rules.zero_heavy_share
+
+
+def measured_possession_triggered(col: str, grp: str, rules: Rules = Rules()) -> bool | None:
+    """Would the step-5 possession check trigger on this cell's measurement (the mean rule with
+    the sign test, or the majority rule, on either proxy)? None when the cell has no testable
+    possession measurement: as step 5 (_Judge.possession), a proxy with a missing mean or league
+    value makes the whole cell untestable, even if the other proxy would trigger. The allow-list does not enter: it decides DNA admission, not
+    whether the association was measured."""
+    m = _measured(col, grp)
+    block = None if m is None else m.get("possession")
+    if block is None:
+        return None
+    pool = [str(c) for c in (_MEASUREMENTS or {})["provenance"]["pool_competition_ids"]]
+    triggered = False
+    for proxy in POSSESSION_PROXIES:
+        p = block.get(proxy)
+        if p is None or p.get("rho_within_mean") is None:
+            return None
+        per = [p["by_league"].get(c) for c in pool]
+        if any(v is None for v in per):
+            return None
+        if abs(p["rho_within_mean"]) >= rules.possession_rho_trigger and \
+                _sign_ok(per, rules.possession_sign_neutral):
+            triggered = True
+        if _majority(per, rules.possession_rho_trigger, rules.possession_majority_leagues):
+            triggered = True
+    return triggered

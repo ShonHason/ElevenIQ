@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 import random
+import sys
 
 import polars as pl
 import pytest
@@ -251,3 +252,67 @@ def test_an_unscored_zero_keeps_its_status_text_not_the_tie():
     c = B.metric_row(rows, "box_entries_carry_p90")
     assert c["zero_tie"] is False
     assert c["local"]["status_text"] == "below the minutes gate" and c["local"]["pct_text"] is None
+
+
+def test_fixture_diff_summary_lists_added_removed_and_changed(docs, tmp_path):
+    out = tmp_path / "web"
+    B.write(docs, out, "fixture")
+    blobs = {p: B.dumps(d) for p, d in docs.items()}
+    assert B.diff_summary(out, blobs) == []                          # unchanged
+    first = sorted(p for p in blobs if p.startswith("players/"))[0]
+    changed = dict(blobs)
+    changed[first] = blobs[first].replace(b'"stamps"', b'"stamps" ', 1)
+    del changed["labels.json"]
+    changed["players/1-1-1-27.json"] = b"{}\n"
+    got = B.diff_summary(out, changed)
+    assert got == ["+ players/1-1-1-27.json", "- labels.json", f"~ {first}"]
+    assert B.diff_summary(tmp_path / "missing", blobs)[0].startswith("+ ")
+
+
+def test_fixture_keys_add_the_anchors_neighbours_sorted_and_unique(monkeypatch):
+    rows = ((200, 10, 2), (200, 11, 2), (400, 13, 2))
+    monkeypatch.setattr(B, "FIXTURE_ROWS", rows)
+    monkeypatch.setattr(B, "FIXTURE_NEIGHBOURS_OF", (200, 10, 2))
+    inp = _world()
+    keys = B.fixture_keys(inp)
+    assert keys == sorted(set(keys))
+    assert all(k[3] == 27 and k[4] == "statsbomb" for k in keys)
+    for r in rows:
+        assert (*r, 27, "statsbomb") in keys
+    anchor = B.build(inp, keys=[_key(200, 10)], style_groups=())["players/200-10-2-27.json"]
+    for n in anchor["neighbours"]["items"]:
+        pid, tid, cid, sid = (int(x) for x in n["key"].split("-"))
+        assert (pid, tid, cid, sid, "statsbomb") in keys
+    assert len(keys) > len(rows)
+    B.build(inp, keys=keys, style_groups=())          # every key resolves
+
+
+def test_fixture_keys_refuse_more_than_one_season(monkeypatch):
+    inp = _world()
+    two = B.Inputs(inp.season, inp.pct, inp.dna, inp.dims, inp.positions, inp.match,
+                   {**inp.stamps, "season_ids": [27, 28]})
+    with pytest.raises(B.ExportError, match="one season"):
+        B.fixture_keys(two)
+
+
+def test_fixture_cli_refuses_a_changing_fixture_unless_update_flag(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(B, "FIXTURE_DIR", tmp_path / "web")
+    monkeypatch.setattr(B, "FIXTURE_ROWS", ((200, 10, 2),))
+    monkeypatch.setattr(B, "FIXTURE_NEIGHBOURS_OF", (200, 10, 2))
+    monkeypatch.setattr(B, "load_inputs", lambda: _world())
+    monkeypatch.setattr(B, "ROOT", tmp_path)
+    real_build = B.build                                       # the synthetic world has one group
+    monkeypatch.setattr(B, "build", lambda inp, keys=None, style_groups=(G,): real_build(
+        inp, keys=keys, style_groups=style_groups))
+    monkeypatch.setattr(sys, "argv", ["x", "--fixture"])
+    B.main()                                                   # empty dir: first write allowed
+    f = next((tmp_path / "web" / "players").glob("*.json"))
+    before = f.read_bytes()
+    f.write_bytes(b"{}\n")                                     # drift
+    with pytest.raises(SystemExit, match="would change"):
+        B.main()
+    assert f.read_bytes() == b"{}\n"                           # refused: untouched
+    monkeypatch.setattr(sys, "argv", ["x", "--fixture", "--update-fixture"])
+    B.main()
+    assert f.read_bytes() == before
+    assert "changed" in capsys.readouterr().out

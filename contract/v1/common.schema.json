@@ -65,7 +65,7 @@
         "local": {"$ref": "#/$defs/scope"},
         "global": {"$ref": "#/$defs/scope"},
         "basis": {"enum": ["local", "global", null]},
-        "zero_tie": {"type": "boolean", "description": "A zero in a zero-heavy cell: \"tied at zero, not a rank\" instead of a percentile."}
+        "zero_tie": {"type": "boolean", "description": "A zero in a zero-heavy cell (the registry's reason, or a measured zero share above the registry's threshold): \"tied at zero, not a rank\" instead of a percentile. A signature trait shows no percentile in the metric rows (holder / non-holder, ADR 004 §11.5)."}
       }
     }
   }

@@ -21,7 +21,7 @@ def _row(metric, group, value, pct, n=100, status="ok", reg="signature"):
     return {"player_id": 1, "position_group": group, "registry_status": reg, "value": value,
             "pct_local": pct, "pct_global": pct, "n_local": n, "n_global": n,
             "status_local": status, "status_global": status, "basis": "season",
-            "percentile_status": status}
+            "percentile_status": status, "cohort_role": "primary"}
 
 
 def test_fold_removes_accents_and_case():
@@ -45,9 +45,12 @@ def test_population_text_ratio_vs_plain():
 
 
 def test_zero_heavy_zero_value_is_a_tie_not_a_rank():
-    m = "restart_key_passes_p90"
-    assert R.R_ZERO_HEAVY in R.REGISTRY.cell(m, "ST").reasons
-    rows = {m: _row(m, "ST", 0.0, 37.0)}
+    # W1d fix 1 (user, 2026-10-09): a signature trait shows no percentile in the metric rows,
+    # so the zero tie is tested on a display cell with the zero-heavy reason.
+    m = "box_entries_carry_p90"
+    assert R.R_ZERO_HEAVY in R.REGISTRY.cell(m, "CB").reasons
+    assert R.REGISTRY.cell(m, "CB").status == "display"
+    rows = {m: _row(m, "CB", 0.0, 37.0, reg="display")}
     out = B.metric_row(rows, m)
     assert out["zero_tie"] is True
     for scope in ("local", "global"):
@@ -117,3 +120,27 @@ def test_write_refuses_invalid_docs_and_writes_nothing(tmp_path):
     with pytest.raises(B.ExportError):
         B.write({"labels.json": bad}, tmp_path, "abc")
     assert not list(tmp_path.iterdir())
+
+
+def test_a_signature_row_shows_no_percentile_and_says_so():
+    """ADR 004 §11.5: holder / non-holder, never a percentile (W1d fix 1)."""
+    m = "restart_key_passes_p90"
+    assert R.REGISTRY.cell(m, "ST").status == "signature"
+    for value in (0.0, 0.4):
+        out = B.metric_row({m: _row(m, "ST", value, 37.0)}, m)
+        assert out["zero_tie"] is False
+        for scope in ("local", "global"):
+            assert out[scope]["pct"] is None and out[scope]["bin"] is None
+            assert out[scope]["status_text"] == "signature trait — see below"
+    second = dict(_row(m, "ST", 0.4, 37.0), cohort_role="second")
+    assert B.metric_row({m: second}, m)["local"]["status_text"] == X.SECOND_SIGNATURE_TEXT
+
+
+def test_a_measured_zero_share_makes_a_tie_without_the_registry_reason():
+    """Option A (user, 2026-10-09): CB restart_assists_p90 has a measured zero share of 0.98
+    but no zero-heavy reason (it leaves the registry earlier); a zero there is a tie."""
+    m = "restart_assists_p90"
+    assert R.R_ZERO_HEAVY not in R.REGISTRY.cell(m, "CB").reasons
+    assert R.measured_zero_share(m, "CB") > 0.30
+    out = B.metric_row({m: _row(m, "CB", 0.0, 50.0, reg="display")}, m)
+    assert out["zero_tie"] and out["local"]["status_text"] == "tied at zero, not a rank"

@@ -78,6 +78,9 @@ def test_group_metadata_gap_rule_option_c_dm_cm(metric, eligible):
     ("CB", "long_pass_completion_pct", False), ("CB", "progressive_passes_p90", False),
     ("FB-WB", "progressive_carries_p90", False), ("AM-Winger", "pass_completion_pct", False),
     ("ST", "np_xg_p90", False), ("ST", "pass_completion_pct", True), ("CB", "clearances_p90", True),
+    # W1d option A (user): the measured possession check on every cell, style metrics included
+    ("CB", "passes_attempted_p90", False), ("DM-CM", "final_third_entries_pass_p90", False),
+    ("AM-Winger", "xg_p90", False), ("ST", "shots_on_target_p90", False),
 ])
 def test_group_metadata_gap_rule_option_c_other_groups(group, metric, eligible):
     """Fixed expectations in the other groups (the registry's team_style_biased cells of the

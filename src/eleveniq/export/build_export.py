@@ -65,6 +65,31 @@ DIMENSIONS_PATH = PROCESSED / "player_dna_dimensions.parquet"
 POSITIONS_PATH = PROCESSED / "player_season_positions.parquet"
 MATCH_PATH = ROOT / "data" / "interim" / "player_match_stats.parquet"
 OUT_DIR = ROOT / "export" / "v1"
+FIXTURE_DIR = ROOT / "tests" / "fixtures" / "web"
+# The committed fixture (plan 006 W1 item 5; ADR 005 §7): (player_id, team_id, competition_id)
+# of the 2015/16 rows the Playwright flows use, plus Kanté's neighbours (flow 1 opens one).
+# Only Kanté's neighbours have files: another row's neighbour links point outside the fixture,
+# so the web flows (W2–W5) open neighbours from Kanté only; their tests name these same ids.
+FIXTURE_ROWS: tuple[tuple[int, int, int], ...] = (
+    (3961, 22, 2),      # Kanté (flow 1)
+    (5203, 217, 11),    # Busquets
+    (4751, 39, 2),      # Carrick
+    (4926, 220, 11),    # Isco (nickname)
+    (19677, 220, 11),   # Benzema (ST)
+    (5503, 217, 11),    # Messi
+    (4320, 217, 11),    # Neymar
+    (3496, 1, 2),       # Özil
+    (3668, 1, 2),       # Walcott (partial DNA row)
+    (3244, 29, 2),      # Stones (CB)
+    (3813, 22, 2),      # Morgan (CB)
+    (3052, 36, 2),      # Zabaleta: an FB-WB near-gate row (900 ≤ nominal < 1,350)
+    (13286, 41, 2), (13286, 165, 7),    # Lamine Koné: a mover across leagues (combined dot)
+    (3057, 26, 2), (3057, 37, 2),       # Shelvey: a mover within a league (combined dot)
+    (2955, 143, 7),     # below the minutes gate
+    (3603, 30, 2),      # a second-group (display-only) row
+    (2947, 137, 7),     # a goalkeeper
+)
+FIXTURE_NEIGHBOURS_OF = (3961, 22, 2)
 KEY = P.KEY
 GROUPS = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
 FLOAT_DP = 6
@@ -205,21 +230,29 @@ def _population_text(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, An
 
 def _scope(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, Any], scope: str,
            spec: R.MetricSpec, cell: R.Cell | None, biased: bool, zero_tie: bool) -> dict:
-    p = row[f"pct_{scope}"]
+    # The percentile at the contract's precision: its text, phrase and bin all read the number
+    # the file carries (89.99999999999999 is 90.0, "top 10%", the top bin; stats-reviewer W1d).
+    p = rnd(row[f"pct_{scope}"])
     status = row[f"status_{scope}"]
-    shown = p is not None and not zero_tie
+    signature = row["registry_status"] == "signature"
+    shown = p is not None and not zero_tie and not signature
+    # Holder / non-holder, never a percentile (ADR 004 §11.5). Every outfield row's file has
+    # the holder section "below"; an unscored row's entry there says "not assessed: <status>".
+    if signature:
+        text = W.SIGNATURE_ROW if row["cohort_role"] == "primary" else X.SECOND_SIGNATURE_TEXT
+    elif zero_tie and p is not None:
+        text = W.ZERO_TIE   # replaces a stored percentile only; an unscored row keeps its status
+    else:
+        text = None if p is not None else X.status_text(status)
     return {
-        "pct": rnd(p) if shown else None,
+        "pct": p if shown else None,
         "pct_text": X.format_pct(p) if shown else None,
         "phrase": W.pct_words(p)[1] if shown else None,
         "bin": X.percentile_bin(spec, biased, p) if shown else None,
         "n": row[f"n_{scope}"],
         "population_text": _population_text(rows, row, scope, spec, cell),
         "status": status,
-        # A number or a reason, never neither. A zero tie replaces a stored percentile only;
-        # an unscored row keeps its own status text (as the comparison page does).
-        "status_text": W.ZERO_TIE if (zero_tie and p is not None) else (
-            None if p is not None else X.status_text(status)),
+        "status_text": text,            # a number or a reason, never neither
     }
 
 
@@ -246,7 +279,10 @@ def metric_meta(metric: str, group: str, held: Mapping[str, str]) -> dict:
                            else spec.direction.replace("_", " ")),
         "registry_status": status,
         "uncoloured": X.uncoloured(spec, biased),
-        "gap_eligible": X.gap_eligible(spec, status, biased),
+        # Option c on every measured cell (user, 2026-10-09): out when the registry's
+        # possession check triggers on the cell's measurement, whatever step it left at.
+        "gap_eligible": X.gap_eligible(spec, status, biased or bool(
+            group in GROUPS and R.measured_possession_triggered(metric, group))),
         "notes": [{"short": n.short, "full": n.full} for n in dict.fromkeys(notes)],
         "reasons": reasons,
         "withheld_tag": W.withheld_tag(fam, held[fam]) if fam in held else None,
@@ -260,8 +296,12 @@ def metric_row(rows: Mapping[str, Mapping[str, Any]], metric: str) -> dict:
     group = row["position_group"]
     cell = REGISTRY.cell(metric, group) if row["registry_status"] else None
     biased = bool(cell and cell.team_style_biased)
-    # A zero tie needs a stored percentile to replace (an unscored row is not "tied").
-    zero_tie = bool(cell and R.R_ZERO_HEAVY in cell.reasons and row["value"] == 0
+    # A zero tie (user, 2026-10-09, option A): the registry's zero-heavy reason, or a measured
+    # zero share above its threshold on any cell; it needs a stored percentile to replace (an
+    # unscored row is not "tied"); a signature row shows no percentile at all.
+    heavy = bool(cell and R.R_ZERO_HEAVY in cell.reasons) or (
+        group in GROUPS and R.measured_zero_heavy(metric, group))
+    zero_tie = bool(heavy and row["value"] == 0 and row["registry_status"] != "signature"
                     and (row["pct_local"] is not None or row["pct_global"] is not None))
     return {
         "value": rnd(row["value"]),
@@ -297,6 +337,7 @@ def _identity(ident: Mapping[str, Any], positions: Mapping[str, float] | None) -
         "second_group": ident["second_position_group"] if ident["meets_min_minutes"] else None,
         "minutes": rnd(ident["minutes_played"]), "minutes_text": X.format_number(ident["minutes_played"]),
         "nominal_minutes": rnd(ident["minutes_nominal_equiv"]),
+        "nominal_minutes_text": X.format_number(ident["minutes_nominal_equiv"]),
         "meets_gate": bool(ident["meets_min_minutes"]),
         "near_gate": X.near_gate(group, ident["minutes_nominal_equiv"]) and bool(ident["meets_min_minutes"]),
         "role_text": role,
@@ -367,8 +408,8 @@ def _neighbours(k: tuple, group: str, nb: P.RowNeighbours, rows: Mapping[tuple, 
 
         def phrase(m: str) -> dict:
             return {"metric": m, "label": W.metric_label(m, group),
-                    "a_phrase": W.pct_words(a.cells[m].pct_local)[1],  # type: ignore[arg-type]
-                    "b_phrase": W.pct_words(b.cells[m].pct_local)[1]}  # type: ignore[arg-type]
+                    "a_phrase": W.pct_words(rnd(a.cells[m].pct_local))[1],  # type: ignore[arg-type]
+                    "b_phrase": W.pct_words(rnd(b.cells[m].pct_local))[1]}  # type: ignore[arg-type]
         if not 0 <= n.distance < 1:
             raise ExportError(f"distance {n.distance} outside [0, 1)")
         code = f"{n.distance:.4f}"
@@ -411,7 +452,7 @@ def style_map_doc(group: str, sm: S.StyleMap, rows: Mapping[tuple, RowDna],
         for a in (0, 1):
             top = []
             for metric, push in S.pushes(m, rows[k], a)[:3]:
-                adj, words = W.pct_words(rows[k].cells[metric].pct_local)  # type: ignore[arg-type]
+                adj, words = W.pct_words(rnd(rows[k].cells[metric].pct_local))  # type: ignore[arg-type]
                 top.append({"metric": metric, "label": W.metric_label(metric, group),
                             "adjective": adj, "phrase": words,
                             "toward": W.end_name(group, m, a, 1 if push > 0 else -1),
@@ -659,11 +700,55 @@ def write(docs: Mapping[str, Any], out: Path, commit: str) -> dict[str, int]:
     return {p: len(b) for p, b in blobs.items()}
 
 
+def fixture_keys(inp: Inputs) -> list[tuple]:
+    """FIXTURE_ROWS as season keys, plus the neighbours of FIXTURE_NEIGHBOURS_OF."""
+    season_ids = inp.stamps["season_ids"]
+    if len(season_ids) != 1:
+        raise ExportError("the fixture is defined for one season")
+    keys = [(*r, season_ids[0], R.MEASUREMENT_SOURCE) for r in FIXTURE_ROWS]
+    base = build(inp, keys=keys, style_groups=())
+    anchor = base[f"players/{row_key((*FIXTURE_NEIGHBOURS_OF, season_ids[0]))}.json"]
+    for n in anchor["neighbours"]["items"]:
+        pid, tid, cid, sid = (int(x) for x in n["key"].split("-"))
+        keys.append((pid, tid, cid, sid, R.MEASUREMENT_SOURCE))
+    return sorted(set(keys))
+
+
+def diff_summary(old: Path, docs: Mapping[str, bytes]) -> list[str]:
+    """Files added, removed and changed against the fixture on disk (manifest excluded)."""
+    have = {p.relative_to(old).as_posix(): p.read_bytes() for p in managed_files(old)} \
+        if old.is_dir() else {}
+    have.pop("manifest.json", None)
+    added = sorted(set(docs) - set(have))
+    removed = sorted(set(have) - set(docs))
+    changed = sorted(p for p in set(docs) & set(have) if docs[p] != have[p])
+    return ([f"+ {p}" for p in added] + [f"- {p}" for p in removed]
+            + [f"~ {p}" for p in changed])
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--out", type=Path, default=OUT_DIR)
+    ap.add_argument("--fixture", action="store_true",
+                    help=f"write the fixed subset to {FIXTURE_DIR.relative_to(ROOT)} (refused "
+                         "if it would change, unless --update-fixture)")
+    ap.add_argument("--update-fixture", action="store_true",
+                    help="allow --fixture to rewrite a changed fixture; prints the diff summary")
     args = ap.parse_args()
-    docs = build(load_inputs())
+    inp = load_inputs()
+    if args.fixture or args.update_fixture:
+        docs = build(inp, keys=fixture_keys(inp))
+        changes = diff_summary(FIXTURE_DIR, {p: dumps(d) for p, d in docs.items()})
+        if changes and FIXTURE_DIR.is_dir() and any(FIXTURE_DIR.iterdir()) \
+                and not args.update_fixture:
+            raise SystemExit("the fixture would change (" + str(len(changes)) + " files); "
+                             "rerun with --update-fixture and review the diff:\n"
+                             + "\n".join(changes[:40]))
+        sizes = write(docs, FIXTURE_DIR, "fixture")
+        print(f"fixture: {len(sizes)} files ({sum(sizes.values()):,} bytes) → {FIXTURE_DIR}; "
+              f"{len(changes)} changed: " + ("; ".join(changes[:20]) or "none"))
+        return
+    docs = build(inp)
     sizes = write(docs, args.out, git_commit())
     players = [v for p, v in sizes.items() if p.startswith("players/")]
     print(f"wrote {len(sizes)} files ({sum(sizes.values()):,} bytes) → {args.out}; "

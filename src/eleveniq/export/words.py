@@ -121,6 +121,7 @@ GROUP_PLURAL = {"CB": "centre-backs", "FB-WB": "full-backs and wing-backs",
 GROUP_TEXT = {**GROUP_PLURAL, "GK": "goalkeepers"}
 FAMILY_LABELS = {"Progression": "Progressive passing", "Carrying": "Carrying & dribbling"}
 ZERO_TIE = "tied at zero, not a rank"
+SIGNATURE_ROW = "signature trait — see below"
 NEAR_GATE_CHIP = "Fewer minutes: less reliable"
 HOLDER, NON_HOLDER = "holder", "non-holder"
 NOT_ASSESSED = "not assessed: {reason}"

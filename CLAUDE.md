@@ -225,6 +225,14 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # validated against contract/v1/*.schema.json, byte-identical on re-run
 .venv/bin/python -m eleveniq.export.build_export --out export/v1
 
+# Web fixture (committed, tests/fixtures/web/): refused if it would change; --update-fixture
+# rewrites it and prints the diff summary (call it out in the commit, as for the golden pages)
+.venv/bin/python -m eleveniq.export.build_export --fixture
+.venv/bin/python -m eleveniq.export.build_export --update-fixture
+
+# Independent reference check of an export (no eleveniq imports; raw lineups for roles)
+.venv/bin/python spikes/w1_export_reference.py --check-output export/v1
+
 # Rewrite the M4e golden page (prints a diff summary; call the change out in the commit)
 .venv/bin/python -m pytest tests/test_compare_page_integration.py -q -m integration --update-golden
 

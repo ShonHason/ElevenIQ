@@ -11,7 +11,7 @@ Neighbour facts within one position group (plan 006 W1; moved from the M4f neigh
   distances (exactly, or within float noise; percentiles are discrete) share a rank.
 - neighbours: the first k candidates by (distance, key), each with its rank.
 - picks: the N_DIFF metrics with the largest |gap| in local percentile points, then the N_ALIKE
-  with the smallest, ties by metric name, over the metrics both rows have (the neighbour
+  with the smallest, ties (equal within TIE_TOL) by metric name, over the metrics both rows have (the neighbour
   reasons: "most alike / most different").
 
 Only neighbours are exported: compare mode carries no distance and no pair data (user,
@@ -78,7 +78,9 @@ def picks(a: RowDna, b: RowDna) -> tuple[str, ...]:
     """The N_DIFF largest |Δ local percentile| metrics, then the N_ALIKE smallest, ties by
     metric name, over the metrics both rows have."""
     both = sorted(a.present() & b.present())
-    gap = {m: abs(a.cells[m].pct_local - b.cells[m].pct_local) for m in both}  # type: ignore[operator]
+    # Gaps equal within TIE_TOL tie (float noise of ~1e-15 must not beat the name rule).
+    gap = {m: round(abs(a.cells[m].pct_local - b.cells[m].pct_local) / TIE_TOL)  # type: ignore[operator]
+           for m in both}
     diff = sorted(both, key=lambda m: (-gap[m], m))[:N_DIFF]
     alike = sorted(both, key=lambda m: (gap[m], m))[:N_ALIKE]
     return (*diff, *alike)
