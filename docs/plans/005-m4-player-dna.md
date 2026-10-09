@@ -1612,7 +1612,7 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 - **Then the user decides:** whether to restore Passing, and the role of `long_pass_completion_pct`.
 
 ### Decision: family weighting when a family has one member (required for M4 sign-off)
-- **Open** (stats-reviewer, M4g2 `/finish-chunk`; user 2026-10-07). M4 is not signed off until the user decides it.
+- ~~**Open**~~ **Resolved (user, 2026-10-09; ADR 004 §14 item 1): A, accept the build, provisional until M5** (split-half self-retrieval). Originally opened by the stats-reviewer at the M4g2 `/finish-chunk` (user 2026-10-07).
 - **The problem:**
   - Under the §10.8 family weights, a family reduced to one metric puts its whole family weight on that metric.
   - After M4g2: CB Aerial (`aerials_won`, 0.20); FB-WB Aerial, Goal threat and Creation (43% of the vector on 3 metrics); ST Goal threat (`np_shots`, 0.167).
@@ -1851,14 +1851,33 @@ Items:
 - **Comparison page:** already exact. Defending reads "withheld (not shown to be free of team-possession effects)" (CB, FB-WB, AM-Winger, ST) or "withheld (player-vs-team test on club movers inconclusive; underpowered)" (DM-CM).
 - **Style maps (`spikes/m4g_compare.py`):** two deviations were found and fixed.
   - The short tag "(team-influenced: not shown to be possession-free)" now uses the exact N2 words.
-  - The sentence "Defending volume depends heavily on how much the team has the ball." (from M4g1b, a possession claim stated as fact) is replaced by `defending_note(group)`, built from the group's Defending withheld code, e.g. CB: "Defending scores are withheld: these metrics are not shown to be free of team-possession effects. That is the expected state until a second season adds evidence, not a finding about the player."; DM-CM: "… the player-vs-team test on club movers is inconclusive (underpowered). …".
+  - The sentence "Defending volume depends heavily on how much the team has the ball." (from M4g1b, a possession claim stated as fact) is replaced by `defending_note(group)`, built from the group's Defending withheld code, DM-CM: "… the player-vs-team test on club movers is inconclusive (underpowered). That is the expected state until a second season adds evidence, not a finding about the player." The first version gave CB and the other possession groups the same second-season ending. It was narrowed later the same day (M4g6d close below; ADR 004 §14 item 5), so they now read "… not shown to be free of team-possession effects. This is not a finding about the player."
 - **Tests:** no rendered page or golden page contains a possession claim stated as fact, and every Defending withheld text matches N2 or the group's own reason.
 - **Plan 006 W4 / W5 gate:** web pages take withheld texts from the single words source.
-- **Backlog, gated before the next change to `spikes/m4g_compare.py`** (code-reviewer, M4g6d; user rule: leftovers to the backlog):
+- ~~**Backlog, gated before the next change to `spikes/m4g_compare.py`**~~ **Done (2026-10-09), before the N3 narrowing change to that file:** verb per mover outcome ("has failed"); the tag test now compares against the comparison page (another module); N2 stays a literal in the tests, and the DM-CM reason is read from the words table; imports ordered, `html` imported once. The original list (code-reviewer, M4g6d):
   1. `mover_stability_failed` renders "the player-vs-team test on club movers is failed": use a verb per outcome ("has failed"). Unused in 2015/16, but `test_defending_note_follows_the_reason_code_not_a_fixed_string` locks the wording in; that test's first assertion is near-vacuous (ST is `possession_criteria_failed`).
   2. `test_defending_tags_use_the_withheld_words_exactly` is partly tautological (`TAG_WORDS` is built from `WITHHELD_WORDS`); only the N2 literal assertion carries information.
   3. `_check_page` and the golden test: the N2 string stays a literal in the tests, because it is the user's spec and the literal is what makes the tests non-tautological (user, 2026-10-09). Only the per-group reason strings (e.g. DM-CM's mover reason) may be read from the words table instead of being copied. The plan 006 web tests follow the same rule.
   4. Cosmetic: import order (`re` before `ast`), hoist the local `import html`, an extra blank line.
+
+### M4g6d — stats-reviewer sign-off and M4 close (2026-10-09)
+- **Stats-reviewer M4 sign-off: SIGN OFF WITH NOTES.** Nothing blocks the close. The ADR 004 §14 decisions match the evidence and the CLAUDE.md principles hold for the build.
+- **Record fixes applied:**
+  - "underpowered at 15" added to §14 item 2;
+  - family weighting marked resolved;
+  - the brief §20 "Why per 90?" evidence (totals ρ with minutes 0.29–0.89, per-90s −0.26 to +0.27) and the re-run goals reconciliation recorded in ADR 004 §14.
+- **Notes decided (user):**
+  1. N3 narrowed to the mover-test groups (style maps regenerated);
+  2. the face re-read is recorded (Isco line superseded; overlaps 7–10/10);
+  3. plan 006 W4 near-gate flag for CB / FB-WB;
+  4. same-team leak → M5, and plan 006 W4 marks same-team neighbours.
+- **Left as they are (user):** the old status name in the generated M4g6a1 section (already gated backlog), and the two loosely worded flag lines in the pre-decision `m4-signoff.md`.
+- **Backlog, gated before the next change to `spikes/m4g_compare.py`** (code-reviewer, M4 close; user rule: leftovers to the backlog):
+  1. `MOVER_VERB` repeats the keys of `MOVER_OUTCOME`: derive both from one table (noun and verb together), or test that the key sets match.
+  2. `defending_note` picks the closing sentence with `code == "possession_criteria_failed"`; make the second-season set an explicit set of mover codes and test `mover_stability_untestable` / `mover_below_model_range`.
+  3. `_page_status_text` (tests) walks the AST of `tools/compare_page.py`: give it a clear failure message if that dict changes shape. Keep `test_defending_note_dm_cm_keeps_the_second_season_clause`: it is the only literal pin of the DM-CM wording.
+  4. The sign-off overlaps (10/10 … 7/10) and the "Why per 90?" ρ ranges are recorded figures, not computed by a committed script; add one if they are to be regenerated.
+- **M4 closed (2026-10-09).** Open items: the §14 item 6 deferrals and the gated backlog below. Merging `m4-player-dna` into `main` needs the user's approval; the user pushes.
 
 ### Stats-reviewer review of M4g0 (2026-10-07): APPROVE WITH CONDITIONS
 - Folded in above: the leakage decision; the M4g1 lift and pivot label; the M4g3 baseline `min_attempts`, pooling, paired bootstrap and RMS; the M4g4 fixed order, ratios and β̂ fit; the M4g5 subsets and stratified folds; the majority-trigger wording.
@@ -1931,6 +1950,7 @@ Items:
 - **M5: hub-player check in the self-retrieval work** (user face read, 2026-10-09; ADR 004 §14 item 1): Ben Yedder (ST) and Echiejile (FB-WB) each appear in two of the four face lists. In M5's split-half self-retrieval, measure each row's in-degree (how often it is someone's neighbour) and flag hubs, which crowd neighbour lists in high-dimensional distances.
 - **M5: revisit `long_pass_completion_pct` (CB, DM-CM)** when xPass returns or at M5, whichever is first (ADR 004 §14 item 2).
 - **M5: family weighting is provisional** (ADR 004 §14 item 1): decide it with split-half self-retrieval.
+- **M5: same-team neighbour leak** (stats-reviewer M4 sign-off; user 2026-10-09): CB neighbours are teammates 2.17×, FB-WB 1.78× the expected rate (`docs/reviews/m4f-weighting.md`, same-team table). Include it in the self-retrieval and hub-player checks (team style carried in Passing / Progression).
 - **M5: DM-CM 6-share context column** (user, 2026-10-07; plan 005 M4g1 outcome).
   - Show each DM-CM row's lineup-slot share (Defensive Midfield slots against Center Midfield slots) next to it as context, never as a cohort.
   - Today it is computed only in `spikes/m4g_style_map.py` from the raw lineups; the pipeline would need per-position minutes.

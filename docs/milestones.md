@@ -219,6 +219,8 @@ Schema validation, cleaning, entity normalisation. Tests at each stage.
 Per-90 calculation, position-group percentiles, DNA dimension aggregation.
 Validate methodology against the questions in brief.md §20 before moving on.
 
+**Status (2026-10-09): CLOSED.** Signed off by the stats-reviewer with notes, all decided by the user (ADR 004 §14; plan 005 M4g6d). Validation write-up: `docs/reviews/m4-validation.md`; decisions: `docs/reviews/m4-signoff.md`, ADR 004 §14. Open: the §14 item 6 deferrals and plan 005's gated backlog. Next: plan 006 (web v1), after its pre-W1 gates.
+
 **Status (2026-10-02):** plan 005. The M4a decisions are recorded in ADR 004 (docs/decisions/004-cohorts-percentiles-dna.md). Each pre-condition below is decided there, or is deferred to the new-source checklist (ADR 004 D22). The text below is kept as history.
 
 **Note for DNA feature selection (from La Liga 2015/16 data):**

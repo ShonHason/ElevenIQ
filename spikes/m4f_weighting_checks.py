@@ -85,7 +85,9 @@ FACE = (
 USER_READ = (
     "Busquets, Özil, Stones and Neymar lists are near-ideal.",
     "The Morgan and Stones lists do not overlap: style is separated correctly.",
-    "Isco's list is all 8s: evidence for the DM-CM role split (plan 005 M4g).",
+    "~~Isco's list is all 8s: evidence for the DM-CM role split (plan 005 M4g).~~ "
+    "**Superseded (user, 2026-10-09):** it does not hold on the current build, nor on M4g1's "
+    "own labels.",
     "Kanté's list is ball-winning box-to-box midfielders.",
     "No list contains a clearly wrong-style player.",
 )
@@ -557,9 +559,12 @@ def main() -> None:
       "weight top-10. **Largest-gap family** = the family with the largest share of that "
       "pair's distance: where the two players differ most, not what they were matched on.")
     w("")
-    w("**User's read (2026-10-07), recorded on the M4f2 build.** The lists below are from the "
-      "current build (unchanged since the M4g2 DNA-list changes), so this read is history, **to be "
-      "re-read on the current build** (M4g6a2, plan 005; stats-reviewer condition 3):")
+    w("**User's read (2026-10-07), recorded on the M4f2 build; re-read on the current build "
+      "(user, 2026-10-09; ADR 004 §14).** The lists below are from the current build (unchanged "
+      "since the M4g2 DNA-list changes). The read stands, except the Isco line, which is "
+      "superseded. Top-10 overlap of the current lists with the lists that were read (stats-"
+      "reviewer, M4 sign-off): 10/10 Kanté, Özil, Payet, Messi, Neymar; 9/10 Busquets, Isco; "
+      "8/10 Stones; 7/10 Morgan.")
     w("")
     for line in USER_READ:
         w(f"- {line}")

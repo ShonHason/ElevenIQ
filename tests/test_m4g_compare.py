@@ -14,9 +14,9 @@ rules with hand-computed expected values:
 """
 from __future__ import annotations
 
-import re
-
 import ast
+import html
+import re
 import sys
 from pathlib import Path
 
@@ -192,11 +192,13 @@ def test_withheld_text_carries_the_d5_status_and_the_underpowered_note():
     assert ref.UNDERPOWERED == {"DM-CM"}
 
 
+# ── Defending wording: N2 / N3 (ADR 004 §14 items 4–5; user 2026-10-09) ──────────────
 
-# ── Defending wording: N2 / N3 (ADR 004 §14; user 2026-10-09) ────────────────────
-
+# The N2 string is the user's spec: a literal here, never read from the code under test.
 N2 = "not shown to be free of team-possession effects"
-DM_CM_REASON = "player-vs-team test on club movers inconclusive"
+# Per-group reasons may come from the words table (user, 2026-10-09).
+DM_CM_REASON = cmpm.WITHHELD_WORDS["mover_stability_inconclusive"]
+NOT_A_FINDING = "This is not a finding about the player."
 EXPECTED_STATE = ("That is the expected state until a second season adds evidence, not a finding "
                   "about the player.")
 # Possession stated as fact (the sentence the M4g6d check found, and its relatives).
@@ -205,14 +207,24 @@ FACT_CLAIMS = ("depends heavily", "possession-dependent", "possession dependent"
                "possession-driven")
 
 
+def _page_status_text() -> dict[str, str]:
+    """tools/compare_page.DIM_STATUS_TEXT, read without importing the page module."""
+    statuses = {**_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "dna.py"),
+                **_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "registry.py")}
+    tree = ast.parse((ROOT / "tools" / "compare_page.py").read_text())
+    node = next(n for n in tree.body if isinstance(n, ast.AnnAssign)
+                and isinstance(n.target, ast.Name) and n.target.id == "DIM_STATUS_TEXT")
+    return {statuses[k.attr]: v.value for k, v in zip(node.value.keys, node.value.values)}  # type: ignore[union-attr]
+
+
 @pytest.mark.parametrize("group", ["CB", "FB-WB", "AM-Winger", "ST"])
-def test_defending_note_uses_the_n2_wording(group):
+def test_defending_note_possession_groups_say_n2_and_not_a_finding(group):
+    """N3 narrowed (user, 2026-10-09): no second-season clause for the possession groups."""
     assert cmpm.defending_note(group) == (
-        "Defending scores are withheld: these metrics are not shown to be free of "
-        "team-possession effects. " + EXPECTED_STATE)
+        f"Defending scores are withheld: these metrics are {N2}. {NOT_A_FINDING}")
 
 
-def test_defending_note_dm_cm_uses_its_own_reason_with_underpowered():
+def test_defending_note_dm_cm_keeps_the_second_season_clause():
     assert cmpm.defending_note("DM-CM") == (
         "Defending scores are withheld: the player-vs-team test on club movers is inconclusive "
         "(underpowered). " + EXPECTED_STATE)
@@ -220,39 +232,42 @@ def test_defending_note_dm_cm_uses_its_own_reason_with_underpowered():
 
 def test_defending_note_follows_the_reason_code_not_a_fixed_string(monkeypatch):
     monkeypatch.setitem(ref.WITHHELD["Defending"], "CB", "mover_stability_failed")
-    assert "the player-vs-team test on club movers is failed" not in (cmpm.defending_note("ST") or "")
-    assert cmpm.defending_note("CB").startswith(
-        "Defending scores are withheld: the player-vs-team test on club movers is failed.")
+    assert cmpm.defending_note("CB") == (
+        "Defending scores are withheld: the player-vs-team test on club movers has failed. "
+        + EXPECTED_STATE)
     monkeypatch.delitem(ref.WITHHELD["Defending"], "CB")
     assert cmpm.defending_note("CB") is None
 
 
-def test_defending_tags_use_the_withheld_words_exactly():
-    for code, words in cmpm.WITHHELD_WORDS.items():
-        if code != "pending_xpass_deferred":
-            assert cmpm.TAG_WORDS[code] == words
-    assert cmpm.TAG_WORDS["possession_criteria_failed"] == N2
+def test_defending_tags_equal_the_comparison_page_reasons():
+    """The style-map tags read exactly as the comparison page's reasons (a separate module)."""
+    page = _page_status_text()
+    assert cmpm.TAG_WORDS["possession_criteria_failed"] == N2 == page["possession_criteria_failed"]
+    assert cmpm.TAG_WORDS["mover_stability_inconclusive"] == page["mover_stability_inconclusive"]
 
 
 def _defending_texts(page: str) -> list[str]:
-    """Every Defending withheld text on a page: tags on Defending metrics are checked through
-    the group's tag set, the footnote's "Defending (…)" and the note's clause."""
-    import html as h
-    t = h.unescape(page)
-    return re.findall(r"Defending \(([^)]*)\)", t) + re.findall(r"Defending scores are withheld: ([^.]*)\.", t)
+    """The footnote's "Defending (…)" texts and the note's clauses on a page."""
+    t = html.unescape(page)
+    return (re.findall(r"Defending \(([^)]*)\)", t)
+            + re.findall(r"Defending scores are withheld: ([^.]*)\.", t))
 
 
 def _check_page(page: str, group: str) -> None:
-    import html as h
-    t = h.unescape(page).lower()
+    t = html.unescape(page)
     for claim in FACT_CLAIMS:
-        assert claim not in t, (group, claim)
-    reason = N2 if group != "DM-CM" else DM_CM_REASON
-    clause = (f"these metrics are {N2}" if group != "DM-CM"
-              else "the player-vs-team test on club movers is inconclusive (underpowered)")
+        assert claim not in t.lower(), (group, claim)
+    if group == "DM-CM":
+        reason = DM_CM_REASON
+        clause = cmpm.DEFENDING_CLAUSE["mover_stability_inconclusive"] + " (underpowered)"
+        closing = EXPECTED_STATE
+    else:
+        reason, clause, closing = N2, f"these metrics are {N2}", NOT_A_FINDING
     for x in _defending_texts(page):
         assert x in (reason, reason + "; underpowered", clause), (group, x)
-    tags = set(re.findall(r"team-influenced: ([^)<]*)", h.unescape(page)))
+    for note in re.findall(r"Defending scores are withheld: [^<\"]*", t):
+        assert note.endswith(closing), (group, note)
+    tags = set(re.findall(r"team-influenced: ([^)<]*)", t))
     assert tags <= {reason, "depends on the team's passing style"}, (group, tags)
 
 
@@ -276,9 +291,8 @@ def test_rendered_style_maps_carry_no_possession_fact_and_the_right_reason(group
 
 
 def test_golden_compare_pages_carry_no_possession_fact():
-    import html as h
     for f in (ROOT / "tests" / "fixtures" / "m4e_compare").glob("golden_*.html"):
-        t = h.unescape(f.read_text())
+        t = html.unescape(f.read_text())
         for claim in FACT_CLAIMS:
             assert claim not in t.lower(), (f.name, claim)
         for x in re.findall(r"withheld \(([^)]*)\)", t):

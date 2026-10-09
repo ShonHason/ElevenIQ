@@ -1679,10 +1679,11 @@ Evidence and options: `docs/reviews/m4-signoff.md` (committed before the answers
    - **Checked before recording (user request):** Niang, Muriel, Pléa, Braithwaite and Jovetić are ST by the main-group minutes rule, with no mapping error (raw positions follow ADR 002 §4). Main-group shares: Niang 0.769, Muriel 0.846, Pléa 0.864, Braithwaite 0.594, Jovetić 0.685. Braithwaite and Jovetić are mixed-role (below 0.70) but correctly ST.
 2. **The 8 majority-admitted allow-listed cells: A, keep all 8 as DNA** (allow-listed, "team-style influenced" note).
    - Revisit `long_pass_completion_pct` (CB, DM-CM) when xPass returns or at M5, whichever is first.
-   - Evidence: the progression cells have r 0.85–0.90, inconclusive mover verdicts with f̂ 0.25–0.32 and leave-one-out overlap 8–9. Long-pass completion has f̂ 0.93 [0.06, 2.05] at n = 15 (inconclusive).
+   - Evidence: the progression cells have r 0.85–0.90, inconclusive mover verdicts with f̂ 0.25–0.32 and leave-one-out overlap 8–9. Long-pass completion has f̂ 0.93 [0.06, 2.05] (inconclusive; underpowered at 15).
 3. **FAIL list: confirmed empty.** 0 FAIL among the 34 mover verdicts (§13.7).
 4. **Passing status: A, rename** `pending_mover_stability` → `pending_xpass_deferred`. The page text becomes "withheld (team-influenced; xPass deferred until after launch)". Done before plan 006 W1 (M4g6c). Meaning as §13.9: deferred, not tested.
-5. **N1–N3 confirmed as display rules** (plan 006 W4): a CI next to every possession flag; "not shown to be free of team-possession effects" wording only; withheld Defending is the expected state until a second season.
+5. **N1–N3 confirmed as display rules** (plan 006 W4): a CI next to every possession flag; "not shown to be free of team-possession effects" wording only; withheld Defending is not a finding about the player.
+   - **N3 narrowed (user, 2026-10-09, after the stats-reviewer's M4 sign-off).** The second-season clause ("the expected state until a second season adds evidence") applies only where the mover test decides and is underpowered at one season: DM-CM in 2015/16 (`mover_stability_*` codes). For the possession-failed groups (CB, FB-WB, AM-Winger, ST) the withholding reflects the metrics themselves (CB: clear possession evidence, ρ +0.25 / +0.28), so they read "… not shown to be free of team-possession effects. This is not a finding about the player." The broader clause was the user's wording and broader than the evidence. The style maps generate the closing sentence from the reason code (`spikes/m4g_compare.defending_note`).
 6. **The six deferrals are confirmed:**
    - log-OLS vs Poisson β̂ and a group-count gate in the β̂ fit (later ADR);
    - the §31 treatment re-entry (before a new source or season);
@@ -1695,3 +1696,24 @@ Evidence and options: `docs/reviews/m4-signoff.md` (committed before the answers
    - before M5: the z handling, the DM-CM 6-share column, and empirical-Bayes ratio shrinkage;
    - before a new source or season: the fail-loud and robustness items;
    - the rest stays in the feature backlog.
+
+**Stats-reviewer M4 sign-off (2026-10-09): SIGN OFF WITH NOTES** (plan 005 M4g6d). Nothing blocks M4's close. The §14 decisions match the evidence, and the CLAUDE.md statistical principles hold for the current build:
+- within-source only: one `source` and one `REGISTRY_VERSION` throughout;
+- season grain: 0 duplicate keys;
+- minutes gate: 0 scored rows below 900 nominal;
+- position-group percentiles, with `pct_local` and `pct_global` as separate columns;
+- raw counts and minutes kept.
+
+Two brief §20 items were added at the sign-off:
+- **"Why per 90?"** Spearman ρ with `minutes_played` over the 1,233 primary scored rows, on the 92 per-90 DNA cells: the season totals 0.29–0.89 (e.g. DM-CM `ball_recoveries` 0.89), the per-90s −0.26 to +0.27 (largest: FB-WB `op_key_passes` +0.27, ST `fouls_committed` −0.26). Totals mostly measure playing time; per-90s largely remove it. Reproduced in the main session; the reviewer's own run gave −0.15 to +0.24.
+- **Totals reconciliation, re-run by the stats-reviewer:** player goals + own goals equal `matches.json` in every league (PL 1,026, La Liga 1,043, Serie A 979, Ligue 1 949; partial Bundesliga 96).
+
+Notes and their decisions are in plan 005 "M4g6d — stats-reviewer sign-off".
+
+**Sign-off notes, decided (user, 2026-10-09):**
+1. N3 narrowed to the mover-test groups (item 5 above).
+2. **Face-validity re-read:** the 2026-10-07 read stands on the current build, except the Isco "all 8s" line, which is superseded. Top-10 overlap of the current lists with the lists that were read: 10/10 Kanté, Özil, Payet, Messi, Neymar; 9/10 Busquets, Isco; 8/10 Stones; 7/10 Morgan.
+3. Plan 006 W4 marks near-gate CB / FB-WB profiles as less reliable (median r_full ≈ 0.60 at 900–1,350 minutes).
+4. The same-team neighbour leak (CB 2.17×, FB-WB 1.78× expected) goes to M5's self-retrieval and hub checks. Plan 006 W4 neighbour lists mark same-team neighbours.
+
+**M4 closed (2026-10-09).** Signed off by the stats-reviewer with notes, every note decided. The open items are the recorded deferrals (§14 item 6) and the gated backlog (plan 005).

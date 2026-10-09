@@ -75,21 +75,32 @@ WITHHELD_WORDS = {"pending_xpass_deferred": "team-influenced; xPass deferred unt
 # status uses its withheld words exactly (ADR 004 §14 N2; user 2026-10-09).
 TAG_WORDS = {"pending_xpass_deferred": "depends on the team's passing style",
              **{c: w for c, w in WITHHELD_WORDS.items() if c != "pending_xpass_deferred"}}
-# The Defending note's clause per withheld code (the same parts as WITHHELD_WORDS).
+# The Defending note's clause per withheld code (the same parts as WITHHELD_WORDS), with a verb
+# per mover outcome.
+MOVER_VERB = {"mover_stability_failed": "has failed", "mover_stability_inconclusive": "is inconclusive",
+              "mover_seed_sensitive": "is not stable across seeds",
+              "mover_below_model_range": "is outside the model's range"}
 DEFENDING_CLAUSE = {"possession_criteria_failed": f"these metrics are {POSSESSION_WORDS}",
-                    **{c: f"the {MOVER_TEST} is {o}" for c, o in MOVER_OUTCOME.items()},
+                    **{c: f"the {MOVER_TEST} {v}" for c, v in MOVER_VERB.items()},
                     "mover_stability_untestable": f"there are {UNTESTABLE_WORDS}"}
+# The note's closing sentence (ADR 004 §14 item 5, N3 narrowed by the user 2026-10-09): the
+# second-season clause applies where the mover test decides (it is underpowered at one season,
+# DM-CM in 2015/16); the possession-failed groups only say it is not a finding about the player.
+NOT_A_FINDING = "This is not a finding about the player."
+EXPECTED_STATE = ("That is the expected state until a second season adds evidence, not a finding "
+                  "about the player.")
 
 
 def defending_note(group: str) -> str | None:
     """The sentence after a list with a Defending metric, from the group's Defending withheld
-    code (ADR 004 §14 N2, N3; user 2026-10-09). None when Defending is not withheld."""
+    code (ADR 004 §14 N2, N3 as narrowed to the mover-test groups; user 2026-10-09). None when
+    Defending is not withheld."""
     code = ref.WITHHELD.get("Defending", {}).get(group)
     if code is None:
         return None
     under = " (underpowered)" if group in ref.UNDERPOWERED else ""
-    return (f"Defending scores are withheld: {DEFENDING_CLAUSE[code]}{under}. That is the expected "
-            "state until a second season adds evidence, not a finding about the player.")
+    closing = NOT_A_FINDING if code == "possession_criteria_failed" else EXPECTED_STATE
+    return f"Defending scores are withheld: {DEFENDING_CLAUSE[code]}{under}. {closing}"
 GROUP_ONE = {"CB": "centre-back", "FB-WB": "full-back or wing-back",
              "DM-CM": "central midfielder", "AM-Winger": "attacking midfielder or winger",
              "ST": "striker"}
