@@ -10,7 +10,7 @@ rules with hand-computed expected values:
 - cell_words: the phrase table and indices, the withheld-family tag and the Defending flag;
 - build: candidates exclude the player's own rows (rank 0 between them) and include partial
   rows; N counts the candidates;
-- the withheld reason text equals tools/compare_page.DIM_STATUS_TEXT (both read as source text).
+- the withheld reason text equals export/words.WITHHELD_TEXT (both read as source text).
 """
 from __future__ import annotations
 
@@ -95,10 +95,16 @@ def test_dist_code_rejects_one_or_more(d):
 
 # ADR 004 §13.8 (M4g4d): DM-CM Defending is mover_stability_inconclusive, the others
 # possession_criteria_failed.
-MOVER = ' <span class="muted">(team-influenced: player-vs-team test on club movers inconclusive)</span>'
-POSSESSION = ' <span class="muted">(team-influenced: not shown to be free of team-possession effects)</span>'
-PASSING = (' <span class="muted">(team-influenced: depends on the team&#x27;s passing '
-           'style)</span>')
+# The tag speaks about the family score (W1, user decision C as corrected by the stats-reviewer,
+# 2026-10-09): literals, the user's wording.
+MOVER = (' <span class="muted">(Defending score withheld: player-vs-team test on club movers '
+         'inconclusive)</span>')
+POSSESSION = (' <span class="muted">(Defending score withheld: not shown to be free of '
+              'team-possession effects)</span>')
+PASSING = ' <span class="muted">(Passing score withheld: rests on long pass completion alone)</span>'
+PASSING_WITHHELD = ("rests on long pass completion alone, which is not shown to follow the player "
+                    "across clubs; xPass deferred until after launch")
+PASSING_TAG = "rests on long pass completion alone"
 
 
 def test_cell_words_phrase_table_and_indices():
@@ -167,9 +173,9 @@ def _string_constants(path: Path) -> dict[str, str]:
 def test_withheld_words_match_the_comparison_page():
     statuses = {**_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "dna.py"),
                 **_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "registry.py")}
-    tree = ast.parse((ROOT / "tools" / "compare_page.py").read_text())
+    tree = ast.parse((ROOT / "src" / "eleveniq" / "export" / "words.py").read_text())
     node = next(n for n in tree.body if isinstance(n, ast.AnnAssign)
-                and isinstance(n.target, ast.Name) and n.target.id == "DIM_STATUS_TEXT")
+                and isinstance(n.target, ast.Name) and n.target.id == "WITHHELD_TEXT")
     assert isinstance(node.value, ast.Dict)
     page_text = {}
     for k, v in zip(node.value.keys, node.value.values):
@@ -187,7 +193,7 @@ def test_withheld_text_carries_the_d5_status_and_the_underpowered_note():
     (the compare page's wording); CB its possession outcome."""
     dm = cmpm.withheld_text("DM-CM")
     assert "Defending (player-vs-team test on club movers inconclusive; underpowered)" in dm
-    assert "Passing (team-influenced; xPass deferred until after launch)" in dm
+    assert f"Passing ({PASSING_WITHHELD})" in dm
     assert "Defending (not shown to be free of team-possession effects)" in cmpm.withheld_text("CB")
     assert ref.UNDERPOWERED == {"DM-CM"}
 
@@ -208,12 +214,12 @@ FACT_CLAIMS = ("depends heavily", "possession-dependent", "possession dependent"
 
 
 def _page_status_text() -> dict[str, str]:
-    """tools/compare_page.DIM_STATUS_TEXT, read without importing the page module."""
+    """export/words.WITHHELD_TEXT (the comparison page's DIM_STATUS_TEXT), read as source text."""
     statuses = {**_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "dna.py"),
                 **_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "registry.py")}
-    tree = ast.parse((ROOT / "tools" / "compare_page.py").read_text())
+    tree = ast.parse((ROOT / "src" / "eleveniq" / "export" / "words.py").read_text())
     node = next(n for n in tree.body if isinstance(n, ast.AnnAssign)
-                and isinstance(n.target, ast.Name) and n.target.id == "DIM_STATUS_TEXT")
+                and isinstance(n.target, ast.Name) and n.target.id == "WITHHELD_TEXT")
     return {statuses[k.attr]: v.value for k, v in zip(node.value.keys, node.value.values)}  # type: ignore[union-attr]
 
 
@@ -267,8 +273,10 @@ def _check_page(page: str, group: str) -> None:
         assert x in (reason, reason + "; underpowered", clause), (group, x)
     for note in re.findall(r"Defending scores are withheld: [^<\"]*", t):
         assert note.endswith(closing), (group, note)
-    tags = set(re.findall(r"team-influenced: ([^)<]*)", t))
-    assert tags <= {reason, "depends on the team's passing style"}, (group, tags)
+    tags = set(re.findall(r"\(Defending score withheld: ([^)<]*)\)", t))
+    assert tags <= {reason}, (group, tags)
+    assert set(re.findall(r"\(Passing score withheld: ([^)<]*)\)", t)) <= {PASSING_TAG}, group
+    assert "influenced" not in t, group
 
 
 @pytest.mark.parametrize("group", ["CB", "FB-WB", "DM-CM", "AM-Winger", "ST"])
@@ -295,6 +303,6 @@ def test_golden_compare_pages_carry_no_possession_fact():
         t = html.unescape(f.read_text())
         for claim in FACT_CLAIMS:
             assert claim not in t.lower(), (f.name, claim)
+        assert "influenced" not in t, f.name                 # W1 relabel (user decision C)
         for x in re.findall(r"withheld \(([^)]*)\)", t):
-            assert x in (N2, DM_CM_REASON + "; underpowered",
-                         "team-influenced; xPass deferred until after launch"), (f.name, x)
+            assert x in (N2, DM_CM_REASON + "; underpowered", PASSING_WITHHELD), (f.name, x)

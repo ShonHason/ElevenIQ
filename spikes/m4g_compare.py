@@ -19,7 +19,7 @@ Facts, computed here and written into the page (the page's JS only indexes and f
 - percentile phrase: m4g_style_page.pct_words, the hover cards' function (neutral band 40–60
   "around average"); the page stores each distinct phrase once and an index per cell;
 - withheld families: a metric whose family score is withheld for the group is tagged
-  "(team-influenced: <reason>)"; when a Defending metric is listed, one sentence follows the
+  "(<Family> score withheld: <reason>)" (it speaks about the family score, not the metric); when a Defending metric is listed, one sentence follows the
   lists (defending_note: built from the group's Defending withheld code, ADR 004 §14 N2 / N3).
 
 Check (check_page), and what in it is independent of the page build:
@@ -57,7 +57,7 @@ import m4g_style_page as page_mod  # noqa: E402  (GROUP_PLURAL; it does not impo
 N_DIFF, N_ALIKE = 5, 3
 B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 TIE_TOL = 1e-12
-# Withheld score reasons in words (tools/compare_page.DIM_STATUS_TEXT, written out: no eleveniq;
+# Withheld score reasons in words (export/words.WITHHELD_TEXT, written out: no eleveniq;
 # tests/test_m4g_compare.py checks they are equal). The Defending D5 reasons (ADR 004 §13.8) are
 # built from two parts so that the words and the note sentence cannot drift apart.
 POSSESSION_WORDS = "not shown to be free of team-possession effects"        # ADR 004 §14 N2
@@ -67,13 +67,16 @@ MOVER_OUTCOME = {"mover_stability_failed": "failed",
                  "mover_seed_sensitive": "not stable across seeds",
                  "mover_below_model_range": "outside the model's range"}
 UNTESTABLE_WORDS = "too few club movers to test player vs team"
-WITHHELD_WORDS = {"pending_xpass_deferred": "team-influenced; xPass deferred until after launch",
+WITHHELD_WORDS = {"pending_xpass_deferred": ("rests on long pass completion alone, which is not "
+                                            "shown to follow the player across clubs; xPass "
+                                            "deferred until after launch"),
                   "possession_criteria_failed": POSSESSION_WORDS,
                   **{c: f"{MOVER_TEST} {o}" for c, o in MOVER_OUTCOME.items()},
                   "mover_stability_untestable": UNTESTABLE_WORDS}
-# The tag's reason per withheld status: Passing keeps its tag (user, 2026-10-07); every Defending
+# The tag's reason per withheld status (export/words.TAG_REASON): Passing's describes the family
+# score (W1, user decision C as corrected by the stats-reviewer, 2026-10-09); every Defending
 # status uses its withheld words exactly (ADR 004 §14 N2; user 2026-10-09).
-TAG_WORDS = {"pending_xpass_deferred": "depends on the team's passing style",
+TAG_WORDS = {"pending_xpass_deferred": "rests on long pass completion alone",
              **{c: w for c, w in WITHHELD_WORDS.items() if c != "pending_xpass_deferred"}}
 # The Defending note's clause per withheld code (the same parts as WITHHELD_WORDS), with a verb
 # per mover outcome.
@@ -159,7 +162,7 @@ def cell_words(group: str, pct: list[list[float]]) -> dict:
     held = {f: groups[group] for f, groups in ref.WITHHELD.items() if group in groups}
     fam = [ref.SPEC[m][0] for m in metrics]
     return {"pt": table, "ph": [at[w] for w in words],
-            "tag": [f' <span class="muted">(team-influenced: {esc(TAG_WORDS[held[f]])})</span>'
+            "tag": [f' <span class="muted">({esc(f)} score withheld: {esc(TAG_WORDS[held[f]])})</span>'
                     if f in held else "" for f in fam],
             "def": [f == "Defending" and f in held for f in fam]}
 

@@ -449,6 +449,42 @@ _LONG_THROW_NOTE = ("restart deliveries include throw-ins (5.6% of restart key p
                     "so long-throw specialists score slightly higher")
 _DRIBBLED_PAST_NOTE = "rises with how often a player engages"
 _INTERCEPTIONS_NOTE = "team-style influenced (league means differ in every group, D9)"
+
+
+@dataclass(frozen=True)
+class NoteText:
+    """A stored note as page text: `short` for a table cell, `full` for its popover (DESIGN
+    decision 7). Equal when the note is short already."""
+    short: str
+    full: str
+
+
+# Stored registry / spec notes → page text (plan 006 W1, user decision C as corrected by the
+# stats-reviewer and approved by the user, 2026-10-09). The stored strings stay unchanged as
+# identifiers (REGISTRY_VERSION is untouched); every page renders them through note_text, so
+# "influenced" (a causal word) never reaches a page. One term site-wide: "associated with team
+# possession".
+NOTE_TEXT: dict[str, NoteText] = {
+    NOTE_TEAM_STYLE: NoteText(
+        "associated with team possession",
+        "associated with team possession at or above the possession-check level; kept in the "
+        "profile by a recorded decision"),
+    _INTERCEPTIONS_NOTE: NoteText(
+        "no cross-league rank in any group",
+        "league averages differ too much in every position group to rank across leagues, so it "
+        "is ranked within each league"),
+    NOTE_LOWER_RELIABILITY: NoteText("lower reliability", "lower reliability"),
+    _LONG_THROW_NOTE: NoteText("restart deliveries include throw-ins", _LONG_THROW_NOTE),
+    _DRIBBLED_PAST_NOTE: NoteText(_DRIBBLED_PAST_NOTE, _DRIBBLED_PAST_NOTE),
+}
+
+
+def note_text(note: str) -> NoteText:
+    """The page text of one stored note. Raises KeyError on an unknown note."""
+    try:
+        return NOTE_TEXT[note]
+    except KeyError:
+        raise KeyError(f"no page text for registry note {note!r}") from None
 _XG_COUNTS = frozenset({"xg", "np_xg", "xg_assisted", "xg_assisted_direct",
                         "op_xg_assisted", "restart_xg_assisted"})
 

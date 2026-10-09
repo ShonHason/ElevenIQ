@@ -18,7 +18,8 @@ Display rules (plan 005 M4e; ADR 004 §11.5):
   where 157 is the n of POPULATION_REFERENCE_METRIC in the same population;
 - a zero in a zero-heavy cell is "tied at zero, not a rank"; signature traits are shown as
   holder / non-holder (ADR 004 §1), never as a percentile;
-- long pass completion is worded as team-influenced, and team-style cells are not coloured;
+- long pass completion has no good/poor reading (export/words.py), and cells associated with
+  team possession are not coloured;
 - the second position group is shown only for gated (meets_min_minutes) rows; second-group
   rows (D5) are a separate, display-only section;
 - when the players' groups differ, every percentile says which group it ranks against.
@@ -27,7 +28,8 @@ DNA (M4f4, ADR 004 §12):
 - an inline-SVG radar of the DNA metrics' local percentiles (the one vector basis, §12.1),
   axes grouped by family, each player labelled "vs <league> <group>"; drawn only when the
   players share a position group;
-- style and team-influenced axes are uncoloured (muted label, dashed spoke): outward means
+- style axes, long pass completion and axes associated with team possession are uncoloured
+  (muted label, dashed spoke): outward means
   more, not better;
 - a missing DNA metric (partial row, §12.2) is a gap in the outline with a marker at the
   rim, never a vertex at zero;
@@ -58,6 +60,7 @@ from eleveniq import config
 from eleveniq.analytics import cohorts as C
 from eleveniq.analytics import dna as D
 from eleveniq.analytics import registry as R
+from eleveniq.export import words as W
 from eleveniq.analytics.registry import (
     MEASUREMENT_SOURCE, REGISTRY, REGISTRY_VERSION, SPECS, MetricSpec,
     is_signature_holder,
@@ -110,8 +113,7 @@ METRIC_LABELS: dict[str, str] = {
 # A D5 second-group row is scored against a population that does not contain the player,
 # so no holder verdict is given against it (user, 2026-10-06).
 SECOND_SIGNATURE_TEXT = "not assessed (second group, display only)"
-LONG_PASS_NOTE = ("reflects the team's passing style as much as the player: "
-                  "a low value is not a measure of poor individual passing")
+LONG_PASS_NOTE = W.LONG_PASS_NOTE.full
 
 # Every status the percentiles table can hold, as text. An unknown status raises.
 STATUS_TEXT: dict[str, str] = {
@@ -130,20 +132,10 @@ STATUS_TEXT: dict[str, str] = {
 STATIC_REFS: frozenset[str] = frozenset({"D9", "D5", "ADR 004 §11", "ADR 004 §12", "M4e", "M4f4",
                                          ">99", "<1", "25", "50", "75"})
 
-# Dimension score statuses (ADR 004 §12.6, §12.9, §13.8, §14) other than "ok", as text. An
-# unknown status raises. A withheld status (dna.WITHHELD_STATUSES) reads "withheld (<text>)"; a
-# D5 status adds "; underpowered" when the registry notes it (the n stays off the page: no
-# untraced digits).
-DIM_STATUS_TEXT: dict[str, str] = {
-    D.PENDING_XPASS_DEFERRED: "team-influenced; xPass deferred until after launch",
-    R.POSSESSION_CRITERIA_FAILED: "not shown to be free of team-possession effects",
-    R.MOVER_STABILITY_FAILED: "player-vs-team test on club movers failed",
-    R.MOVER_STABILITY_INCONCLUSIVE: "player-vs-team test on club movers inconclusive",
-    R.MOVER_STABILITY_UNTESTABLE: "too few club movers to test player vs team",
-    R.MOVER_SEED_SENSITIVE: "player-vs-team test on club movers not stable across seeds",
-    R.MOVER_BELOW_MODEL_RANGE: "player-vs-team test on club movers outside the model's range",
-    D.NO_DIRECTIONAL_METRIC: "no directional metric present in this row",
-}
+# Dimension score statuses other than "ok" as text: the words table (export/words.py). A
+# withheld status reads "withheld (<text>)"; a D5 status adds "; underpowered" when the registry
+# notes it (the n stays off the page: no untraced digits).
+DIM_STATUS_TEXT: dict[str, str] = W.WITHHELD_TEXT
 
 
 class PageError(ValueError):
@@ -545,7 +537,7 @@ def metric_notes(players: Sequence[Player], metric: str, role: str = PRIMARY) ->
             continue
         cell = REGISTRY.cell(metric, group)
         for i, note in enumerate(cell.notes):
-            seen.append(reg_span(metric, group, f"notes|{i}", note))
+            seen.append(reg_span(metric, group, f"notes|{i}", R.note_text(note).full))
         if cell.status != "dna":
             fixed = SPECS_BY_COLUMN[metric].fixed_display
             why = (reg_span(metric, group, "fixed_display.reason", fixed.reason)
@@ -562,7 +554,7 @@ def direction_label(spec: MetricSpec) -> str:
     """The label under the metric name: long pass completion reads as team style (§11.5),
     so it gets no good/bad direction."""
     if spec.column == "long_pass_completion_pct":
-        return "team-influenced"
+        return W.NO_READING
     return spec.direction.replace("_", " ")
 
 
@@ -890,8 +882,8 @@ def radar_section(players: Sequence[Player]) -> str:
     return (head + f'<p class="muted">League-local percentiles of the {esc(GROUP_PLURAL[group])}\' '
             f'DNA metrics ({static("ADR 004 §12")}): each player is ranked against the same group in '
             'their own league. Outward means more, not better. Directional axes are in ink (a '
-            'lower-better axis says so); style and team-influenced axes are grey with a dashed '
-            'spoke and carry no good/poor reading. Hover a vertex for its value.</p>'
+            'lower-better axis says so); ' + esc(W.GREY_RULE) + ' with a dashed spoke and carry no '
+            'good/poor reading. Hover a vertex for its value.</p>'
             f'<ul class="rd-legend">{"".join(legend)}</ul>'
             f'<svg class="rd-chart" viewBox="0 0 {size:.0f} {size:.0f}" role="img" '
             f'aria-label="DNA radar: {esc(names)}">{_radar_frame(axes, group)}{"".join(body)}</svg>'
@@ -965,8 +957,8 @@ def render(players: Sequence[Player]) -> str:
     legend = ('<p class="muted">Raw value, then the local (league × group) and global (group across '
               'the pool leagues) percentile with its population size n. The registry basis is '
               'highlighted and drawn as the bar. Percentiles rank the raw value (high = more); the '
-              'bar colour follows the metric direction, and style or team-influenced metrics are '
-              f'grey. {static(">99")} / {static("<1")} mark rows ranked against a population they are not in. '
+              'bar colour follows the metric direction; ' + esc(W.GREY_RULE)
+              + f'. {static(">99")} / {static("<1")} mark rows ranked against a population they are not in. '
               'A family\'s dimension score is the mean local percentile of its directional DNA '
               'members and says how many metrics it rests on.</p>')
     return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"

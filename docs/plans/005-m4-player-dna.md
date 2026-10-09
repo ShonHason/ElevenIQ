@@ -1932,6 +1932,16 @@ Items:
 - **§31 treatment re-entry near a period end** (M4g4b checkpoint 1; user 2026-10-08; not part of M4g4b): match 3879637 (Lazio), Milinković-Savić has Player Off 44:27 and Player On 45:16 in period 1, but the ADR 002 §31 timeline (pipeline and `verify_core_metrics` agree) resumes him only at the period 2 start. His events at 45:25–45:30 (a pass, a pressure, a ball recovery) fall outside his credited time, and 45:16 → the 48:47 Half End (about 3.5 minutes) is not credited to him.
   - To do: measure the lost seconds or minutes here, find every other treatment re-entry (Player On) between the nominal period end and the Half End, or otherwise near a period end, across all configured leagues, and report how much credited time each loses;
   - then decide whether §31's window pairing needs an amendment (an ADR 002 change, its own chunk, with the before/after STOP rule).
+  - **Measured (plan 006 G3, 2026-10-09; `spikes/g3_before_after.py`, report only):** 4 of 1,535 `Player On` events (periods 1–4, all configured leagues) are not credited on the reference clock, 56.4 minutes in all. A further 24 `Player On` events come after the player's own substitution or dismissal; those are not re-entries.
+
+    | Match | Player | Missing | Nominal minutes, now → with the missing minutes | Effect |
+    |---|---|---|---|---|
+    | 3754023 | Tyrone Mings (Bournemouth) | 42.3 min as FB-WB | 10.0 → 47.7 | stays below the 900 gate |
+    | 3879590 | Davide Zappacosta (Torino) | 10.0 min as FB-WB | 1,281.5 → 1,290.9 | stays inside the 900–1,350 near-gate band |
+    | 3879637 | Milinković-Savić (Lazio) | 3.5 min as AM-Winger | 1,633.6 → 1,636.9 | DM-CM share 0.630 → 0.629 |
+    | 3879541 | Amadou Diawara (Bologna) | 0.6 min as DM-CM | 2,723.2 → 2,723.8 | none |
+
+    **None would cross the 900 gate or the 1,350 near-gate boundary, or change a position group** (user check, 2026-10-09). The amendment decision stays open, with no effect on any profile in 2015/16.
 - **M4g4-0 follow-up** (code-reviewer, fix delta; user rule: one fix round): `tests/test_m4g3_reference_hardening.py::test_ctx_fails_on_a_null_in_either_parquet` asserts only `SystemExit`. Capture stderr and assert "null values in count columns" and the label, since `Ctx()` can `fail()` for other reasons. Verified by hand at the commit (both cases print the null message, and removing the guard turns both red).
 - **M4g3a mover-run follow-ups** (code-reviewer, M4g3a; user 2026-10-08): `spikes/m4g3_movers.py` filters the match parquet by competition only; add a `season_id` filter (today a second season would make `replace_strict` raise, so it is safe but implicit).
 - **M4g3a power follow-ups** (code-reviewer, M4g3a checkpoint fix delta; user 2026-10-08: no more fix rounds before the real run):

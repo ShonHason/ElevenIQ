@@ -224,13 +224,19 @@ def test_long_pass_note_always_present():
         assert html.escape(P.LONG_PASS_NOTE) in P.render([a, b])
 
 
-def test_long_pass_direction_label_is_team_influenced():
-    assert P.direction_label(P.SPECS_BY_COLUMN["long_pass_completion_pct"]) == "team-influenced"
+# The user's wording (W1, decision C as corrected by the stats-reviewer, 2026-10-09): literals.
+NO_READING = "no good/poor reading"
+PASSING_WITHHELD = ("rests on long pass completion alone, which is not shown to follow the player "
+                    "across clubs; xPass deferred until after launch")
+
+
+def test_long_pass_direction_label_has_no_good_poor_reading():
+    assert P.direction_label(P.SPECS_BY_COLUMN["long_pass_completion_pct"]) == NO_READING
     assert P.direction_label(P.SPECS_BY_COLUMN["pass_completion_pct"]) == "higher better"
     a = _player("CB")
     b = _player("CB", key={**_KEY, "player_id": 2}, name="Player Two")
     row = _row_html(P.render([a, b]), "long_pass_completion_pct").split("</th>", 1)[0]
-    assert "team-influenced" in row and "higher better" not in row
+    assert NO_READING in row and "higher better" not in row
 
 
 def test_second_group_label_only_for_gated_rows():
@@ -545,7 +551,7 @@ def test_passing_withheld_where_it_rests_on_long_pass_completion(group):
     """ADR 004 §12.9: a one-metric long-pass Passing score would read a team-style value as
     poor individual passing (§11.5), so it is withheld, never a number."""
     page = P.render(_pair(group))
-    assert "withheld (team-influenced; xPass deferred until after launch)" in _text(page)
+    assert f"withheld ({PASSING_WITHHELD})" in _text(page)
     assert "|Passing|score" not in page and "|Passing|members" not in page
 
 

@@ -399,7 +399,8 @@ def panel(ctx: dict, stints: list[dict], cb: dict, pf_html: str, detail: str,
         out.append(f'<h3>What changed most{head}</h3><ul data-mvpick="{r}|{p}|{",".join(pick)}">')
         for m in pick:
             fam = ref.SPEC[m][0]
-            tag = (f' <span class="muted">(team-influenced: {esc(cmp_mod.TAG_WORDS[held[fam]])})'
+            tag = (f' <span class="muted">({esc(fam)} score withheld: '
+                   f'{esc(cmp_mod.TAG_WORDS[held[fam]])})'
                    f'</span>' if fam in held else "")
             any_def |= fam == "Defending" and fam in held
             out.append(f'<li><b>{esc(labels[m])}</b>{tag} — {esc(sa["team"])}: '

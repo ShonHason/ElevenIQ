@@ -126,7 +126,8 @@ def test_radar_golden_covers_the_dna_rules(radar_page, golden_page):
     text = re.sub(r"<[^>]+>", "", radar_page)
     assert "withheld (" in text and "withheld until" not in text and "based on 1 metric:" in text
     # Passing withheld for both AM-Wingers (§12.9), incl. Walcott who also lacks the metric
-    assert "team-influenced; xPass deferred until after launch" in text
+    assert ("rests on long pass completion alone, which is not shown to follow the player "
+            "across clubs; xPass deferred until after launch") in text
     assert "|Passing|score" not in radar_page
 
 
@@ -212,8 +213,8 @@ def _expected_id(season: pl.DataFrame, ref: str) -> str:
 def _expected_reg(ref: str) -> str:
     metric, group, field, *index = ref.split("|")
     cell = REGISTRY.cell(metric, group)
-    if field == "notes":
-        return cell.notes[int(index[0])]
+    if field == "notes":                            # the stored note, through NOTE_TEXT (W1)
+        return R.note_text(cell.notes[int(index[0])]).full
     if field == "reasons":                          # the code, through the one text table (G2)
         return ", ".join(R.reason_text(r) for r in cell.reasons)
     if field == "fixed_display.reason":
