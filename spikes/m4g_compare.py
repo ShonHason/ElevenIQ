@@ -58,11 +58,21 @@ N_DIFF, N_ALIKE = 5, 3
 B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 TIE_TOL = 1e-12
 # Withheld score reasons in words (tools/compare_page.DIM_STATUS_TEXT, written out: no eleveniq).
-WITHHELD_WORDS = {"pending_possession_adjustment": "possession adjustment pending",
-                  "pending_mover_stability": "team-influenced; xPass candidate pre-registered"}
+WITHHELD_WORDS = {"pending_mover_stability": "team-influenced; xPass candidate pre-registered",
+                  "possession_criteria_failed": "not shown to be free of team-possession effects",
+                  "mover_stability_failed": "player-vs-team test on club movers failed",
+                  "mover_stability_inconclusive": "player-vs-team test on club movers inconclusive",
+                  "mover_stability_untestable": "too few club movers to test player vs team",
+                  "mover_seed_sensitive": "player-vs-team test on club movers not stable across seeds",
+                  "mover_below_model_range": "player-vs-team test on club movers outside the model's range"}
 # The tag's reason per withheld status (user, 2026-10-07).
-TAG_WORDS = {"pending_possession_adjustment": "possession adjustment pending",
-             "pending_mover_stability": "depends on the team's passing style"}
+TAG_WORDS = {"pending_mover_stability": "depends on the team's passing style",
+             "possession_criteria_failed": "not shown to be possession-free",
+             "mover_stability_failed": "mover test failed",
+             "mover_stability_inconclusive": "mover test inconclusive",
+             "mover_stability_untestable": "mover test not possible",
+             "mover_seed_sensitive": "mover test not stable",
+             "mover_below_model_range": "mover test outside the model's range"}
 # The internal xPass note stays in the footnote (withheld_text, WITHHELD_WORDS) only.
 DEFENDING_NOTE = "Defending volume depends heavily on how much the team has the ball."
 GROUP_ONE = {"CB": "centre-back", "FB-WB": "full-back or wing-back",
@@ -120,7 +130,7 @@ def cell_words(group: str, pct: list[list[float]]) -> dict:
     words = [page_mod.pct_words(v)[1] for row in pct for v in row]
     table = sorted(set(words))
     at = {w: i for i, w in enumerate(table)}
-    held = {f: status for f, (status, groups) in ref.WITHHELD.items() if group in groups}
+    held = {f: groups[group] for f, groups in ref.WITHHELD.items() if group in groups}
     fam = [ref.SPEC[m][0] for m in metrics]
     return {"pt": table, "ph": [at[w] for w in words],
             "tag": [f' <span class="muted">(team-influenced: {esc(TAG_WORDS[held[f]])})</span>'
@@ -142,8 +152,9 @@ def picks(pa: list[float], pb: list[float]) -> list[int]:
 
 
 def withheld_text(group: str) -> str:
-    fams = [f"{f} ({WITHHELD_WORDS[status]})" for f, (status, groups) in sorted(ref.WITHHELD.items())
-            if group in groups]
+    fams = [f"{f} ({WITHHELD_WORDS[groups[group]]}"
+            f"{'; underpowered' if f == 'Defending' and group in ref.UNDERPOWERED else ''})"
+            for f, groups in sorted(ref.WITHHELD.items()) if group in groups]
     if not fams:
         return "No family score is withheld for this group."
     return (f"Withheld family scores for {page_mod.GROUP_PLURAL[group]}: " + " and ".join(fams) + ". "

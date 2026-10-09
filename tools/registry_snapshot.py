@@ -4,8 +4,9 @@ Dump the resolved metric registry to JSON, for registry before/after checks (pla
 Writes every metric × group cell (status, reasons, notes, reliability, min_attempts, basis,
 D9 fields, the spec's family and direction), the §10.10 boundary rows, the majority-triggered
 cells the allow-list admits (ADR 004 §13.1), the per-group DNA, display and signature lists,
-the mover verdicts (ADR 004 §13.7, plan 005 M4g3b; +inf written as "+inf"), the source and
-REGISTRY_VERSION. Floats are written as stored.
+the mover verdicts (ADR 004 §13.7, plan 005 M4g3b; +inf written as "+inf"), the possession
+records, the mover verdicts per (metric, candidate) and the Defending D5 status per group (ADR 004
+§13.8, plan 005 M4g4d), the source and REGISTRY_VERSION. Floats are written as stored.
 
 The dump is the "before" or "after" side of spikes/m4g2_before_after.py, which compares two
 dumps without importing eleveniq. Run it on the old code before a registry change and on the
@@ -54,6 +55,10 @@ def snapshot(derivation: registry.Derivation = registry.REGISTRY,
         "boundary": [asdict(b) for b in derivation.boundary],
         "majority_admitted": [asdict(a) for a in derivation.majority_admitted],
         "movers": {c: _json_safe(asdict(v)) for c, v in sorted(derivation.movers.items())},
+        "possession": [asdict(v) for _, v in sorted(derivation.possession.items())],
+        "candidate_movers": [_json_safe(asdict(v))
+                             for _, v in sorted(derivation.candidate_movers.items())],
+        "family_status": {g: asdict(derivation.defending_status(g)) for g in registry.GROUPS},
         "groups": {g: {"dna": list(derivation.dna_metrics(g)),
                        "display": list(derivation.display_metrics(g)),
                        "signature": list(derivation.signature_traits(g))}

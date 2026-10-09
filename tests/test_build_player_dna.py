@@ -109,11 +109,19 @@ def test_provenance_is_stamped(built):
 
 
 def test_defending_withheld_and_passing_null_counts(built):
-    """§12.6, §12.9: Defending withheld everywhere; Passing withheld in every non-ST row
-    (1,075), which absorbs the 30 rows that had no directional Passing member."""
+    """§13.8 D5: Defending withheld in every group with its registry status (2015/16: DM-CM
+    mover_stability_inconclusive, the others possession_criteria_failed); §12.9: Passing
+    withheld in every non-ST row (1,075), which absorbs the 30 rows that had no directional
+    Passing member."""
     dim = built[2]
-    assert dim.filter(pl.col("family") == "Defending")["score_status"].unique().to_list() == \
-        ["pending_possession_adjustment"]
+    defending = dim.filter(pl.col("family") == "Defending")
+    assert defending["score"].null_count() == defending.height
+    by_group = dict(defending.group_by("position_group").agg(pl.col("score_status").unique())
+                    .iter_rows())
+    assert by_group == {"CB": ["possession_criteria_failed"], "FB-WB": ["possession_criteria_failed"],
+                        "DM-CM": ["mover_stability_inconclusive"],
+                        "AM-Winger": ["possession_criteria_failed"],
+                        "ST": ["possession_criteria_failed"]}
     passing = dim.filter(pl.col("family") == "Passing")
     held = passing.filter(pl.col("score_status") == "pending_mover_stability")
     assert held.height == 1075 and "ST" not in held["position_group"].to_list()

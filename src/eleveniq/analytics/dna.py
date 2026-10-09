@@ -16,9 +16,10 @@ the M4d output and the populations from analytics.cohorts.
   its vector, weights and dimension scores; only the distance refuses it.
 - Dimension scores, per DNA family of the group: the mean local percentile of the family's
   present directional members (lower_better as 100 − p), naming them in metric-name order.
-  A withheld family is null with its status (config.DNA_WITHHELD_DIMENSIONS via
-  withheld_for: Defending pending_possession_adjustment in every group; Passing
-  pending_mover_stability where it rests on long_pass_completion_pct alone, §12.9); a
+  A withheld family is null with its status (withheld_for): Defending with the registry's
+  D5 status (ADR 004 §13.8; 2015/16: possession_criteria_failed in CB, FB-WB, AM-Winger
+  and ST, mover_stability_inconclusive in DM-CM); Passing pending_mover_stability where it
+  rests on long_pass_completion_pct alone (config.DNA_WITHHELD_DIMENSIONS, §12.9). A
   family with no present directional member is null (no_directional_metric).
 - Pair distance (the M4f checks' provisional distance; M5 picks the product metric):
   weighted squared Euclidean on percentile / 100, with each family's weight re-split over
@@ -32,6 +33,7 @@ from typing import Mapping, Sequence
 import polars as pl
 
 from eleveniq import config
+from eleveniq.analytics import registry as R
 from eleveniq.analytics.registry import Derivation, MetricSpec
 
 MAD_SCALE = 1.4826     # normal-consistent MAD
@@ -43,10 +45,8 @@ COMPLETE = "complete"
 PARTIAL = "partial"
 DNA_INCOMPLETE = "dna_incomplete"
 NO_DIRECTIONAL_METRIC = "no_directional_metric"
-PENDING_POSSESSION_ADJUSTMENT = "pending_possession_adjustment"
 PENDING_MOVER_STABILITY = "pending_mover_stability"
-WITHHELD_STATUSES: frozenset[str] = frozenset({PENDING_POSSESSION_ADJUSTMENT,
-                                               PENDING_MOVER_STABILITY})
+WITHHELD_STATUSES: frozenset[str] = frozenset({PENDING_MOVER_STABILITY, *R.D5_STATUSES})
 
 
 class DnaError(ValueError):
@@ -138,12 +138,23 @@ def split_weights(specs: Sequence[MetricSpec], present: frozenset[str] | set[str
     return {m: 1.0 / len(fams) / len(ms) for ms in fams.values() for m in ms}
 
 
-def withheld_for(group: str, table: Mapping[str, tuple[str, Sequence[str]]] | None = None
-                 ) -> dict[str, str]:
-    """Family -> score_status of the families whose score is withheld in `group`
-    (default table: config.DNA_WITHHELD_DIMENSIONS)."""
+def withheld_for(group: str, table: Mapping[str, tuple[str, Sequence[str]]] | None = None,
+                 derivation: Derivation | None = None) -> dict[str, str]:
+    """Family -> score_status of the families whose score is withheld in `group`: the table's
+    (default config.DNA_WITHHELD_DIMENSIONS) and Defending's D5 status from the registry
+    (default registry.REGISTRY) unless it is "ok" (ADR 004 §13.8). A custom table needs its
+    derivation too: the global registry is never mixed in silently."""
+    if table is not None and derivation is None:
+        raise ValueError("withheld_for: a custom table needs an explicit derivation")
     table = config.DNA_WITHHELD_DIMENSIONS if table is None else table
-    return {fam: status for fam, (status, groups) in table.items() if group in groups}
+    derivation = R.REGISTRY if derivation is None else derivation
+    out = {fam: status for fam, (status, groups) in table.items() if group in groups}
+    if "Defending" in out:
+        raise ValueError("Defending's status comes from the registry (ADR 004 §13.8), not the table")
+    status = derivation.defending_status(group).status
+    if status != R.SCORE_OK:
+        out["Defending"] = status
+    return out
 
 
 def _dimensions(specs: Sequence[MetricSpec], cells: Mapping[str, VectorCell],

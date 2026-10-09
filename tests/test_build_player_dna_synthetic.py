@@ -17,7 +17,9 @@ import pytest
 from eleveniq import config
 from eleveniq.analytics import cohorts as C
 from eleveniq.analytics import dna as D
-from eleveniq.analytics.registry import Cell, Derivation, MetricSpec, RatioSpec
+from eleveniq.analytics.registry import (
+    POSSESSION_CRITERIA_FAILED, Cell, Derivation, FamilyStatus, MetricSpec, RatioSpec,
+)
 from eleveniq.pipeline.build_percentiles import percentile_table
 from eleveniq.pipeline.build_player_dna import DnaInputError, dna_rows, dna_tables
 
@@ -46,7 +48,10 @@ def _derivation() -> Derivation:
     for g in GROUPS:
         cells[("x_p90", g)] = _cell("x_p90", g)
         cells[("r_pct", g)] = _cell("r_pct", g, min_attempts=10)
-    return Derivation(cells=cells, boundary=(), source="statsbomb", version=VERSION)
+    status = {("Defending", g): FamilyStatus("Defending", g, POSSESSION_CRITERIA_FAILED,
+                                              "x_p90", None) for g in GROUPS}
+    return Derivation(cells=cells, boundary=(), source="statsbomb", version=VERSION,
+                      family_status=status)
 
 
 def row(pid: int, x: float, *, team: int = 1, comp: int = 11, group: str = "CB",
@@ -124,7 +129,7 @@ def test_dna_tables_withholds_defending_and_scores_a_single_member_passing(monke
     assert dim.height == N * 2                       # Defending and Passing, one each per row
 
     defending = dim.filter(pl.col("family") == "Defending")
-    assert defending["score_status"].unique().to_list() == ["pending_possession_adjustment"]
+    assert defending["score_status"].unique().to_list() == [POSSESSION_CRITERIA_FAILED]
     assert defending["score"].null_count() == N
     assert (defending["members"].list.len() == 0).all()
 

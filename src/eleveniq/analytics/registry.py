@@ -26,8 +26,15 @@ Steps per metric x group (ADR 004 §10.3), first match wins; overrides last:
   7. otherwise DNA, with a lower-reliability note when r < LOW_RELIABILITY_BELOW.
 
 Mover verdicts (ADR 004 §13.7, plan 005 M4g3b): one per metric, pooled over the groups, derived
-from the measurements' movers block with the Rules mover thresholds. Report only: no status,
-note or reason depends on them (Derivation.movers, mover()).
+from the measurements' movers block with the Rules mover thresholds. No cell status, note or
+reason depends on them (Derivation.movers, mover()).
+
+Possession and the Defending restore (ADR 004 §13.8, plan 005 M4g4d; measurements schema 3):
+from the possession block's numbers and the Rules criteria, each Defending DNA cell's candidate
+checks, its selection (asserted equal to the engine's), the M4g4c2 trust check and the column the
+vector uses (Derivation.possession; an adjusted column raises: not implemented, none in
+2015/16); the mover verdict per (metric, candidate) (candidate_movers; β = 0 reuses M4g3b); and
+the D5 Defending score status per group (defending_status), which dna.withheld_for reads.
 
 M4d (percentiles), M4f (DNA) and M6 (rarity) read REGISTRY through cell(),
 dna_metrics(), display_metrics() and signature_traits(), and stamp REGISTRY_VERSION.
@@ -170,6 +177,14 @@ class Rules:
     mover_f_threshold: float = config.MOVER_F_THRESHOLD
     mover_min_n: int = config.MOVER_MIN_N
     mover_low_power: float = config.MOVER_LOW_POWER
+    possession_criterion_rho_max: float = config.POSSESSION_CRITERION_RHO_MAX
+    possession_sign_dead_zone: float = config.POSSESSION_SIGN_DEAD_ZONE
+    possession_inconsistent_rho: float = config.POSSESSION_INCONSISTENT_RHO
+    possession_gap_max: float = config.POSSESSION_GAP_MAX
+    trust_stability_min: float = config.TRUST_STABILITY_MIN
+    trust_lolo_min_agree: int = config.TRUST_LOLO_MIN_AGREE
+    trust_p_max: float = config.TRUST_P_MAX
+    trust_d_min_count: int = config.TRUST_D_MIN_COUNT
 
 
 # ── Derived table ───────────────────────────────────────────────────────────────
@@ -244,6 +259,97 @@ class MoverVerdict:
     borderline_seed: bool | None = None       # "borderline (seed-sensitive)": an extra seed's verdict differs
     below_model_range: bool | None = None     # "PASS (below model range)": PASS with CI upper bound < 0
     extra_seed_verdicts: tuple[MoverVerdictName, ...] = ()
+    s2_rms_a: float | None = None             # D7 (ADR 004 §13.8): S² RMS on local percentiles
+
+
+# ADR 004 §13.8 (plan 005 M4g4): the possession candidates in their fixed pre-registered order.
+POSSESSION_CANDIDATES: tuple[str, ...] = ("beta_0", "beta_hat", "team_share", "beta_1")
+RAW_CANDIDATE = "beta_0"
+
+# Family score statuses (ADR 004 §13.8 D5): a Defending score is restored ("ok") or withheld with
+# the first failed test along the restore rule, in this precedence.
+SCORE_OK = "ok"
+POSSESSION_CRITERIA_FAILED = "possession_criteria_failed"
+MOVER_STABILITY_UNTESTABLE = "mover_stability_untestable"
+MOVER_STABILITY_FAILED = "mover_stability_failed"
+MOVER_STABILITY_INCONCLUSIVE = "mover_stability_inconclusive"
+MOVER_SEED_SENSITIVE = "mover_seed_sensitive"
+MOVER_BELOW_MODEL_RANGE = "mover_below_model_range"
+D5_STATUSES: tuple[str, ...] = (POSSESSION_CRITERIA_FAILED, MOVER_STABILITY_FAILED,
+                                MOVER_STABILITY_INCONCLUSIVE, MOVER_STABILITY_UNTESTABLE,
+                                MOVER_SEED_SENSITIVE, MOVER_BELOW_MODEL_RANGE)
+_D5_STAGE: dict[str, int] = {POSSESSION_CRITERIA_FAILED: 0, MOVER_STABILITY_UNTESTABLE: 1,
+                             MOVER_STABILITY_FAILED: 1, MOVER_STABILITY_INCONCLUSIVE: 1,
+                             MOVER_SEED_SENSITIVE: 2, MOVER_BELOW_MODEL_RANGE: 3, SCORE_OK: 4}
+
+
+@dataclass(frozen=True)
+class CandidateCheck:
+    """One possession candidate of a Defending DNA cell against criteria (1)-(3) and the sign
+    flip (ADR 004 §13.8). Means per proxy in POSSESSION_PROXIES order; None: β̂ fit failed."""
+    candidate: str
+    c1_mean_rho: tuple[float, float] | None
+    c1_pass: bool
+    c2_gap: tuple[float, float] | None
+    c2_pass: bool
+    c3_r_full: float | None
+    c3_pass: bool
+    sign_flip: bool
+    inconsistent_across_leagues: bool      # report only
+    passes: bool
+    fit_failed: bool = False
+
+
+@dataclass(frozen=True)
+class TrustCheck:
+    """The M4g4c2 trust check of a selection other than β = 0 (ADR 004 §13.8). (d) is None
+    unless the selection is β̂; (c) judges each criterion β = 0 failed."""
+    a_p_same: float
+    a_pass: bool
+    b_agree: int
+    b_pass: bool
+    c_judged: tuple[str, ...]
+    c_p: tuple[float, float]               # (p_rho, p_gap)
+    c_pass: bool
+    d_pass: bool | None
+    passes: bool
+
+
+@dataclass(frozen=True)
+class PossessionAdjustment:
+    """A Defending DNA cell's possession record (ADR 004 §13.8; plan 005 M4g4d)."""
+    column: str
+    group: str
+    directional: bool
+    beta_hat: float | None
+    beta_hat_ci: tuple[float, float] | None   # team bootstrap, report only
+    candidates: tuple[CandidateCheck, ...]    # POSSESSION_CANDIDATES order
+    selected: str | None                      # the first passing candidate; None: none passes
+    trust: TrustCheck | None                  # a selection other than β = 0 only
+    applied: str                              # the column the vector uses (β = 0: raw)
+    flags: tuple[str, ...]                    # "rises with own possession", "|β̂| > 1"
+
+
+@dataclass(frozen=True)
+class CandidateMover:
+    """A mover verdict per (metric, candidate). β = 0 reuses the metric's M4g3b verdict. A
+    candidate no group restores from is report only, not used for any restore."""
+    column: str
+    candidate: str
+    verdict: MoverVerdict
+    used_for_restore_in: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FamilyStatus:
+    """A family's score status in a group (ADR 004 §13.8 D5): "ok" restores the score; any
+    other status withholds it. `member` is the directional member the status is that of."""
+    family: str
+    group: str
+    status: str
+    member: str | None
+    candidate: str | None
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -254,6 +360,9 @@ class Derivation:
     version: str
     majority_admitted: tuple[MajorityAdmitted, ...] = ()
     movers: Mapping[str, MoverVerdict] = field(default_factory=dict)
+    possession: Mapping[tuple[str, str], PossessionAdjustment] = field(default_factory=dict)
+    candidate_movers: Mapping[tuple[str, str], CandidateMover] = field(default_factory=dict)
+    family_status: Mapping[tuple[str, str], FamilyStatus] = field(default_factory=dict)
 
     def cell(self, column: str, group: str) -> Cell:
         try:
@@ -275,6 +384,12 @@ class Derivation:
 
     def dna_metrics(self, group: str) -> tuple[str, ...]:
         return self._with(group, "dna")
+
+    def defending_status(self, group: str) -> FamilyStatus:
+        try:
+            return self.family_status[("Defending", group)]
+        except KeyError:
+            raise KeyError(f"no Defending status for {group!r}") from None
 
     def display_metrics(self, group: str) -> tuple[str, ...]:
         return self._with(group, "display")
@@ -819,6 +934,16 @@ def _mover_key(record: Mapping[str, Any], key: str, where: str) -> Any:
     return record[key]
 
 
+def _at(record: Any, where: str, *keys: str) -> Any:
+    """record[k1][k2]…, or a RegistryRuleError naming the cell and the missing path (a stale or
+    malformed possession block fails with its location, never a bare KeyError)."""
+    for i, key in enumerate(keys):
+        if not isinstance(record, Mapping) or key not in record:
+            raise RegistryRuleError(f"{where}: missing {'.'.join(keys[:i + 1])!r}")
+        record = record[key]
+    return record
+
+
 def _mover_number(record: Mapping[str, Any], key: str, where: str, inf_ok: bool) -> float:
     """A movers-block number. "+inf" is allowed where inf_ok (f̂ and its CI bounds)."""
     x = _mover_key(record, key, where)
@@ -865,39 +990,265 @@ def _movers(meas: Mapping[str, Any], specs: Sequence[MetricSpec], rules: Rules,
     if dna:
         raise RegistryRuleError(f"movers block: DNA metrics without a verdict: {dna}")
     n_extra = len(_mover_key(_mover_key(block, "stream_keys", "block"), "extra", "block.stream_keys"))
-    out: dict[str, MoverVerdict] = {}
-    for col in sorted(listed):
-        m = measured[col]
-        n = _mover_key(m, "n", col)
-        if isinstance(n, bool) or not isinstance(n, int) or n < 0:
-            raise RegistryRuleError(f"movers {col}.n: {n!r} is not a count")
-        seeds = _mover_key(m, "extra_seeds", col)
-        if len(seeds) != n_extra or any(_mover_key(e, "n", f"{col}.extra_seeds") != n for e in seeds):
-            raise RegistryRuleError(f"movers {col}: {len(seeds)} extra seeds (expected {n_extra}), "
-                                    f"each with the primary n {n}")
-        if n < rules.mover_min_n:
-            if "f_hat" in m or any("ci_hi" in e for e in seeds):
-                raise RegistryRuleError(f"movers {col}: untestable (n {n}) but carries f̂")
-            out[col] = MoverVerdict(col, "untestable", n,
-                                    extra_seed_verdicts=("untestable",) * n_extra)
-            continue
-        lo = _mover_number(m, "ci_lo", col, True)
-        hi = _mover_number(m, "ci_hi", col, True)
-        verdict = _mover_verdict(lo, hi, rules)
-        extra = tuple(_mover_verdict(_mover_number(e, "ci_lo", f"{col}.extra_seeds[{e.get('k')}]", True),
-                                     _mover_number(e, "ci_hi", f"{col}.extra_seeds[{e.get('k')}]", True),
-                                     rules)
-                      for e in seeds)
-        power = _mover_number(m, "power_at_f0", col, False)
-        out[col] = MoverVerdict(
-            col, verdict, n,
-            f_hat=_mover_number(m, "f_hat", col, True), ci=(lo, hi),
-            r_m=_mover_number(m, "r_m", col, False),
-            power_at_f0=power, power_se=_mover_number(m, "power_se", col, False),
-            underpowered=power < rules.mover_low_power,
-            borderline_seed=any(v != verdict for v in extra),
-            below_model_range=verdict == "PASS" and hi < 0,
-            extra_seed_verdicts=extra)
+    return {col: _mover_entry(col, measured[col], n_extra, rules) for col in sorted(listed)}
+
+
+def _mover_entry(col: str, m: Mapping[str, Any], n_extra: int, rules: Rules) -> MoverVerdict:
+    """One movers-block entry's verdict and flags (ADR 004 §13.7): a metric's (M4g3b) or an
+    adjusted candidate's (M4g4d, the possession block's movers)."""
+    n = _mover_key(m, "n", col)
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        raise RegistryRuleError(f"movers {col}.n: {n!r} is not a count")
+    seeds = _mover_key(m, "extra_seeds", col)
+    if len(seeds) != n_extra or any(_mover_key(e, "n", f"{col}.extra_seeds") != n for e in seeds):
+        raise RegistryRuleError(f"movers {col}: {len(seeds)} extra seeds (expected {n_extra}), "
+                                f"each with the primary n {n}")
+    if n < rules.mover_min_n:
+        if "f_hat" in m or any("ci_hi" in e for e in seeds):
+            raise RegistryRuleError(f"movers {col}: untestable (n {n}) but carries f̂")
+        return MoverVerdict(col, "untestable", n, extra_seed_verdicts=("untestable",) * n_extra)
+    lo = _mover_number(m, "ci_lo", col, True)
+    hi = _mover_number(m, "ci_hi", col, True)
+    verdict = _mover_verdict(lo, hi, rules)
+    extra = tuple(_mover_verdict(_mover_number(e, "ci_lo", f"{col}.extra_seeds[{e.get('k')}]", True),
+                                 _mover_number(e, "ci_hi", f"{col}.extra_seeds[{e.get('k')}]", True),
+                                 rules)
+                  for e in seeds)
+    power = _mover_number(m, "power_at_f0", col, False)
+    return MoverVerdict(
+        col, verdict, n,
+        f_hat=_mover_number(m, "f_hat", col, True), ci=(lo, hi),
+        r_m=_mover_number(m, "r_m", col, False),
+        power_at_f0=power, power_se=_mover_number(m, "power_se", col, False),
+        underpowered=power < rules.mover_low_power,
+        borderline_seed=any(v != verdict for v in extra),
+        below_model_range=verdict == "PASS" and hi < 0,
+        extra_seed_verdicts=extra,
+        s2_rms_a=_mover_number(m, "s2_rms_a", col, False))   # D7: required on a testable entry
+
+
+# ── Possession adjustment and the Defending restore (ADR 004 §13.8; plan 005 M4g4d) ─────────
+
+def _check_engine_rules(block: Mapping[str, Any], rules: Rules) -> None:
+    """The engines' rule copies equal Rules (the M4g4 STOP rule item): the stored selections
+    under resampling ((a), (b), (d)) were made with them and cannot be re-derived here."""
+    want = {("rules", "rho_max"): rules.possession_criterion_rho_max,
+            ("rules", "sign_dead_zone"): rules.possession_sign_dead_zone,
+            ("rules", "inconsistent"): rules.possession_inconsistent_rho,
+            ("rules", "gap_max"): rules.possession_gap_max,
+            ("rules", "r_full_min"): rules.dna_reliability_min,
+            ("trust_rules", "stab_min"): rules.trust_stability_min,
+            ("trust_rules", "lolo_min"): rules.trust_lolo_min_agree,
+            ("trust_rules", "p_max"): rules.trust_p_max,
+            ("trust_rules", "d_min"): rules.trust_d_min_count}
+    for (sec, key), v in want.items():
+        got = _mover_key(_mover_key(block, sec, "possession"), key, f"possession.{sec}")
+        if got != v:
+            raise RegistryRuleError(f"possession.{sec}.{key} is {got!r}, but Rules has {v!r}: "
+                                    f"re-run the M4g4c engines with the current rules")
+
+
+def _candidate_check(name: str, rec: Mapping[str, Any], ref: tuple[float, float] | None,
+                     rules: Rules, where: str) -> CandidateCheck:
+    if rec.get("fit_failed"):
+        if name != "beta_hat":
+            raise RegistryRuleError(f"{where} {name}: only β̂ can fail its fit")
+        return CandidateCheck(name, None, False, None, False, None, False, False, False, False,
+                              fit_failed=True)
+    w = f"{where} {name}"
+    c1 = tuple(float(_at(rec, w, "c1_rho", p, "mean")) for p in POSSESSION_PROXIES)
+    c2 = tuple(float(_at(rec, w, "c2_gap", p, "gap")) for p in POSSESSION_PROXIES)
+    r3 = float(_at(rec, w, "c3_r_full"))
+    c1_pass = all(abs(v) < rules.possession_criterion_rho_max for v in c1)
+    c2_pass = all(v <= rules.possession_gap_max for v in c2)
+    c3_pass = r3 >= rules.dna_reliability_min
+    dz = rules.possession_sign_dead_zone
+    ref = c1 if ref is None else ref        # β = 0 is its own sign reference
+    flip = any(abs(r) >= dz and abs(v) >= dz and math.copysign(1, v) != math.copysign(1, r)
+               for v, r in zip(c1, ref))
+    incons = any(abs(float(v)) >= rules.possession_inconsistent_rho
+                 for p in POSSESSION_PROXIES for v in _at(rec, w, "c1_rho", p, "by_league").values())
+    return CandidateCheck(name, c1, c1_pass, c2, c2_pass, r3, c3_pass, flip, incons,  # type: ignore[arg-type]
+                          c1_pass and c2_pass and c3_pass and not flip)
+
+
+def _trust_check(t: Mapping[str, Any], selected: str, beta0: CandidateCheck, rules: Rules,
+                 where: str) -> TrustCheck:
+    w = f"{where} trust"
+    a = float(_at(t, w, "a", "p_same"))
+    agree = sum(v == selected for v in _at(t, w, "b", "selected_without").values())
+    judged = tuple(k for k, failed in (("rho", not beta0.c1_pass), ("gap", not beta0.c2_pass))
+                   if failed)
+    p = (float(_at(t, w, "c", "p_rho")), float(_at(t, w, "c", "p_gap")))
+    c_pass = all(dict(zip(("rho", "gap"), p))[k] < rules.trust_p_max for k in judged)
+    if selected == "beta_hat":
+        if _at(t, w, "d") is None:
+            raise RegistryRuleError(f"{w}: (d) is required for a β̂ selection")
+        d_pass: bool | None = _at(t, w, "d", str(rules.trust_d_min_count), "selected") == "beta_hat"
+    else:
+        d_pass = None
+    a_pass, b_pass = a >= rules.trust_stability_min, agree >= rules.trust_lolo_min_agree
+    return TrustCheck(a, a_pass, agree, b_pass, judged, p, c_pass, d_pass,
+                      a_pass and b_pass and c_pass and d_pass is not False)
+
+
+def _possession(meas: Mapping[str, Any], specs: Sequence[MetricSpec], rules: Rules,
+                cells: Mapping[tuple[str, str], Cell]) -> dict[tuple[str, str], PossessionAdjustment]:
+    """ADR 004 §13.8: every Defending DNA cell's candidates, selection, trust check and the
+    column the vector uses. Raises RegistryRuleError when the block is missing, covers other
+    cells, was made with other rules, or selects differently from the rules here, and when a
+    cell would enter the vector adjusted (not implemented: M4g4c2 left none)."""
+    block = meas.get("possession")
+    if not isinstance(block, Mapping):
+        raise RegistryRuleError("measurements must hold the possession block (schema 3, plan 005 M4g4d)")
+    _check_engine_rules(block, rules)
+    if tuple(_mover_key(block, "candidates", "possession")) != POSSESSION_CANDIDATES:
+        raise RegistryRuleError(f"possession candidates {block['candidates']} are not "
+                                f"{POSSESSION_CANDIDATES}")
+    by_col = {s.column: s for s in specs}
+    want = {(c, g) for (c, g), cell in cells.items()
+            if cell.status == "dna" and by_col[c].family == "Defending"}
+    stored = _mover_key(block, "cells", "possession")
+    got = {(c, g) for c, gs in stored.items() for g in gs}
+    if got != want:
+        raise RegistryRuleError(f"possession cells differ from the Defending DNA cells: "
+                                f"{sorted(got ^ want)}")
+    trust = _mover_key(block, "trust", "possession")
+    out: dict[tuple[str, str], PossessionAdjustment] = {}
+    for col, grp in sorted(want):
+        rec = stored[col][grp]
+        where = f"possession {col} × {grp}"
+        directional = by_col[col].direction != "style"
+        if _at(rec, where, "directional") != directional:
+            raise RegistryRuleError(f"{where}: directional {rec['directional']} ≠ the spec's")
+        beta0 = _candidate_check(RAW_CANDIDATE, _at(rec, where, "candidates", RAW_CANDIDATE), None,
+                                 rules, where)
+        checks = (beta0, *(_candidate_check(k, _at(rec, where, "candidates", k), beta0.c1_mean_rho,
+                                            rules, where)
+                           for k in POSSESSION_CANDIDATES[1:]))
+        if _at(rec, where, "zero_teams"):
+            checks = tuple(replace(c, passes=False) if c.candidate == "beta_hat" else c
+                           for c in checks)
+        selected = next((c.candidate for c in checks if c.passes), None)
+        if selected != _at(rec, where, "spike_selected"):
+            raise RegistryRuleError(f"{where}: the rules select {selected!r}, the engine "
+                                    f"{rec['spike_selected']!r}")
+        t = trust.get(col, {}).get(grp)
+        if selected in (None, RAW_CANDIDATE):
+            if t is not None:
+                raise RegistryRuleError(f"{where}: a trust record for selection {selected!r}")
+            tc = None
+            applied = RAW_CANDIDATE
+        else:
+            if t is None:
+                raise RegistryRuleError(f"{where}: selection {selected!r} has no trust record")
+            tc = _trust_check(t, selected, beta0, rules, where)
+            applied = selected if tc.passes else RAW_CANDIDATE
+        if applied != RAW_CANDIDATE:
+            raise RegistryRuleError(f"{where}: enters the vector adjusted ({applied}); adjusted "
+                                    f"columns are not implemented (M4g4c2 left none)")
+        bh = _at(rec, where, "beta_hat")
+        flags = (*(("rises with own possession",) if bh is not None and bh < 0 else ()),
+                 *(("|β̂| > 1",) if bh is not None and abs(bh) > 1 else ()))
+        ci = rec.get("beta_hat_ci")
+        out[(col, grp)] = PossessionAdjustment(
+            col, grp, directional, bh, None if ci is None else (float(ci[0]), float(ci[1])),
+            checks, selected, tc, applied, flags)
+    return out
+
+
+def _restore_candidate(p: PossessionAdjustment) -> str | None:
+    """The candidate a directional member's restore is judged on: its selection if that is β = 0
+    or passed the trust check; None when no candidate is trusted (possession criteria failed)."""
+    if p.selected is None:
+        return None
+    if p.selected == RAW_CANDIDATE or (p.trust is not None and p.trust.passes):
+        return p.selected
+    return None
+
+
+def _member_status(v: MoverVerdict) -> str:
+    """D5 for a member with a trusted candidate: the mover verdict, then seed sensitivity
+    (D6), then below model range (D7: √s2_rms_a > 1)."""
+    if v.verdict == "untestable":
+        return MOVER_STABILITY_UNTESTABLE
+    if v.verdict == "FAIL":
+        return MOVER_STABILITY_FAILED
+    if v.verdict == "inconclusive":
+        return MOVER_STABILITY_INCONCLUSIVE
+    if v.borderline_seed:
+        return MOVER_SEED_SENSITIVE
+    if v.below_model_range:
+        if v.s2_rms_a is None:
+            raise RegistryRuleError(f"{v.column}: PASS below model range without s2_rms_a (D7)")
+        if math.sqrt(v.s2_rms_a) > 1:
+            return MOVER_BELOW_MODEL_RANGE
+    return SCORE_OK
+
+
+def _candidate_movers(meas: Mapping[str, Any], rules: Rules, movers: Mapping[str, MoverVerdict],
+                      possession: Mapping[tuple[str, str], PossessionAdjustment]
+                      ) -> dict[tuple[str, str], CandidateMover]:
+    """Mover verdicts per (metric, candidate): β = 0 reuses the M4g3b verdict (not re-run);
+    the adjusted candidates come from the possession block's movers (D3).
+
+    The block holds the runs of one metric (2015/16: ball_recoveries_p90, the only directional
+    Defending DNA member in any group, ADR 004 §13.8). A second directional member needs its own
+    runs, so it is refused here rather than left without a verdict."""
+    block = _at(meas, "possession", "possession", "movers")
+    col = _mover_key(block, "metric", "possession.movers")
+    others = sorted({c for (c, _), p in possession.items() if p.directional and c != col})
+    if others:
+        raise RegistryRuleError(f"possession.movers holds {col} only, but {others} are directional "
+                                f"Defending members: their candidate mover runs are missing")
+    n_extra = len(_mover_key(_mover_key(block, "stream_keys", "possession.movers"), "extra",
+                             "possession.movers.stream_keys"))
+    if n_extra != len(meas["movers"]["stream_keys"]["extra"]):
+        raise RegistryRuleError("possession.movers: extra streams differ from the movers block's")
+    runs = _mover_key(block, "candidates", "possession.movers")
+    if set(runs) != set(POSSESSION_CANDIDATES[1:]):
+        raise RegistryRuleError(f"possession.movers candidates {sorted(runs)}")
+    if col not in movers:
+        raise RegistryRuleError(f"possession.movers {col}: no M4g3b verdict to reuse for β = 0")
+    verdicts = {RAW_CANDIDATE: movers[col],
+                **{k: _mover_entry(f"{col}[{k}]", runs[k], n_extra, rules)
+                   for k in POSSESSION_CANDIDATES[1:]}}
+    used: dict[str, list[str]] = {k: [] for k in POSSESSION_CANDIDATES}
+    for (c, g), p in possession.items():
+        cand = _restore_candidate(p)
+        if c == col and p.directional and cand is not None:
+            used[cand].append(g)
+    return {(col, k): CandidateMover(col, k, verdicts[k],
+                                     tuple(sorted(used[k], key=GROUPS.index)))
+            for k in POSSESSION_CANDIDATES}
+
+
+def _defending_status(possession: Mapping[tuple[str, str], PossessionAdjustment],
+                      cand_movers: Mapping[tuple[str, str], CandidateMover]
+                      ) -> dict[tuple[str, str], FamilyStatus]:
+    """ADR 004 §13.8 D5, per group, over its directional Defending members: restored ("ok") if
+    any member passes; otherwise the status of the member that got furthest along the
+    precedence (possession → mover verdict → seed sensitivity → below model range), ties to
+    the first metric name. "underpowered at n" is a note. A group without a directional
+    member has no status to restore from: "ok" (the dimension score is no_directional_metric)."""
+    out: dict[tuple[str, str], FamilyStatus] = {}
+    for grp in GROUPS:
+        members = sorted(c for (c, g), p in possession.items() if g == grp and p.directional)
+        best: FamilyStatus | None = None
+        for col in members:
+            cand = _restore_candidate(possession[(col, grp)])
+            if cand is None:
+                fs = FamilyStatus("Defending", grp, POSSESSION_CRITERIA_FAILED, col, None)
+            else:
+                cm = cand_movers.get((col, cand))
+                if cm is None:
+                    raise RegistryRuleError(f"Defending {grp}: {col} under {cand} has no mover verdict")
+                v = cm.verdict
+                notes = (f"underpowered at {v.n}",) if v.underpowered else ()
+                fs = FamilyStatus("Defending", grp, _member_status(v), col, cand, notes)
+            if best is None or _D5_STAGE[fs.status] > _D5_STAGE[best.status]:
+                best = fs
+        out[("Defending", grp)] = best or FamilyStatus("Defending", grp, SCORE_OK, None, None)
     return out
 
 
@@ -913,7 +1264,10 @@ def _inf_as_text(x: Any) -> Any:
 
 
 def _version(cells: Mapping[tuple[str, str], Cell], meas: Mapping[str, Any], rules: Rules,
-             specs: Sequence[MetricSpec], movers: Mapping[str, MoverVerdict]) -> str:
+             specs: Sequence[MetricSpec], movers: Mapping[str, MoverVerdict],
+             possession: Mapping[tuple[str, str], PossessionAdjustment] | None = None,
+             cand_movers: Mapping[tuple[str, str], CandidateMover] | None = None,
+             family_status: Mapping[tuple[str, str], FamilyStatus] | None = None) -> str:
     """sha256 of the measurements, the rules, every spec field and the resolved cells. The
     spike rounds every stored float to 9 decimals, so reruns on the same data write identical
     bytes and the version changes only when a measurement, a rule, a spec (e.g. a direction or
@@ -924,6 +1278,9 @@ def _version(cells: Mapping[tuple[str, str], Cell], meas: Mapping[str, Any], rul
         "specs": [asdict(s) for s in sorted(specs, key=lambda s: s.column)],
         "cells": [asdict(cells[k]) for k in sorted(cells)],
         "movers": [_inf_as_text(asdict(movers[c])) for c in sorted(movers)],
+        "possession": [asdict(v) for _, v in sorted((possession or {}).items())],
+        "candidate_movers": [_inf_as_text(asdict(v)) for _, v in sorted((cand_movers or {}).items())],
+        "family_status": [asdict(v) for _, v in sorted((family_status or {}).items())],
     }
     blob = json.dumps(canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -1025,9 +1382,14 @@ def derive(specs: Sequence[MetricSpec] = SPECS,
                              if cells[(a.column, a.group)].status == "dna"),
                             key=lambda a: (GROUPS.index(a.group), a.column)))
     movers = _movers(meas, specs, rules, cells)
+    possession = _possession(meas, specs, rules, cells)
+    cand_movers = _candidate_movers(meas, rules, movers, possession)
+    family_status = _defending_status(possession, cand_movers)
     return Derivation(cells=cells, boundary=resolved, source=source,
-                      version=_version(cells, meas, rules, specs, movers),
-                      majority_admitted=admitted, movers=movers)
+                      version=_version(cells, meas, rules, specs, movers, possession, cand_movers,
+                                       family_status),
+                      majority_admitted=admitted, movers=movers, possession=possession,
+                      candidate_movers=cand_movers, family_status=family_status)
 
 
 # ── Resolved at import ──────────────────────────────────────────────────────────

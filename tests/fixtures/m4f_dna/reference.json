@@ -1,7 +1,7 @@
 {
  "dna_percentile_basis": "local",
  "generated_by": "spikes/m4f_dna_reference.py",
- "measurements_sha256": "0d4035cf8b3faf2ba24c5d7b6dc132089ea4398bd9d72c8a4bf38d45918caf49",
+ "measurements_sha256": "312109478808dd6a89c8befcf53715282926e8e2be52d308fbdac55c93da9a4b",
  "rows": [
   {
    "cells": {
@@ -384,7 +384,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "mover_stability_inconclusive"
     },
     "Goal threat": {
      "members": [
@@ -802,7 +802,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "mover_stability_inconclusive"
     },
     "Goal threat": {
      "members": [
@@ -1220,7 +1220,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "mover_stability_inconclusive"
     },
     "Goal threat": {
      "members": [
@@ -1594,7 +1594,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "possession_criteria_failed"
     },
     "Goal threat": {
      "members": [
@@ -1933,7 +1933,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "possession_criteria_failed"
     },
     "Goal threat": {
      "members": [
@@ -2352,7 +2352,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "mover_stability_inconclusive"
     },
     "Goal threat": {
      "members": [
@@ -2621,7 +2621,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "possession_criteria_failed"
     },
     "Passing": {
      "members": [],
@@ -2987,7 +2987,7 @@
     "Defending": {
      "members": [],
      "score": null,
-     "score_status": "pending_possession_adjustment"
+     "score_status": "possession_criteria_failed"
     },
     "Goal threat": {
      "members": [

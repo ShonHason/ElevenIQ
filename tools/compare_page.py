@@ -32,8 +32,8 @@ DNA (M4f4, ADR 004 §12):
 - a missing DNA metric (partial row, §12.2) is a gap in the outline with a marker at the
   rim, never a vertex at zero;
 - each dimension score shows its member count ("based on 2 metrics"); a withheld family
-  shows "withheld until M4g" with its reason (Defending everywhere, §12.6; Passing where it
-  rests on long pass completion alone, §12.9).
+  shows its reason: Defending "withheld (<D5 status>)" (§13.8; every group in 2015/16),
+  Passing "withheld until M4g" where it rests on long pass completion alone (§12.9).
 
 Usage:
   python tools/compare_page.py --season-id 27 --player "Kanté" --player Busquets
@@ -57,6 +57,7 @@ import polars as pl
 from eleveniq import config
 from eleveniq.analytics import cohorts as C
 from eleveniq.analytics import dna as D
+from eleveniq.analytics import registry as R
 from eleveniq.analytics.registry import (
     MEASUREMENT_SOURCE, REGISTRY, REGISTRY_VERSION, SPECS, MetricSpec,
     is_signature_holder,
@@ -129,13 +130,21 @@ STATUS_TEXT: dict[str, str] = {
 STATIC_REFS: frozenset[str] = frozenset({"D9", "D5", "ADR 004 §11", "ADR 004 §12", "M4e", "M4f4",
                                          "M4g", ">99", "<1", "25", "50", "75"})
 
-# Dimension score statuses (ADR 004 §12.6, §12.9) other than "ok", as text. An unknown status
-# raises. A withheld status (dna.WITHHELD_STATUSES) reads "withheld until M4g (<text>)".
+# Dimension score statuses (ADR 004 §12.6, §12.9, §13.8) other than "ok", as text. An unknown
+# status raises. A pending status (PENDING_STATUSES) reads "withheld until M4g (<text>)"; a D5
+# status (registry.D5_STATUSES, the tested Defending outcome) reads "withheld (<text>)", with
+# "; underpowered" when the registry notes it (the n stays off the page: no untraced digits).
 DIM_STATUS_TEXT: dict[str, str] = {
-    D.PENDING_POSSESSION_ADJUSTMENT: "possession adjustment pending",
     D.PENDING_MOVER_STABILITY: "team-influenced; xPass candidate pre-registered",
+    R.POSSESSION_CRITERIA_FAILED: "not shown to be free of team-possession effects",
+    R.MOVER_STABILITY_FAILED: "player-vs-team test on club movers failed",
+    R.MOVER_STABILITY_INCONCLUSIVE: "player-vs-team test on club movers inconclusive",
+    R.MOVER_STABILITY_UNTESTABLE: "too few club movers to test player vs team",
+    R.MOVER_SEED_SENSITIVE: "player-vs-team test on club movers not stable across seeds",
+    R.MOVER_BELOW_MODEL_RANGE: "player-vs-team test on club movers outside the model's range",
     D.NO_DIRECTIONAL_METRIC: "no directional metric present in this row",
 }
+PENDING_STATUSES: frozenset[str] = frozenset({D.PENDING_MOVER_STABILITY})
 
 
 class PageError(ValueError):
@@ -179,6 +188,19 @@ def dim_status_text(status: str) -> str:
         return DIM_STATUS_TEXT[status]
     except KeyError:
         raise PageError(f"unknown dimension score status {status!r}") from None
+
+
+def withheld_reason(family: str, group: str, status: str) -> str:
+    """A D5 status as text, with "; underpowered" when the registry notes it (ADR 004 §13.8)."""
+    text = dim_status_text(status)
+    if family == "Defending":
+        fs = REGISTRY.defending_status(group)
+        if fs.status != status:
+            raise PageError(f"{group} Defending status {status!r} ≠ the registry's {fs.status!r}: "
+                            "rebuild with build_player_dna")
+        if any(n.startswith("underpowered") for n in fs.notes):
+            text += "; underpowered"
+    return text
 
 
 def status_text(status: str) -> str:
@@ -582,7 +604,8 @@ def _family_rows(players: Sequence[Player], family: str, mixed: bool) -> str:
 
 def dimension_html(p: Player, family: str, mixed: bool) -> str:
     """A dimension score with its member count ("based on 2 metrics", ADR 004 §12.8), or the
-    reason it is null; a withheld family is "withheld until M4g (<reason>)" (§12.6, §12.9)."""
+    reason it is null; a withheld family is "withheld until M4g (<reason>)" while pending
+    (§12.9) or "withheld (<reason>)" with its D5 status (§13.8)."""
     group = GROUP_PLURAL.get(p.group, p.group)
     if not p.dims:
         return '<span class="reason">no DNA vector for this row</span>'
@@ -590,9 +613,11 @@ def dimension_html(p: Player, family: str, mixed: bool) -> str:
         return f'<span class="reason">not a DNA family for {esc(group)}</span>'
     row = p.dims[family]
     status = row["score_status"]
-    if status in D.WITHHELD_STATUSES:
+    if status in PENDING_STATUSES:
         return (f'<span class="reason">withheld until {static("M4g")} '
                 f'({esc(dim_status_text(status))})</span>')
+    if status in D.WITHHELD_STATUSES:
+        return f'<span class="reason">withheld ({esc(withheld_reason(family, p.group, status))})</span>'
     if status != "ok":
         return f'<span class="reason">{esc(dim_status_text(status))}</span>'
     if row["score"] is None or not row["members"]:

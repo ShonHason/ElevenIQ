@@ -18,6 +18,7 @@ import pytest
 
 from eleveniq import config
 from eleveniq.analytics import dna as D
+from eleveniq.analytics import registry as R
 from eleveniq.analytics.registry import GROUPS, REGISTRY, SPECS
 from eleveniq.pipeline.build_player_dna import DnaInputError, check_percentiles
 
@@ -157,11 +158,43 @@ def test_one_missing_metric_that_empties_a_family_is_dna_incomplete():
 
 # ── dimension scores ────────────────────────────────────────────────────────────
 
-def test_defending_is_withheld_in_every_group():
-    assert config.DNA_WITHHELD_DIMENSIONS["Defending"] == ("pending_possession_adjustment", GROUPS)
+# ADR 004 §13.8 (M4g4d, 2015/16): the D5 Defending status per group.
+D5_2015_16 = {"CB": "possession_criteria_failed", "FB-WB": "possession_criteria_failed",
+              "DM-CM": "mover_stability_inconclusive", "AM-Winger": "possession_criteria_failed",
+              "ST": "possession_criteria_failed"}
+
+
+def test_defending_is_withheld_with_the_registry_d5_status_in_every_group():
+    assert "Defending" not in config.DNA_WITHHELD_DIMENSIONS
     for g in GROUPS:
+        assert REGISTRY.defending_status(g).status == D5_2015_16[g]
         d = _row_dna(g, _specs(g), _inputs(g)).dimensions["Defending"]
-        assert d == D.Dimension(None, "pending_possession_adjustment", ())
+        assert d == D.Dimension(None, D5_2015_16[g], ())
+
+
+def test_every_d5_status_is_a_withheld_status_and_ok_is_not():
+    assert set(R.D5_STATUSES) <= D.WITHHELD_STATUSES
+    assert len(set(R.D5_STATUSES)) == 6 and R.SCORE_OK not in D.WITHHELD_STATUSES
+
+
+def test_a_restored_defending_is_not_withheld():
+    """A registry whose Defending status is "ok" withholds only the table's families."""
+    fs = {("Defending", g): R.FamilyStatus("Defending", g, R.SCORE_OK, "ball_recoveries_p90",
+                                           "beta_0") for g in GROUPS}
+    restored = replace(REGISTRY, family_status=fs)
+    assert D.withheld_for("ST", derivation=restored) == {}
+    assert D.withheld_for("CB", derivation=restored) == {"Passing": "pending_mover_stability"}
+
+
+def test_the_table_cannot_carry_defending():
+    with pytest.raises(ValueError, match="comes from the registry"):
+        D.withheld_for("CB", table={"Defending": ("pending_mover_stability", GROUPS)},
+                       derivation=REGISTRY)
+
+
+def test_a_custom_table_without_its_derivation_is_refused():
+    with pytest.raises(ValueError, match="explicit derivation"):
+        D.withheld_for("CB", table={"Passing": ("pending_mover_stability", GROUPS)})
 
 
 def test_passing_withheld_exactly_where_long_pass_completion_is_its_only_directional_member():
@@ -191,9 +224,10 @@ def test_withheld_precedes_no_directional_metric():
 
 
 def test_withheld_for_and_unknown_status():
-    assert D.withheld_for("ST") == {"Defending": "pending_possession_adjustment"}
-    assert D.withheld_for("CB") == {"Defending": "pending_possession_adjustment",
+    assert D.withheld_for("ST") == {"Defending": "possession_criteria_failed"}
+    assert D.withheld_for("CB") == {"Defending": "possession_criteria_failed",
                                     "Passing": "pending_mover_stability"}
+    assert D.withheld_for("DM-CM")["Defending"] == "mover_stability_inconclusive"
     with pytest.raises(ValueError, match="unknown withheld status"):
         _row_dna("ST", _specs("ST"), _inputs("ST"), withheld={"Aerial": "made_up"})
 
@@ -319,10 +353,20 @@ def test_spike_dna_lists_families_and_directions_equal_the_registry():
 @pytest.mark.parametrize("name, want", [
     ("MAD_SCALE", D.MAD_SCALE), ("IQR_SCALE", D.IQR_SCALE),
     ("DNA_PERCENTILE_BASIS", config.DNA_PERCENTILE_BASIS),
-    ("WITHHELD", config.DNA_WITHHELD_DIMENSIONS),
 ])
 def test_spike_constants_equal_the_package(name, want):
     tree = ast.parse(_SPIKE.read_text())
     values = [ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
               and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)]
     assert values == [want]
+
+
+def test_spike_withheld_equals_the_package():
+    """The reference reads Defending's D5 statuses from spikes/expected_m4g4_flips.json and
+    writes Passing out: both equal the package's (registry D5 status, config table)."""
+    spike = _spike_module()
+    status, groups = config.DNA_WITHHELD_DIMENSIONS["Passing"]
+    assert spike.WITHHELD["Passing"] == {g: status for g in groups}
+    assert spike.WITHHELD["Defending"] == {
+        g: REGISTRY.defending_status(g).status for g in GROUPS
+        if REGISTRY.defending_status(g).status != R.SCORE_OK}

@@ -211,10 +211,12 @@ class TestDeterminism:
         assert derive(measurements=meas).version != R.REGISTRY_VERSION
 
     def test_version_tracks_a_direction_only_change(self, meas):
-        # ADR 004 §12: a spec change that moves no cell (e.g. interceptions → style) must
-        # still change the version, so a percentile parquet built before it is refused.
+        # ADR 004 §12: a spec change that moves no cell (e.g. a style metric made directional)
+        # must still change the version, so a percentile parquet built before it is refused.
+        # (A Defending member is refused instead: test_a_defending_direction_or_family_change_
+        # is_refused.)
         specs = tuple(dataclasses.replace(s, direction="higher_better")
-                      if s.column == "interceptions_p90" else s for s in R.SPECS)
+                      if s.column == "aerials_lost_p90" else s for s in R.SPECS)
         again = derive(specs=specs, measurements=meas)
         assert dict(again.cells) == dict(R.REGISTRY.cells)
         assert again.version != R.REGISTRY_VERSION
@@ -223,11 +225,23 @@ class TestDeterminism:
         # The §12.4 hash covers (column, family, direction, unit), not just direction: a
         # family-only edit (no cell moves, family is display-only metadata) must also change
         # the version, or a stale percentile parquet would silently be accepted.
-        specs = tuple(dataclasses.replace(s, family="Aerial")
-                      if s.column == "interceptions_p90" else s for s in R.SPECS)
+        specs = tuple(dataclasses.replace(s, family="Passing")
+                      if s.column == "aerials_lost_p90" else s for s in R.SPECS)
         again = derive(specs=specs, measurements=meas)
         assert dict(again.cells) == dict(R.REGISTRY.cells)
         assert again.version != R.REGISTRY_VERSION
+
+    @pytest.mark.parametrize("field, value, match", [
+        ("direction", "higher_better", "directional False"),
+        ("family", "Aerial", "possession cells differ"),
+    ])
+    def test_a_defending_direction_or_family_change_is_refused(self, meas, field, value, match):
+        # ADR 004 §13.8 (M4g4d): the possession block was measured for the Defending DNA cells
+        # as they were (directional members got mover runs); a spec edit there needs a re-run.
+        specs = tuple(dataclasses.replace(s, **{field: value})
+                      if s.column == "interceptions_p90" else s for s in R.SPECS)
+        with pytest.raises(RegistryRuleError, match=match):
+            derive(specs=specs, measurements=meas)
 
     def test_a_ratio_term_change_raises_or_moves_the_version(self, meas):
         # §12.4 (user, 2026-10-06): every MetricSpec field is hashed. A ratio-term edit

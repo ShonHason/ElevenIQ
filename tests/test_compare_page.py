@@ -522,11 +522,21 @@ def test_dimension_scores_show_member_count_and_withheld_defending():
     text = _text(page)
     assert "based on 1 metric: Key passes (non-restart delivery)" in text    # Creation
     assert re.search(r"based on 2 metrics: ", text)
-    assert "withheld until M4g (possession adjustment pending)" in text
+    assert "withheld (not shown to be free of team-possession effects)" in text   # §13.8 D5
     assert "|Defending|score" not in page                                      # never a number
-    # Defending and Passing, two players, in the radar section and in the family tables
-    assert _radar(page).count("withheld until") == 4
-    assert page.count("withheld until") == 8
+    # Defending (D5) and Passing (pending), two players, in the radar section and the tables
+    assert _radar(page).count("withheld (") == 2 and _radar(page).count("withheld until") == 2
+    assert page.count("withheld (") == 4 and page.count("withheld until") == 4
+
+
+def test_dm_cm_defending_reads_its_mover_verdict_with_the_underpowered_note():
+    text = _text(P.render(_pair("DM-CM")))
+    assert "withheld (player-vs-team test on club movers inconclusive; underpowered)" in text
+
+
+def test_a_defending_status_that_differs_from_the_registry_raises():
+    with pytest.raises(P.PageError, match="Defending status"):
+        P.withheld_reason("Defending", "CB", "mover_stability_inconclusive")
 
 
 @pytest.mark.parametrize("group", ["CB", "FB-WB", "DM-CM", "AM-Winger"])

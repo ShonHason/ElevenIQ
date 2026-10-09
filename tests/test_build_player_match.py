@@ -1459,8 +1459,7 @@ class TestPenaltyShootoutExcluded:
         assert row["goals"] == 1
         assert row["xg"] == pytest.approx(0.1)
 
-    @pytest.mark.usefixtures("synthetic_small_teams")
-    @pytest.mark.usefixtures("synthetic_one_team")
+    @pytest.mark.usefixtures("synthetic_small_teams", "synthetic_one_team")
     def test_extra_time_red_card_still_cuts_minutes(self, tmp_path):
         # Only period 5 is ignored: a period-3 red card ends an open stint.
         events = [_ev("Bad Behaviour", period=3, minute=100,
@@ -1851,8 +1850,7 @@ def test_failing_quality_issues_are_emitted_names():
 
 
 class TestPeriodFiveAssists:
-    @pytest.mark.usefixtures("synthetic_small_teams")
-    @pytest.mark.usefixtures("synthetic_one_team")
+    @pytest.mark.usefixtures("synthetic_small_teams", "synthetic_one_team")
     def test_shootout_shot_assist_counts_toward_neither_key_passes_nor_xga(self, tmp_path):
         # A period-2 pass → shot pair is the control; the same pair in period 5
         # (shootout) must add nothing (H1 review follow-up 4).
@@ -2373,8 +2371,7 @@ class TestPeriodAwarePipeline:
     def _issues(report, name):
         return [d for d in report if d.get("issue") == name]
 
-    @pytest.mark.usefixtures("synthetic_small_teams")
-    @pytest.mark.usefixtures("synthetic_one_team")
+    @pytest.mark.usefixtures("synthetic_small_teams", "synthetic_one_team")
     def test_first_half_stoppage_is_credited_and_post_whistle_events_extend_nothing(self, tmp_path):
         # Half End (1, 47:00) and (2, 93:00); a Ball Receipt after the first-half
         # whistle stays a counted event but adds no time: 47 + 48 = 95.
@@ -2487,8 +2484,7 @@ class TestPeriodAwarePipeline:
         with pytest.raises(MatchProcessingError):
             build_competition_season(99, 1, data_root=tmp_path, output_path=tmp_path / "o.parquet")
 
-    @pytest.mark.usefixtures("synthetic_small_teams")
-    @pytest.mark.usefixtures("synthetic_one_team")
+    @pytest.mark.usefixtures("synthetic_small_teams", "synthetic_one_team")
     def test_events_outside_credited_time_are_reported(self, tmp_path):
         # Milinković-Savić 3879637 pattern: Player Off (1, 30:00), Player On
         # (1, 32:00), but the lineup resumes only at (2, 45:00). His pass at
@@ -2575,8 +2571,7 @@ class TestPeriodAwarePipelineEdges:
                 if d.get("issue") == "unpaired_player_off_capped"] == [pytest.approx(2.0)]
         assert not [d for d in report if d.get("issue") == "events_outside_credited_time"]
 
-    @pytest.mark.usefixtures("synthetic_small_teams")
-    @pytest.mark.usefixtures("synthetic_one_team")
+    @pytest.mark.usefixtures("synthetic_small_teams", "synthetic_one_team")
     def test_events_outside_credited_time_uses_the_period_clock(self, tmp_path):
         # Half End (1, 47:00). Inside credited time, so not reported:
         #  - the starter's pass in first-half stoppage (1, 46:00);
@@ -3372,3 +3367,76 @@ class TestM4g4bEdges:
         df, _ = _two_team_build(tmp_path, _full_match_players(11), away, events)
         a = df.filter(pl.col("team_id") == _AWAY).sort("player_id")["opponent_open_play_passes_while_on"].to_list()
         assert a[0] == 1 and a[11] == 1 and a[1:11] == [2] * 10
+
+
+class TestM4g4bBacklog:
+    """Plan 005 M4g4b backlog #1-#3: a lineup player without a timeline is reported (raises),
+    never skipped; the opponent credit relies on team_open_play_pass_credits to report a
+    team mismatch (one shared rule, _lineup_pass_team); an actor or passer outside the
+    lineups is a dropped event and is skipped by every team credit. Clock: 45:00 / 90:00."""
+
+    _CLOCK = PeriodClock({1: 45.0, 2: 90.0})
+    _FULL = [{"position": "Center Back", "from": "00:00", "from_period": 1, "to": None,
+              "to_period": None, "start_reason": "Starting XI"}]
+    _CREDITS = (_bpm.team_open_play_pass_credits, _bpm.opponent_open_play_pass_credits,
+                _bpm.team_action_credits)
+
+    def _tl(self):
+        return player_timeline(self._FULL, self._CLOCK, exit_at=None, treatment_windows=())
+
+    @staticmethod
+    def _pass(pid, team=None):
+        e = {"id": f"p{pid}", "type": {"name": "Pass"}, "player": {"id": pid},
+             "period": 1, "minute": 10, "second": 0, "pass": {}}
+        if team is not None:
+            e["team"] = {"id": team}
+        return e
+
+    @staticmethod
+    def _pressure(pid):
+        return {"id": f"pr{pid}", "type": {"name": "Pressure"}, "player": {"id": pid},
+                "period": 1, "minute": 11, "second": 0}
+
+    @pytest.mark.parametrize("fn", _CREDITS, ids=lambda f: f.__name__)
+    def test_a_lineup_player_without_a_timeline_is_reported(self, fn):
+        tl = {1: self._tl(), 3: self._tl()}
+        with pytest.raises(ValueError, match=r"lineup players without a timeline: \[2\]"):
+            fn([self._pass(1), self._pressure(1)], tl, {1: 10, 2: 10, 3: 20}, self._CLOCK)
+
+    def test_a_mismatched_pass_is_reported_by_the_team_credit_and_skipped_by_the_opponent(self):
+        """The opponent credit does not report a mismatch itself: if the team credit stopped
+        reporting it, a mismatched pass would vanish silently. Both read _lineup_pass_team."""
+        tl = {pid: self._tl() for pid in (1, 2, 3)}
+        team_of = {1: 10, 2: 10, 3: 20}
+        bad = self._pass(1, team=20)
+        credits, _, mismatches = _bpm.team_open_play_pass_credits([bad], tl, team_of, self._CLOCK)
+        assert not credits
+        assert mismatches == [{"event_id": "p1", "player_id": 1, "event_team_id": 20,
+                               "lineup_team_id": 10}]
+        opp, out_of_range = _bpm.opponent_open_play_pass_credits([bad], tl, team_of, self._CLOCK)
+        assert not opp and out_of_range == []
+        assert _bpm._lineup_pass_team(bad, team_of) == (None, mismatches[0])
+
+    def test_lineup_pass_team_rule(self):
+        team_of = {1: 10}
+        assert _bpm._lineup_pass_team(self._pass(1), team_of) == (10, None)
+        assert _bpm._lineup_pass_team(self._pass(1, team=10), team_of) == (10, None)
+        assert _bpm._lineup_pass_team(self._pass(99, team=10), team_of) == (None, None)
+
+    def test_a_passer_outside_the_lineups_is_skipped_by_the_opponent_credit(self):
+        tl = {pid: self._tl() for pid in (1, 2)}
+        opp, out_of_range = _bpm.opponent_open_play_pass_credits(
+            [self._pass(99, team=10)], tl, {1: 10, 2: 20}, self._CLOCK)
+        assert not opp and out_of_range == []
+
+    def test_an_actor_outside_the_lineups_is_skipped_by_the_team_action_credit(self):
+        tl = {pid: self._tl() for pid in (1, 2)}
+        credits, out_of_range, mismatches = _bpm.team_action_credits(
+            [self._pressure(99)], tl, {1: 10, 2: 10}, self._CLOCK)
+        assert not any(credits.values()) and out_of_range == [] and mismatches == []
+
+    def test_a_passer_outside_the_lineups_is_skipped_by_the_team_credit(self):
+        tl = {pid: self._tl() for pid in (1, 2)}
+        credits, out_of_range, mismatches = _bpm.team_open_play_pass_credits(
+            [self._pass(99, team=10)], tl, {1: 10, 2: 10}, self._CLOCK)
+        assert not credits and out_of_range == [] and mismatches == []

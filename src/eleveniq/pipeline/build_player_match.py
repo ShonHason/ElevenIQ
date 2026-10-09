@@ -670,7 +670,10 @@ def team_open_play_pass_credits(
     the passer's lineup team (`team_of`) used. When both exist and differ, the pass
     is reported as pass_team_mismatch (fails the build) and credited to nobody
     (2015/16: 0 of 1,512,747 passes differ). A pass by a player outside the lineups
-    is a dropped event and fails the build elsewhere, so it is skipped here.
+    is a dropped event and fails the build elsewhere, so it is skipped here. The team and
+    the mismatch come from _lineup_pass_team, shared with opponent_open_play_pass_credits,
+    which relies on this function to report the mismatch. Every lineup player must have a
+    timeline (_require_timelines).
 
     Returns (credits per player = team_open_play_passes_while_on, the passes
     credited to a count outside MIN_PLAYERS_PER_PASS..MAX_PLAYERS_PER_PASS (the count
@@ -687,6 +690,7 @@ def team_open_play_pass_credits(
     his share can never exceed 1. A pass stamped after its period's whistle is
     clamped to the whistle instant and counts for the players on at the whistle.
     """
+    _require_timelines(team_of, timelines)
     team_players = _players_by_team(team_of)
     credits: Counter[int] = Counter()
     out_of_range: list[dict] = []
@@ -694,26 +698,16 @@ def team_open_play_pass_credits(
     for e in play_events:
         if not _is_open_play_pass(e):
             continue
-        period = e["period"]
-        start = clock.offset(period)
-        end = start + clock.length(period)
-        at = clock.elapsed(event_instant(e))
         passer = e["player"]["id"]
-        lineup_team = team_of.get(passer)
-        if lineup_team is None:
+        team_id, mismatch = _lineup_pass_team(e, team_of)
+        if mismatch is not None:
+            mismatches.append(mismatch)
+        if team_id is None:
             continue
-        event_team = (e.get("team") or {}).get("id")
-        if event_team is not None and event_team != lineup_team:
-            mismatches.append({"event_id": e.get("id"), "player_id": passer,
-                               "event_team_id": event_team, "lineup_team_id": lineup_team})
-            continue
-        team_id = lineup_team if event_team is None else event_team
+        period, at, end = _event_instant(e, clock)
         credited = {passer}
         for pid in team_players.get(team_id, []):
-            timeline = timelines.get(pid)
-            if pid == passer or timeline is None:
-                continue
-            if timeline.credits_pass_at(period, at, end):
+            if pid != passer and timelines[pid].credits_pass_at(period, at, end):
                 credited.add(pid)
         for pid in credited:
             credits[pid] += 1
@@ -723,6 +717,32 @@ def team_open_play_pass_credits(
                                  "period": period, "minute": e.get("minute"),
                                  "second": e.get("second"), "players": players})
     return credits, out_of_range, mismatches
+
+
+def _require_timelines(team_of: dict[int, int], timelines: dict[int, PlayerTimeline]) -> None:
+    """Every lineup player has a timeline (the lineup loop assigns one to each, by
+    construction). A missing one is reported by raising, never skipped: a skip would drop
+    the player from every team credit silently (plan 005 M4g4b backlog #1)."""
+    missing = sorted(pid for pid in team_of if pid not in timelines)
+    if missing:
+        raise ValueError(f"lineup players without a timeline: {missing}")
+
+
+def _lineup_pass_team(e: dict, team_of: dict[int, int]) -> tuple[int | None, dict | None]:
+    """(the passing team, the mismatch record) of a pass: the one team rule of the D12
+    credits (team_open_play_pass_credits reports the mismatch and fails the build;
+    opponent_open_play_pass_credits skips the pass). The team is the event's team.id, or the
+    passer's lineup team when the event has none. A passer outside the lineups is a dropped
+    event: (None, None). A team.id that differs from the lineup team: (None, mismatch)."""
+    passer = e["player"]["id"]
+    lineup_team = team_of.get(passer)
+    if lineup_team is None:
+        return None, None
+    event_team = (e.get("team") or {}).get("id")
+    if event_team is not None and event_team != lineup_team:
+        return None, {"event_id": e.get("id"), "player_id": passer,
+                      "event_team_id": event_team, "lineup_team_id": lineup_team}
+    return lineup_team, None
 
 
 def _players_by_team(team_of: dict[int, int]) -> dict[int, list[int]]:
@@ -742,11 +762,11 @@ def _players_for_bounds(credited: set[int], actor: int, timelines: dict[int, Pla
     (credits_pass_at, half-open) but ADR 002 §31 covers() does (closed): a foul at the second
     of his own substitution (his replacement is on from that instant) or of his own
     dismissal. An event strictly after his exit with 11 others on still counts 12 and fails
-    the build. Credits are unchanged: the actor is always credited.
+    the build. Credits are unchanged: the actor is always credited. Callers run
+    _require_timelines first, so the actor's timeline exists.
     """
-    timeline = timelines.get(actor)
-    at_own_exit = (timeline is not None and not timeline.credits_pass_at(period, at, end)
-                   and timeline.covers(at))
+    timeline = timelines[actor]
+    at_own_exit = not timeline.credits_pass_at(period, at, end) and timeline.covers(at)
     return len(credited) - at_own_exit
 
 
@@ -775,29 +795,28 @@ def opponent_open_play_pass_credits(
     opponent_open_play_passes_while_on. A defender is credited when
     PlayerTimeline.credits_pass_at holds for the pass's period and instant (the D12 window).
     There is no passer rule. The passing team is the event's team.id (the passer's lineup
-    team when the event has none); a pass whose team.id differs from the passer's lineup
-    team is skipped here (team_open_play_pass_credits reports it and fails the build), as is
-    a pass by a player outside the lineups (a dropped event).
+    team when the event has none; _lineup_pass_team, shared with
+    team_open_play_pass_credits); a pass whose team.id differs from the passer's lineup team
+    is skipped here (team_open_play_pass_credits reports it and fails the build), as is a
+    pass by a player outside the lineups (a dropped event). Every lineup player must have a
+    timeline (_require_timelines).
 
     Returns (credits per player, the passes credited to a defender count outside
     MIN_DEFENDERS_PER_PASS..MAX_DEFENDERS_PER_PASS, i.e. 7-11).
     """
+    _require_timelines(team_of, timelines)
     team_players = _players_by_team(team_of)
     credits: Counter[int] = Counter()
     out_of_range: list[dict] = []
     for e in play_events:
         if not _is_open_play_pass(e):
             continue
-        lineup_team = team_of.get(e["player"]["id"])
+        lineup_team, _ = _lineup_pass_team(e, team_of)
         if lineup_team is None:
-            continue
-        event_team = (e.get("team") or {}).get("id")
-        if event_team is not None and event_team != lineup_team:
             continue
         period, at, end = _event_instant(e, clock)
         defenders = [pid for team_id, pids in team_players.items() if team_id != lineup_team
-                     for pid in pids
-                     if pid in timelines and timelines[pid].credits_pass_at(period, at, end)]
+                     for pid in pids if timelines[pid].credits_pass_at(period, at, end)]
         for pid in defenders:
             credits[pid] += 1
         if not MIN_DEFENDERS_PER_PASS <= len(defenders) <= MAX_DEFENDERS_PER_PASS:
@@ -826,10 +845,12 @@ def team_action_credits(
     event strictly after the actor's exit with 11 others on) or below 7 is reported and fails
     the build. A team.id that differs from the actor's lineup team is
     reported, fails the build and is credited to nobody; an actor outside the lineups is a
-    dropped event and is skipped here.
+    dropped event and is skipped here. Every lineup player must have a timeline
+    (_require_timelines).
 
     Returns (credits per action and player, the out-of-range events, the team mismatches).
     """
+    _require_timelines(team_of, timelines)
     team_players = _players_by_team(team_of)
     credits: dict[str, Counter[int]] = {a: Counter() for a in DEFENSIVE_ACTIONS}
     out_of_range: list[dict] = []
@@ -850,7 +871,7 @@ def team_action_credits(
         period, at, end = _event_instant(e, clock)
         credited = {actor}
         for pid in team_players.get(lineup_team, []):
-            if pid != actor and pid in timelines and timelines[pid].credits_pass_at(period, at, end):
+            if pid != actor and timelines[pid].credits_pass_at(period, at, end):
                 credited.add(pid)
         for pid in credited:
             credits[action][pid] += 1

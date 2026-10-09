@@ -162,6 +162,13 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # spikes/m4_decision_measurements.py --write-json after rebuilding the season stats)
 .venv/bin/python -m eleveniq.pipeline.build_percentiles
 
+# Measurements (schema 3, plan 005 M4g4d): the writer embeds the M4g4c / M4g4c2 engine outputs
+# (defaults data/interim/m4g4c/ and data/interim/m4g4c2/trust.json; run those engines first)
+.venv/bin/python spikes/m4_decision_measurements.py --write-json src/eleveniq/analytics/measurements/statsbomb_27.json
+
+# M4g4 STOP rule: measurements + registry snapshots before/after vs spikes/expected_m4g4_flips.json
+.venv/bin/python spikes/m4g4_before_after.py --before-measurements data/interim/m4g4d_snapshot/measurements_old.json --after-measurements src/eleveniq/analytics/measurements/statsbomb_27.json --before-registry data/interim/m4g4d_snapshot/registry.json --after-registry data/interim/m4g4d_after/registry.json
+
 # Independent check of the percentiles output (no eleveniq imports)
 .venv/bin/python spikes/m4d_percentiles_reference.py --check-output data/processed/player_season_percentiles.parquet
 

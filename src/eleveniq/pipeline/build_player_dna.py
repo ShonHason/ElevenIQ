@@ -122,7 +122,7 @@ def dna_rows(season: pl.DataFrame, pct: pl.DataFrame, derivation: Derivation,
             inputs[r["metric"]] = D.MetricInput(r["value"], r["pct_local"], r["n_local"],
                                                 r["status_local"], sp)
         out[key] = D.row_dna(group, dna_cols[group], inputs,
-                             withheld=D.withheld_for(group))
+                             withheld=D.withheld_for(group, derivation=derivation))
     return out
 
 

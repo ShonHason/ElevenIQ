@@ -353,7 +353,7 @@ def panel(ctx: dict, stints: list[dict], cb: dict, pf_html: str, detail: str,
     metrics = ref.DNA[g]
     r = mv_ref(stints)
     rows = [sm["rows"][i] for i in cb["rows"]]
-    held = {f: s for f, (s, groups) in ref.WITHHELD.items() if g in groups}
+    held = {f: groups[g] for f, groups in ref.WITHHELD.items() if g in groups}
     out = [f'<h3>{esc(stints[0]["name"])} — {esc(LABEL)}</h3>',
            '<div class="scroll"><table><thead><tr><th>Club</th><th>League</th>'
            '<th>Minutes</th><th>Weight</th></tr></thead><tbody>']

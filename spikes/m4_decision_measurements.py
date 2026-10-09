@@ -17,7 +17,8 @@ section was removed with the eleveniq import (plan 005 M4b2).
 minutes ≥ 900 − 1e-6, where nominal = Σ_matches minutes × 90 / match_duration. The spike
 recomputes it and fails unless it equals the parquet's meets_min_minutes on every row.
 
-Usage: .venv/bin/python spikes/m4_decision_measurements.py [--write-json PATH]
+Usage: .venv/bin/python spikes/m4_decision_measurements.py [--write-json PATH [--possession DIR] [--trust PATH]]
+(schema 3, plan 005 M4g4d: --write-json embeds the M4g4c / M4g4c2 engine outputs; see m4g4d_possession_block)
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ import polars as pl
 
 import m4g2_multisplit as ms  # sibling spike: the multi-split engine (plan 005 M4g2)
 import m4g3_movers as mv     # sibling spike: the mover engine (plan 005 M4g3b)
+import m4g4d_possession_block as pb  # sibling spike: the possession block (plan 005 M4g4d)
 
 # Written out instead of imported from eleveniq (see the module docstring).
 LONG_PASS_THRESHOLD_UNITS = 30.0  # ADR 002 §19
@@ -167,6 +169,12 @@ def ratio_value(num: str, pos: list[str], neg: list[str]) -> pl.Expr:
 parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 parser.add_argument("--write-json", type=Path, metavar="PATH",
                     help="also write the registry measurements (plan 005 M4c2) to PATH")
+parser.add_argument("--possession", type=Path, metavar="DIR",
+                    default=ROOT / "data" / "interim" / "m4g4c",
+                    help="with --write-json: the M4g4c engine outputs (possession.json, movers.json)")
+parser.add_argument("--trust", type=Path, metavar="PATH",
+                    default=ROOT / "data" / "interim" / "m4g4c2" / "trust.json",
+                    help="with --write-json: the M4g4c2 trust check output")
 ARGS = parser.parse_args()
 
 
@@ -1155,7 +1163,7 @@ if ARGS.write_json:
                         "ref_n_local": {str(c): lg.filter(pl.col("competition_id") == c).height
                                         for c in POOL_LEAGUES}}
     out = {
-        "schema_version": 2,           # 2: the movers block (plan 005 M4g3b)
+        "schema_version": 3,           # 2: the movers block (M4g3b); 3: the possession block (M4g4d)
         "generated_by": "spikes/m4_decision_measurements.py --write-json",
         "provenance": {
             "source": SOURCE, "season_id": SEASON,
@@ -1192,6 +1200,10 @@ if ARGS.write_json:
     # above (rounded as stored), not from the committed file this run replaces.
     print("\nmovers (plan 005 M4g3b): primary stream + extra seeds …", flush=True)
     out["movers"] = mv.movers_block(mv.compute(meas=round_floats(out), verbose=False))
+    # Possession (plan 005 M4g4d): embedded from the M4g4c / M4g4c2 engine outputs, pinned to
+    # the β = 0 values and the β = 0 mover entry written above (rounded as stored).
+    out["possession"] = pb.possession_block(round_floats(out), ARGS.possession / "possession.json",
+                                            ARGS.possession / "movers.json", ARGS.trust)
     ARGS.write_json.parent.mkdir(parents=True, exist_ok=True)
     with ARGS.write_json.open("w") as f:
         json.dump(round_floats(out), f, indent=1, sort_keys=True, allow_nan=False, ensure_ascii=False)

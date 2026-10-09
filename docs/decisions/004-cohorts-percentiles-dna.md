@@ -1617,3 +1617,41 @@ Adds to §13.1 and §13.2; plan 005 "M4g4 plan" holds the full spec, the power t
   - **Process:** an independent reference re-implements (a)–(d) on the same streams and rewrites `spikes/expected_m4g4_flips.json` after the check, before any registry code; the C4 compare-pair report may change if a DM-CM cell reverts.
   - **Outcome (stop 1 approved by the user, 2026-10-08): all 7 cells fail at least one check and stay raw (β = 0) in M4g4d.** (a) P(same) 0.08–0.19 for every cell; (b) 5 cells agree in ≤ 2 of 4 (DM-CM clearances and dribbled_past, AM-Winger dribbled_past and tackles_attempted, ST fouls_committed), independently of (a)'s bias; (c) fails for DM-CM dribbled_past (gap p 0.110) and AM-Winger dribbled_past (gap p 0.091); (d) fails for AM-Winger clearances (β̂ 1.10 with teams ≥ 10 → no candidate passes). AM-Winger pressures fails on (a) alone. The reference reproduces every statistic within 1e-9 and rewrote `spikes/expected_m4g4_flips.json`: `vector_adjusted_columns` empty in all groups, a `trust_check` block, Defending statuses unchanged, C4 "not tested".
   - **Consequence for the M4 sign-off list:** "accept adjustments with |β̂| > 1?" and "accept the 7 adjusted cells …?" are resolved by this check (no adjusted cell remains); the log-OLS vs Poisson fit question stays for a later ADR, for when a season with more data re-runs M4g4c.
+- **M4g4d outcome (2026-10-09; plan 005 M4g4d): the D5 statuses, the possession records and measurements schema 3. No vector column changes.**
+  - **Measurements `schema_version` 3:** a `possession` block holding numbers only:
+    - per Defending DNA cell, the candidates' criterion values, β̂ (all 4 and leave-one-league-out), its CI and the engine's selection;
+    - the 7 trust records;
+    - the three adjusted `ball_recoveries_p90` mover runs;
+    - the engines' rule copies.
+  - **Single writer (user, M4g4d plan):** `spikes/m4_decision_measurements.py --write-json` embeds the M4g4c / M4g4c2 engine outputs (`spikes/m4g4d_possession_block.py`); it does not recompute them. It fails unless:
+    - their β = 0 values (ρ, `r_full`, D9 league means) equal the values the same run writes;
+    - the β = 0 mover entry equals the movers block's;
+    - the three files come from one run.
+    The input sha256s are recorded. Every other section is byte-identical, including the M4g3b `movers` block: the adjusted runs live under `possession.movers`, not in `movers`, so that block cannot change.
+  - **Registry:**
+    - It applies the criteria with new `Rules` fields (config `POSSESSION_CRITERION_RHO_MAX` 0.1, `POSSESSION_SIGN_DEAD_ZONE` 0.05, `POSSESSION_INCONSISTENT_RHO` 0.3, `POSSESSION_GAP_MAX` 10, `TRUST_*` 0.8 / 3 / 0.05 / 10). It re-derives each selection and refuses one the engine did not make.
+    - It refuses engine rule copies that differ from `Rules`, possession cells other than the Defending DNA cells, and a Defending spec direction or family change (the runs were made for the cells as they were).
+    - It refuses any trusted adjusted selection: adjusted vector columns are not implemented, since none exist.
+    - Records: `Derivation.possession`, `candidate_movers` (β = 0 reuses M4g3b; the three adjusted runs are used for no restore) and `defending_status(group)` (D5 precedence; "underpowered at n" is a note). `MoverVerdict` gains `s2_rms_a` (D7).
+  - **DNA:** `dna.withheld_for` takes Defending's status from the registry (no longer from `config.DNA_WITHHELD_DIMENSIONS`; `pending_possession_adjustment` is retired). A group whose status becomes `ok` is scored with no other change.
+  - **Outcome (2015/16, equal to `spikes/expected_m4g4_flips.json`):**
+    - CB, FB-WB, AM-Winger and ST are `possession_criteria_failed`;
+    - DM-CM is `mover_stability_inconclusive`, underpowered at 24;
+    - all 34 cells are applied raw.
+  - **STOP rule (`spikes/m4g4_before_after.py`) passed:**
+    - 0 changes to any cell, list or M4g3b mover field;
+    - statuses, selections, trust outcomes, mover verdicts and rules as in the expected file;
+    - config thresholds checked through `ast`;
+    - `REGISTRY_VERSION` 463d1a4c31ae… → 91c24b62e53c….
+  - **Rebuild:**
+    - percentiles and `player_dna.parquet` changed in their stamps only;
+    - dimensions changed only in the Defending `score_status` of all 1,233 rows;
+    - both reference checks pass;
+    - compare pairs identical (Busquets–Kanté 0.1431, #107 / #140; Carrick–Busquets 0.1134, #47 / #42; C4 "not tested");
+    - the M4f3 checks and teammate count were not re-run (no vector column changed, D4).
+  - **Display:**
+    - a D5 status reads "withheld (<reason>)", with "; underpowered" when the registry notes it;
+    - "withheld until M4g" stays for Passing;
+    - CB, FB-WB, AM-Winger and ST: "not shown to be free of team-possession effects" (tag "not shown to be possession-free");
+    - DM-CM: "player-vs-team test on club movers inconclusive; underpowered" (tag "mover test inconclusive");
+    - golden pages changed in this text and the version string only.

@@ -1516,6 +1516,25 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
 - **Outcome (stop 1 approved, 2026-10-08): all 7 cells stay raw (β = 0) in M4g4d** (`docs/reviews/m4g4c-possession.md`, M4g4c2 section; ADR 004 §13.8). AM-Winger pressures fails on (a) alone; 5 cells fail (b) independently of (a)'s bias. Expected file rewritten by the reference: no vector column adjusted; Defending statuses unchanged; C4 "not tested". M4g4d's write reduces to the D5 statuses, per-cell `possession_adjustment` records (candidate, criteria, trust check) and measurements `schema_version` 3.
 - **`/finish-chunk`:** stats-reviewer (output only) CONCERNS, documentation only, fixed in the one round (Ligue 1 statement corrected; (d) excluded-team counts recorded, 0 for two of three cells; "n/a" for a check that does not apply in the expected file; (c) wording; "fails (a)" = not shown stable). Code-reviewer PASS (should-fix items done: direct `c3_pass` indexing, idempotent expected-file note, an engine-vs-reference permutation test, non-vacuous selection tests); fix delta PASS. Nothing left for the backlog.
 
+### M4g4d — Registry statuses, possession records, measurements schema 3 (plan approved by the user, 2026-10-09)
+- **Scope after M4g4c2:** the D5 Defending statuses, per-cell `possession_adjustment` records, measurements `schema_version` 3, and the gated M4g4b backlog (#1 code, #2, #3, #5) as step 0. No vector column changes. Standing approval; stops only on a STOP-rule failure, an unexpected change, or the commit proposal.
+- **User decision (plan):** the single writer embeds the M4g4c / M4g4c2 engine outputs, with pins, instead of recomputing them.
+- **Step 0 (backlog gate):** `_require_timelines` raises for a lineup player without a timeline (no skips); `_lineup_pass_team` is the one team rule of both pass credits; tests for the outside-the-lineups branches and the mismatch dependency; merged `usefixtures`. `build_player_match --force` → both parquets and all 5 parts byte-identical.
+- **Outcome:** ADR 004 §13.8 "M4g4d outcome".
+  - Defending: CB, FB-WB, AM-Winger and ST are `possession_criteria_failed`; DM-CM is `mover_stability_inconclusive` (underpowered at 24).
+  - 0 adjusted columns.
+  - The STOP rule passed. `REGISTRY_VERSION` 463d1a4c31ae… → 91c24b62e53c….
+  - Dimensions changed in the Defending `score_status` only; vectors and compare pairs are identical.
+- **Deviation from the plan text:** the adjusted mover runs are stored under `possession.movers`, not `movers.candidates`, so the M4g3b `movers` block stays byte-identical.
+- **`/finish-chunk`:** fast 2,168 and integration 137 pass. qa-tester PASS (1 snapshot test added). stats-reviewer PASS, output only (method reviewed 2026-10-08; notes N1–N3 recorded on the M4 sign-off list and in plan 006 W4). code-reviewer PASS with 6 should-fix items, all applied in the one fix round:
+  - `s2_rms_a` is required on a testable mover entry, and a below-model-range PASS without it raises;
+  - possession records are read through `_at`, which names the cell and the missing key;
+  - a second directional Defending member without candidate mover runs is refused;
+  - `withheld_for` with a custom table needs an explicit derivation;
+  - `_players_for_bounds` documents its `_require_timelines` precondition;
+  - a test that a restored member beats a withheld one.
+  The fix delta passed review; fast 2,176 pass; `REGISTRY_VERSION` unchanged.
+
 ### M4g5 — xPass (spike, then pipeline)
 - **Passes:**
   - open play only (`pass.type.name` ∉ `RESTART_TYPES`), periods 1–4;
@@ -1592,6 +1611,10 @@ No status effect: no `registry_status`, note, reason or `score_status` depends o
   - Effective metrics fall by about 3 in CB, FB-WB and ST, and the neighbours depend more on the weighting (FB-WB rows with ≥ 7 of 10 shared: 59% → 37%).
   - ST Goal threat becomes shot volume only (Kane 90 vs Vardy 68), from the same cause.
 - **Options:** accept it, cap a single-member family's weight, or merge families.
+- **On the M4 sign-off list (stats-reviewer, M4g4d output review; user 2026-10-09): N1–N3.** Display rules in plan 006 W4.
+  - **N1:** "rises with own possession" and "|β̂| > 1" are point-estimate flags. Only CB `ball_recoveries_p90` has a β̂ CI that excludes 0 (−0.71 [−1.00, −0.45]); five other β̂ < 0 cells straddle 0. "|β̂| > 1" is also set on cells that selected nothing (AM-Winger `interceptions_p90` 1.21) or did not select β̂ (AM-Winger `tackles_attempted_p90` 1.07 [0.45, 1.72]). Any display shows the CI next to the flag.
+  - **N2:** AM-Winger `possession_criteria_failed` rests on near misses (β = 0 |ρ| 0.127 / 0.141 against 0.1; β̂ gap 10.92 against 10), against criterion (2)'s ~57% null failure rate. The wording stays "not shown to be free of team-possession effects", never "possession-dependent". CB is the only group with clear evidence (β = 0 ρ +0.25 / +0.28, gaps 15–22).
+  - **N3:** the DM-CM restore is effectively unreachable in 2015/16 (power at f = 0 is 0.639 at n = 24; requiring all six streams costs 3–4 more points). `mover_stability_inconclusive` is the expected state until a second season adds movers, not a negative finding about DM-CM defending.
 - **Also on the M4 sign-off list:** the 8 majority-admitted allow-listed cells (M4g4 decides nothing for them; M4g4 plan), and any FAIL on a current DNA metric (§13.7).
 - **Resolved by M4g4c2 (all 7 adjusted cells stay raw, 2026-10-08), kept for the record — on the M4 sign-off list (user, 2026-10-08, M4g4c stop 1): "accept adjustments with |β̂| > 1?"** AM-Winger `clearances_p90` (β̂ 2.23, bootstrap CI 0.69–3.66) and `dribbled_past_p90` (β̂ 1.34) are selected with |β̂| > 1 (ADR 004 §13.8). Sensitivity (stats-reviewer): the 2.23 rests on three AM-Winger team groups with 3, 5 and 9 clearances; without teams below 10 / 20 group clearances it is 1.10 / 1.08. The pre-registered fit is kept; a group-count gate in the fit is decided here or in a later ADR.
 - **Resolved by M4g4c2 (all 7 stay raw), kept for the record — on the M4 sign-off list (user, 2026-10-08, M4g4c `/finish-chunk`): "accept the 7 adjusted cells given criterion (2)'s ~50% null failure rate and their large per-player moves?"** Evidence: the null calibration (`spikes/m4g4c_null_calibration.py`; criterion (2) fails in 27–83% of no-effect shuffles, mean 57%), 5 of 7 passing near a bar, and raw → adjusted percentile moves (median 4–7.5 points, 90th percentile 13–20) in `docs/reviews/m4g4c-possession.md`.
@@ -1652,7 +1675,7 @@ The stats-reviewer signs it off; any failure goes back to its decision.
   4. `spikes/m4g3_movers.py`: move the Koné illustration out of `compute()` into `main()` (a report-only check must not block the measurement writer).
   5. `spikes/m4g3_movers.py`: fail on a null count column instead of letting NaN drop a baseline candidate silently.
   6. `spikes/m4g3_movers_reference.py` `power0` (and check `m4g3_power.low_power`): define the R_m ≤ 0 case (power 0) instead of a math domain error.
-- **M4g4b leftovers — GATE: before M4g4d writes any adjusted column to the registry or the vector** (one fix round done; code-reviewer, qa-tester and stats-reviewer, M4g4b; user rule 2026-10-08):
+- ~~**M4g4b leftovers — GATE: before M4g4d writes any adjusted column to the registry or the vector**~~ **#1–#3 and #5 done in M4g4d step 0 (2026-10-09).** Kept for the record: (one fix round done; code-reviewer, qa-tester and stats-reviewer, M4g4b; user rule 2026-10-08):
   1. `build_player_match`: `opponent_open_play_pass_credits` and `team_action_credits` skip a lineup player with no timeline (`pid in timelines`), as `team_open_play_pass_credits` already did. Confirm that every lineup player has a timeline; if one can be missing, report it rather than skip it. **Confirmation done in M4g4c** (by construction: the lineup loop assigns every player's timeline; 0 duplicate IDs); the report-not-skip change remains.
   2. `opponent_open_play_pass_credits` skips a pass whose `team.id` differs from the passer's lineup team and relies on `team_open_play_pass_credits` to report it and fail the build. Make that dependency explicit (one shared check, or a test that fails if the reporting moves).
   3. The two `continue` branches for an actor or passer outside the lineups (dropped events) are not covered by a test.

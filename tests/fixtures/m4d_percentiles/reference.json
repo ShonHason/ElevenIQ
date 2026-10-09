@@ -1,6 +1,6 @@
 {
  "generated_by": "spikes/m4d_percentiles_reference.py",
- "measurements_sha256": "0d4035cf8b3faf2ba24c5d7b6dc132089ea4398bd9d72c8a4bf38d45918caf49",
+ "measurements_sha256": "312109478808dd6a89c8befcf53715282926e8e2be52d308fbdac55c93da9a4b",
  "min_cohort_size": 30,
  "rows": [
   {

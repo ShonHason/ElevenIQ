@@ -28,3 +28,16 @@ def test_main_writes_strict_json(tmp_path):
         raise ValueError(x)
     data = json.loads(out.read_text(), parse_constant=_no_nan)
     assert data["source"] == R.REGISTRY.source
+
+
+def test_snapshot_dumps_possession_candidate_movers_and_defending_status():
+    """ADR 004 §13.8 (M4g4d): the STOP-rule comparison reads these three sections, so a
+    section missing from the dump would pass the before/after check silently."""
+    snap = S.snapshot()
+    assert len(snap["possession"]) == len(R.REGISTRY.possession)
+    assert len(snap["candidate_movers"]) == len(R.REGISTRY.candidate_movers)
+    assert set(snap["family_status"]) == set(R.GROUPS)
+    for g in R.GROUPS:
+        assert snap["family_status"][g]["status"] == R.REGISTRY.defending_status(g).status
+    # strict JSON (no NaN / inf) with the new sections included
+    json.dumps(snap, allow_nan=False)

@@ -221,10 +221,33 @@ D9_BOUNDARY_MARGIN_PTS: float = 3.0
 # ADR 004 §13.1, §13.7 (plan 005 M4g3b): the mover rule. A mover verdict is PASS iff the paired
 # bootstrap CI upper bound of f̂ < MOVER_F_THRESHOLD, FAIL iff its lower bound > it, otherwise
 # inconclusive; fewer than MOVER_MIN_N movers is untestable. P(PASS | f = 0) < MOVER_LOW_POWER
-# labels a verdict "underpowered at n". Report only: no status depends on a verdict (M4g3b).
+# labels a verdict "underpowered at n". No registry_status depends on a verdict; since M4g4d the
+# Defending score status does (ADR 004 §13.8 D5).
 MOVER_F_THRESHOLD: float = 0.5
 MOVER_MIN_N: int = 12
 MOVER_LOW_POWER: float = 0.8
+
+# ADR 004 §13.8 (plan 005 M4g4, M4g4d): the possession criteria for the Defending candidates
+# (β = 0 → β̂ → team share → β = 1, the first that passes). Criterion (1): |mean over the pool
+# leagues of the within-league ρ| < POSSESSION_CRITERION_RHO_MAX on both proxies (strict).
+# Sign flip: on a proxy where β = 0's |mean ρ| >= POSSESSION_SIGN_DEAD_ZONE, a candidate whose
+# mean ρ has the other sign and |mean ρ| >= it fails. Report-only flag "inconsistent across
+# leagues": any league |ρ| >= POSSESSION_INCONSISTENT_RHO. Criterion (2): the mean Q5 − Q1
+# local-percentile gap <= POSSESSION_GAP_MAX points on both proxies. Criterion (3): r_full >=
+# DNA_RELIABILITY_MIN.
+POSSESSION_CRITERION_RHO_MAX: float = 0.1
+POSSESSION_SIGN_DEAD_ZONE: float = 0.05
+POSSESSION_INCONSISTENT_RHO: float = 0.3
+POSSESSION_GAP_MAX: float = 10.0
+# M4g4c2 trust check (ADR 004 §13.8): a selection other than β = 0 is applied only if (a) the
+# same candidate is selected in >= TRUST_STABILITY_MIN of the team-bootstrap resamples, (b) in
+# >= TRUST_LOLO_MIN_AGREE of the 4 leave-one-league-out selections, (c) the permutation p <
+# TRUST_P_MAX on each criterion β = 0 failed, and (d, β̂ only) the selection with the β̂ fit
+# excluding teams with Σ count < TRUST_D_MIN_COUNT still selects β̂. Otherwise the cell stays raw.
+TRUST_STABILITY_MIN: float = 0.8
+TRUST_LOLO_MIN_AGREE: int = 3
+TRUST_P_MAX: float = 0.05
+TRUST_D_MIN_COUNT: int = 10
 
 # ADR 004 §12 (user, 2026-10-06): the DNA vector uses one percentile basis, league-local,
 # for every row. 29 of 101 DNA cells have no global percentile (D9) and 51 are within
@@ -234,8 +257,8 @@ DNA_PERCENTILE_BASIS: str = "local"
 DNA_NEIGHBOURS_K: int = 10
 # Dimension scores withheld (null, with the score_status given) per family and group. The
 # metrics stay in the vector, so similarity is unaffected.
-# - Defending, every group (ADR 004 §12.6, user 2026-10-06): until M4g settles the
-#   possession question.
+# - Defending is not here: its status per group is the registry's D5 status (ADR 004 §13.8,
+#   plan 005 M4g4d; registry.Derivation.defending_status, read by dna.withheld_for).
 # - Passing where its only directional DNA member is long_pass_completion_pct (ADR 004
 #   §12.9, user 2026-10-07): that metric reflects team style (§11.5), so a one-metric
 #   Passing score would present a low value as poor individual passing. M4g decides
@@ -244,6 +267,5 @@ DNA_NEIGHBOURS_K: int = 10
 #   tests/test_dna.py::test_passing_withheld_exactly_where_long_pass_completion_is_its_only_
 #   directional_member re-derives these groups from the registry: re-check it if they change.
 DNA_WITHHELD_DIMENSIONS: dict[str, tuple[str, tuple[str, ...]]] = {
-    "Defending": ("pending_possession_adjustment", ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")),
     "Passing": ("pending_mover_stability", ("CB", "FB-WB", "DM-CM", "AM-Winger")),
 }

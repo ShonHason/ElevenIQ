@@ -91,7 +91,10 @@ def test_dist_code_rejects_one_or_more(d):
 
 # ── cell_words ───────────────────────────────────────────────────────────────
 
-POSSESSION = ' <span class="muted">(team-influenced: possession adjustment pending)</span>'
+# ADR 004 §13.8 (M4g4d): DM-CM Defending is mover_stability_inconclusive, the others
+# possession_criteria_failed.
+MOVER = ' <span class="muted">(team-influenced: mover test inconclusive)</span>'
+POSSESSION = ' <span class="muted">(team-influenced: not shown to be possession-free)</span>'
 PASSING = (' <span class="muted">(team-influenced: depends on the team&#x27;s passing '
            'style)</span>')
 
@@ -105,7 +108,7 @@ def test_cell_words_phrase_table_and_indices():
 def test_cell_words_tags_withheld_families_dm_cm():
     got = cmpm.cell_words("DM-CM", [])
     at = {m: i for i, m in enumerate(ref.DNA["DM-CM"])}
-    assert got["tag"][at["interceptions_p90"]] == POSSESSION
+    assert got["tag"][at["interceptions_p90"]] == MOVER
     assert got["def"][at["interceptions_p90"]] is True
     assert got["tag"][at["long_pass_completion_pct"]] == PASSING
     assert got["def"][at["long_pass_completion_pct"]] is False
@@ -160,7 +163,8 @@ def _string_constants(path: Path) -> dict[str, str]:
 
 
 def test_withheld_words_match_the_comparison_page():
-    statuses = _string_constants(ROOT / "src" / "eleveniq" / "analytics" / "dna.py")
+    statuses = {**_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "dna.py"),
+                **_string_constants(ROOT / "src" / "eleveniq" / "analytics" / "registry.py")}
     tree = ast.parse((ROOT / "tools" / "compare_page.py").read_text())
     node = next(n for n in tree.body if isinstance(n, ast.AnnAssign)
                 and isinstance(n.target, ast.Name) and n.target.id == "DIM_STATUS_TEXT")
@@ -171,4 +175,16 @@ def test_withheld_words_match_the_comparison_page():
         page_text[statuses[k.attr]] = v.value
     for status, words in cmpm.WITHHELD_WORDS.items():
         assert page_text[status] == words
-    assert set(cmpm.WITHHELD_WORDS) == {s for s, _ in ref.WITHHELD.values()}
+    assert set(cmpm.WITHHELD_WORDS) == set(page_text) - {"no_directional_metric"}
+    assert {s for groups in ref.WITHHELD.values() for s in groups.values()} <= set(cmpm.TAG_WORDS)
+    assert set(cmpm.TAG_WORDS) == set(cmpm.WITHHELD_WORDS)
+
+
+def test_withheld_text_carries_the_d5_status_and_the_underpowered_note():
+    """ADR 004 §13.8 (M4g4d): DM-CM Defending reads its mover verdict with "; underpowered"
+    (the compare page's wording); CB its possession outcome."""
+    dm = cmpm.withheld_text("DM-CM")
+    assert "Defending (player-vs-team test on club movers inconclusive; underpowered)" in dm
+    assert "Passing (team-influenced; xPass candidate pre-registered)" in dm
+    assert "Defending (not shown to be free of team-possession effects)" in cmpm.withheld_text("CB")
+    assert ref.UNDERPOWERED == {"DM-CM"}

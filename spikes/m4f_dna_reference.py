@@ -22,8 +22,9 @@ Rules (ADR 004 §10.8, §12.1, §12.2, §12.6):
 - Dimension scores, per DNA family of the group: the mean local percentile of the family's
   present directional members (lower_better enters as 100 − p), naming those members in
   metric-name order.
-  Withheld (null, before any other rule): Defending in every group
-  (pending_possession_adjustment, until M4g); Passing in CB, FB-WB, DM-CM and AM-Winger, where
+  Withheld (null, before any other rule): Defending with its D5 status per group (ADR 004
+  §13.8, M4g4d), read from spikes/expected_m4g4_flips.json (written by the independent M4g4c /
+  M4g4c2 references), not from eleveniq; Passing in CB, FB-WB, DM-CM and AM-Winger, where
   its only directional DNA member is long_pass_completion_pct (pending_mover_stability, §12.9).
   A family with no present directional member is null (no_directional_metric).
 - Pair distance (the checks' provisional distance; M5 picks the product metric): weighted
@@ -67,11 +68,21 @@ KEY = m4d.KEY
 DNA_PERCENTILE_BASIS = "local"       # ADR 004 §12.1
 MAD_SCALE = 1.4826                   # ADR 004 §12.6
 IQR_SCALE = 1.349
-# §12.6, §12.9: family -> (score_status, groups) whose dimension score is withheld.
-WITHHELD = {
-    "Defending": ("pending_possession_adjustment", ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")),
-    "Passing": ("pending_mover_stability", ("CB", "FB-WB", "DM-CM", "AM-Winger")),
-}
+EXPECTED_M4G4 = ROOT / "spikes" / "expected_m4g4_flips.json"
+
+
+def _withheld() -> dict[str, dict[str, str]]:
+    """Family -> {group: score_status} whose dimension score is withheld: Defending's D5 status
+    (§13.8; "ok" restores it) from the M4g4 expected file, Passing's pending status (§12.9)."""
+    d5 = json.loads(EXPECTED_M4G4.read_text())["defending_score_status"]
+    return {"Defending": {g: st for g, st in d5.items() if st != "ok"},
+            "Passing": {g: "pending_mover_stability" for g in ("CB", "FB-WB", "DM-CM", "AM-Winger")}}
+
+
+WITHHELD: dict[str, dict[str, str]] = _withheld()
+# Groups whose Defending mover verdict is "underpowered at n" (a note on the status, D5).
+UNDERPOWERED: frozenset[str] = frozenset(
+    g for g, d in json.loads(EXPECTED_M4G4.read_text())["status_detail"].items() if d["underpowered"])
 
 H, L, S = "higher_better", "lower_better", "style"
 # ADR 004 §10.6 / §10.7 after §12.3 and §13.2 (M4g2: dribbled_past is style): metric ->
@@ -237,8 +248,8 @@ def family_members(group: str, present: set[str]) -> dict[str, list[str]]:
 def dimensions(group: str, cells: dict[str, dict]) -> dict[str, dict]:
     out = {}
     for f in sorted({SPEC[m][0] for m in DNA[group]}):
-        if f in WITHHELD and group in WITHHELD[f][1]:
-            out[f] = {"score": None, "score_status": WITHHELD[f][0], "members": []}
+        if group in WITHHELD.get(f, {}):
+            out[f] = {"score": None, "score_status": WITHHELD[f][group], "members": []}
             continue
         # DNA[group] is sorted, so `members` is in metric-name order (the output contract).
         used = [m for m in DNA[group] if SPEC[m][0] == f and SPEC[m][1] != S
@@ -290,7 +301,7 @@ def season_checks(dna: Dna) -> dict:
         total = sum(c["weight"] for c in v["cells"].values() if c["weight"] is not None)
         if abs(total - 1.0) > W_TOL:
             fail(f"row weights of {k} sum to {total!r}")
-        for f, (_, groups) in WITHHELD.items():
+        for f, groups in WITHHELD.items():
             if v["group"] in groups and v["dimensions"][f]["score"] is not None:
                 fail(f"{f} score on {k}")
     # Symmetry and pair weights over every same-group pair.
@@ -327,7 +338,7 @@ def assert_claims(dna: Dna, picked: dict[str, dict], counts: dict) -> None:
             fail(f"{name} should be complete")
     bus = v("Sergio Busquets i Burgos")
     if bus["cells"]["interceptions_p90"]["pct_local"] is None or \
-            bus["dimensions"]["Defending"]["score_status"] != "pending_possession_adjustment":
+            bus["dimensions"]["Defending"]["score_status"] != "mover_stability_inconclusive":
         fail("Busquets: interceptions should stay in the vector with Defending withheld")
     isco = picked["Francisco Román Alarcón Suárez"]
     if counts["max_abs_z"]["key"] != list(m4d.key_of(isco)) or \
