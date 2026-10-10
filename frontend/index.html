@@ -9,6 +9,17 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Opened straight from disk (file://), the browser blocks the module and the data files. -->
+    <script>
+      if (location.protocol === "file:") {
+        document.getElementById("root").innerHTML =
+          '<main style="font:15px/1.5 system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px">' +
+          '<h1 style="font-size:20px">ElevenIQ needs a local web server</h1>' +
+          "<p>This page was opened as a file, so the browser blocks the data it loads. " +
+          "From the frontend folder run <code>npm run local</code> and open the URL it prints " +
+          "(usually http://localhost:5173/).</p></main>";
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -4,8 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "data:fixture": "node scripts/sync-data.mjs ../tests/fixtures/web",
-    "data:export": "node scripts/sync-data.mjs ../export/v1",
+    "local": "node scripts/local.mjs",
     "types": "node scripts/gen-types.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
