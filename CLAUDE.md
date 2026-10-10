@@ -107,40 +107,47 @@ future-potential prediction. Do not add these without explicit re-scoping.
   tests/ changes) may be committed directly after explicit user approval, without
   /finish-chunk. Everything else still goes through /finish-chunk.
 - **/finish-chunk is tiered:** see "Speed rules" below (the one place the reviewer tiering
-  lives; .claude/skills/finish-chunk/SKILL.md implements it).
+  lives; .claude/skills/finish-chunk/SKILL.md implements it). In simple mode, commits are batched
+  per W step (see Speed rules).
 - **Claude never pushes.** Claude commits (and merges locally) only after my explicit
   approval; I push manually. This covers every branch, tags and force pushes.
   Remote: `origin` = github.com/ShonHason/ElevenIQ (private).
 
-### Speed rules (from plan 006 on; user, 2026-10-09)
-- **Pre-register once.** A milestone's decisions are pre-registered in one document at the
-  start of the milestone. The chunks then run under standing approval.
-- **Standing approval** covers moving from chunk to chunk within the approved plan. Stop only
-  for:
-  - a STOP-rule failure;
-  - an unexpected change;
-  - a decision that is not in the plan;
-  - a commit proposal. Commit approval stays typed by me; I push.
-- **Reviewers** (`/finish-chunk`, .claude/skills/finish-chunk/SKILL.md):
-  - code-reviewer: every chunk, scoped to the chunk's git diff only;
-  - qa-tester: only when src/ or tools/ logic changes;
-  - stats-reviewer: only when metrics, cohorts, the registry or statistical claims change,
-    and at milestone sign-off. UI-only chunks skip it. If the method was reviewed before the
-    code, the end-of-chunk run reviews the produced output only;
-  - after review fixes: code-reviewer on the fix delta only, no full re-run;
-  - fast tests, coverage and (for pipeline changes) integration tests run as before;
-  - the report states which agents ran and why each skipped one was skipped.
-- **One fix round per chunk;** leftovers go to the gated backlog.
-- **Reports:** a results table, the decisions needed, and the commit message. No narration.
-- **Web chunks:** Playwright tests on fixtures. I do a visual review from screenshots at the
-  end of each W step, not per chunk.
-- **Every existing hard rule is unchanged:**
+### Speed rules — SIMPLE MODE (web v1 launch; user, 2026-10-10)
+Goal: web v1 live by the end of the week. Scope (plan 006): W2 skeleton and search; player page
+(Profile shape, metric table, neighbours); compare mode (same group; top-6 gaps; per-100
+opponent-possession rate for defensive metrics); Gem Finder (simple); Methodology page; W6
+static deploy. Style maps and movers (W5) move to v1.1. Export only what these pages need; no
+new statistics beyond the defensive rate.
+- **Decide and report:** bug fixes, applying existing rules or recorded decisions, UI and layout
+  choices within docs/DESIGN.md, reviewer findings (one fix round).
+- **Stop and ask only for:**
+  - a change to what the site claims (new statistical text, a new figure, a method change);
+  - contradicting a recorded decision;
+  - a new dependency (beyond those ADR 005 already chose);
+  - the deploy host;
+  - a failing STOP rule.
+- **Reviews:**
+  - code-reviewer per chunk;
+  - Playwright tests on the fixture (tests/fixtures/web/);
+  - no stats-reviewer, reference spikes or pre-registration for UI chunks;
+  - one stats-reviewer pass at the end, on the Methodology page and all user-facing texts.
+- **Commits:** batch them; ask once per W step with the list of commit messages. I approve and I
+  push.
+- **Visual review:** at the end of each W step, screenshot paths (desktop and phone, light and
+  dark).
+- **Reports:** short: what was built, what was decided, anything I must decide.
+- **Hard rules unchanged:**
   - Claude never pushes;
   - data/ is never committed;
   - no scraping;
   - expected values are never changed to make tests pass;
   - the LLM never produces statistics;
   - spikes never import eleveniq.
+
+The earlier tiered /finish-chunk rules (qa-tester on src/ logic, stats-reviewer on metric or
+claim changes) still apply to Python changes in src/ (exporter, analytics); UI chunks follow the
+reviews above.
 
 ---
 

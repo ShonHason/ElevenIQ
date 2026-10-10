@@ -36,10 +36,11 @@ Visual reference: `docs/design/preview.html`: the colour scale, surfaces, a samp
 | `--ink` text | `#0b0b0b` | `#ffffff` |
 | `--ink-2` secondary | `#52514e` | `#c3c2b7` |
 | `--ink-3` captions | `#6e6d69` | `#9a998f` |
-| `--accent` focus, selection, links | `#2a78d6` | `#3987e5` |
+| `--accent` focus, selection, links | `#246cc6` | `#3987e5` |
 | `--caution` reliability icon | `#9a6500` | `#d9a23a` |
 
 - **The accent is never used on a data mark.**
+- **Accent contrast (W2, 2026-10-10):** the W0 light accent `#2a78d6` measured 4.3:1 on `--surface-0`, below the §11 AA rule for link text. It is `#246cc6`: 5.07 / 5.20 / 4.65:1 on surfaces 0 / 1 / 2. The dark accent is 5.07 / 4.79:1 on surfaces 0 / 1.
 - **Theme:** follows the system, with a manual light / dark toggle kept in `localStorage`. Dark values are declared under `@media (prefers-color-scheme: dark)` and under `[data-theme="dark"]`. The toggle wins both ways.
 
 ### 3.2 Type
