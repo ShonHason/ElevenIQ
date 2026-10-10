@@ -3,10 +3,14 @@
 import { useEffect, useRef } from "react";
 import { getGroup, getLabels, getPlayer } from "../api";
 import { Chip } from "../components/Chip";
+import { StandOut } from "../components/StandOut";
+import { NotePopover } from "../components/NotePopover";
 import { MetricTable } from "../components/MetricTable";
 import { Neighbours } from "../components/Neighbours";
 import { ProfileShape } from "../components/ProfileShape";
 import { UI } from "../lib/ui-text";
+import { SearchBox } from "../components/SearchBox";
+import { href } from "../lib/router";
 import { useData } from "../lib/useData";
 
 export function Player({ playerKey }: { playerKey: string }) {
@@ -27,7 +31,6 @@ export function Player({ playerKey }: { playerKey: string }) {
   const { doc, group, labels } = data;
   const i = doc.identity;
   const w = labels.words;
-  const defendingNote = doc.dna?.dimensions.find((d) => d.defending_note)?.defending_note;
   const noProfile = !doc.dna ? (i.group === "GK" ? labels.statuses.goalkeeper
     : !i.meets_gate ? labels.statuses.below_gate : labels.statuses.not_in_pool) : null;
 
@@ -41,29 +44,41 @@ export function Player({ playerKey }: { playerKey: string }) {
           {i.role_text && <span>{i.role_text}</span>}
           {i.near_gate && <Chip kind="caution">{w.near_gate_chip}</Chip>}
         </div>
+        <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-2 text-[13px]" aria-label={UI.season}>
+          {i.summary.map((s) => (
+            <li key={s.key} data-summary={s.key}><span className="num font-semibold text-ink">{s.text}</span> <span className="text-ink-3">{s.label}</span></li>
+          ))}
+        </ul>
       </header>
 
       {noProfile ? (
         <p className="mt-6 text-ink-2">{noProfile}</p>
       ) : (
-        <div className="mt-6 grid gap-8 lg:grid-cols-[380px_1fr]">
-          <div>
-            <ProfileShape series={[{ key: i.key, name: i.display_name, dims: doc.dna!.dimensions }]}
-                          labels={{ title: w.profile_shape_title, note: w.profile_shape_note,
-                                    withheld: w.chip_withheld, average: w.around_average }} />
-            <ul className="mt-3 space-y-1 text-[12px] leading-4">
-              {doc.dna!.dimensions.filter((d) => d.withheld_short).map((d) => (
-                <li key={d.family} className="flex flex-wrap items-center gap-2">
-                  <Chip kind="withheld">{w.chip_withheld}</Chip>
-                  <span className="font-medium">{d.label}</span>
-                  <span className="text-ink-3">{d.withheld_full}</span>
-                </li>
-              ))}
-            </ul>
-            {defendingNote && <p className="mt-2 text-[12px] leading-4 text-ink-3">{defendingNote}</p>}
+        <>
+          <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div>
+              <ProfileShape series={[{ key: i.key, name: i.display_name, dims: doc.dna!.dimensions }]}
+                            labels={{ title: w.profile_shape_title, note: w.profile_shape_note,
+                                      withheld: w.chip_withheld, average: w.around_average }} />
+              <ul className="mt-3 space-y-1.5 text-[12px] leading-4">
+                {doc.dna!.dimensions.filter((d) => d.withheld_short).map((d) => (
+                  <li key={d.family} className="flex flex-wrap items-center gap-2">
+                    <Chip kind="withheld">{w.chip_withheld}</Chip>
+                    <span className="font-medium">{d.label}</span>
+                    <NotePopover short={d.withheld_short!}
+                                 full={[d.withheld_full, d.defending_note].filter(Boolean).join(" ")} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <StandOut doc={doc} group={group} labels={labels} />
           </div>
-          {doc.neighbours && <Neighbours nb={doc.neighbours} from={i.key} labels={labels} />}
-        </div>
+          <div className="mt-8 max-w-md">
+            <SearchBox group={i.group} exclude={i.key} label={UI.compareWith}
+                       onPick={(e) => { window.location.hash = href.compare(i.key, e.key); }} />
+          </div>
+          {doc.neighbours && <div className="mt-10"><Neighbours nb={doc.neighbours} from={i.key} labels={labels} /></div>}
+        </>
       )}
 
       <section className="mt-10">

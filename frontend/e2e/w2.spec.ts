@@ -84,3 +84,10 @@ test("route change focuses the page heading", async ({ page }) => {
   await page.getByRole("combobox").press("Enter");
   await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
 });
+
+test("opened as a file (file://), the page explains how to run it", async ({ page }) => {
+  const file = new URL("../index.html", import.meta.url).href;            // frontend/index.html
+  await page.goto(file);
+  await expect(page.getByRole("heading", { name: "ElevenIQ needs a local web server" })).toBeVisible();
+  await expect(page.getByText("npm run local")).toBeVisible();
+});

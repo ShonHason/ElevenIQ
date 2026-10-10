@@ -34,7 +34,6 @@ export function Neighbours({ nb, from, labels }: { nb: Nb; from: string; labels:
               </div>
             </div>
             <div className="col-start-2 mt-1 flex items-center gap-3 md:col-start-auto md:mt-0 md:flex-col md:items-end">
-              <span className="num text-ink" data-src={`players/${from}.json#neighbours.items.${i}.distance_text`}>{n.distance_text}</span>
               <a href={href.compare(from, n.key)} className="text-[12px]">{UI.compare}</a>
             </div>
           </li>

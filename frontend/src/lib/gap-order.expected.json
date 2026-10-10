@@ -1,0 +1,1066 @@
+{
+ "13107-1041-11-27|27526-1041-11-27": [
+  "aerials_won_p90",
+  "switches_p90",
+  "goals_p90",
+  "clearances_p90",
+  "miscontrols_p90",
+  "ball_recoveries_p90"
+ ],
+ "13107-1041-11-27|2990-134-7-27": [
+  "miscontrols_p90",
+  "dispossessed_p90",
+  "switches_p90",
+  "goals_p90",
+  "fouls_won_p90",
+  "np_shots_p90"
+ ],
+ "13107-1041-11-27|3057-26-2-27": [
+  "tackles_attempted_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "pressures_p90",
+  "tackles_won_p90",
+  "aerials_lost_p90"
+ ],
+ "13107-1041-11-27|3057-37-2-27": [
+  "pressures_p90",
+  "blocks_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "aerials_won_p90",
+  "switches_p90"
+ ],
+ "13107-1041-11-27|31174-130-7-27": [
+  "box_entries_carry_p90",
+  "xg_assisted_direct_p90",
+  "miscontrols_p90",
+  "team_pass_share",
+  "dispossessed_p90",
+  "aerials_won_p90"
+ ],
+ "13107-1041-11-27|3462-26-2-27": [
+  "miscontrols_p90",
+  "fouls_committed_p90",
+  "interceptions_p90",
+  "tackles_attempted_p90",
+  "fouls_won_p90",
+  "tackles_won_p90"
+ ],
+ "13107-1041-11-27|3464-31-2-27": [
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "clearances_p90",
+  "ball_recoveries_p90",
+  "aerial_win_pct",
+  "pressures_p90"
+ ],
+ "13107-1041-11-27|3961-22-2-27": [
+  "interceptions_p90",
+  "miscontrols_p90",
+  "ball_recoveries_p90",
+  "fouls_committed_p90",
+  "box_entries_carry_p90",
+  "xg_assisted_direct_p90"
+ ],
+ "13107-1041-11-27|46801-156-7-27": [
+  "goals_p90",
+  "ball_recoveries_p90",
+  "interceptions_p90",
+  "aerials_lost_p90",
+  "aerials_won_p90",
+  "fouls_committed_p90"
+ ],
+ "13107-1041-11-27|4751-39-2-27": [
+  "pressures_p90",
+  "fouls_committed_p90",
+  "tackles_won_p90",
+  "tackles_attempted_p90",
+  "switches_p90",
+  "aerials_lost_p90"
+ ],
+ "13107-1041-11-27|4926-220-11-27": [
+  "tackles_attempted_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "tackles_won_p90",
+  "xg_p90",
+  "blocks_p90"
+ ],
+ "13107-1041-11-27|5203-217-11-27": [
+  "fouls_committed_p90",
+  "aerials_lost_p90",
+  "switches_p90",
+  "goals_p90",
+  "pressures_p90",
+  "long_passes_attempted_p90"
+ ],
+ "13107-1041-11-27|5512-226-12-27": [
+  "xg_assisted_direct_p90",
+  "goals_p90",
+  "box_entries_pass_p90",
+  "tackles_won_p90",
+  "crosses_attempted_p90",
+  "np_shots_p90"
+ ],
+ "13107-1041-11-27|7049-231-12-27": [
+  "miscontrols_p90",
+  "xg_p90",
+  "np_xg_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "box_entries_carry_p90"
+ ],
+ "13107-1041-11-27|9903-291-12-27": [
+  "miscontrols_p90",
+  "tackles_attempted_p90",
+  "dispossessed_p90",
+  "goals_p90",
+  "fouls_committed_p90",
+  "blocks_p90"
+ ],
+ "13286-165-7-27|13286-41-2-27": [
+  "aerials_lost_p90",
+  "blocks_p90",
+  "goals_p90",
+  "op_xg_assisted_p90",
+  "xg_assisted_p90",
+  "interceptions_p90"
+ ],
+ "13286-165-7-27|3244-29-2-27": [
+  "blocks_p90",
+  "team_pass_share",
+  "dispossessed_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "aerials_won_p90"
+ ],
+ "13286-165-7-27|3813-22-2-27": [
+  "blocks_p90",
+  "box_entries_pass_p90",
+  "final_third_entries_carry_p90",
+  "crosses_attempted_p90",
+  "final_third_entries_pass_p90",
+  "ball_recoveries_p90"
+ ],
+ "13286-41-2-27|3244-29-2-27": [
+  "np_xg_p90",
+  "xg_p90",
+  "aerials_lost_p90",
+  "aerials_won_p90",
+  "interceptions_p90",
+  "clearances_p90"
+ ],
+ "13286-41-2-27|3813-22-2-27": [
+  "box_entries_pass_p90",
+  "interceptions_p90",
+  "op_xg_assisted_p90",
+  "xg_assisted_p90",
+  "ball_recoveries_p90",
+  "assists_p90"
+ ],
+ "19677-220-11-27|3603-30-2-27": [
+  "box_entries_pass_p90",
+  "op_key_passes_p90",
+  "final_third_entries_pass_p90",
+  "key_passes_p90",
+  "passes_attempted_p90",
+  "passes_completed_p90"
+ ],
+ "27526-1041-11-27|2990-134-7-27": [
+  "aerials_won_p90",
+  "fouls_won_p90",
+  "clearances_p90",
+  "aerials_lost_p90",
+  "team_pass_share",
+  "box_entries_pass_p90"
+ ],
+ "27526-1041-11-27|3057-26-2-27": [
+  "np_shots_p90",
+  "shots_p90",
+  "tackles_won_p90",
+  "shots_on_target_p90",
+  "tackles_attempted_p90",
+  "np_shots_on_target_p90"
+ ],
+ "27526-1041-11-27|3057-37-2-27": [
+  "np_shots_on_target_p90",
+  "dispossessed_p90",
+  "np_shots_p90",
+  "shots_on_target_p90",
+  "shots_p90",
+  "long_passes_attempted_p90"
+ ],
+ "27526-1041-11-27|31174-130-7-27": [
+  "switches_p90",
+  "dribbles_completed_p90",
+  "box_entries_carry_p90",
+  "box_entries_pass_p90",
+  "ball_recoveries_p90",
+  "xg_assisted_direct_p90"
+ ],
+ "27526-1041-11-27|3462-26-2-27": [
+  "aerials_won_p90",
+  "clearances_p90",
+  "dribbles_completed_p90",
+  "fouls_won_p90",
+  "aerials_lost_p90",
+  "dribbled_past_p90"
+ ],
+ "27526-1041-11-27|3464-31-2-27": [
+  "tackles_attempted_p90",
+  "goals_p90",
+  "tackles_won_p90",
+  "aerials_won_p90",
+  "miscontrols_p90",
+  "crosses_attempted_p90"
+ ],
+ "27526-1041-11-27|3961-22-2-27": [
+  "switches_p90",
+  "clearances_p90",
+  "dribbles_completed_p90",
+  "box_entries_pass_p90",
+  "blocks_p90",
+  "pressures_p90"
+ ],
+ "27526-1041-11-27|46801-156-7-27": [
+  "clearances_p90",
+  "miscontrols_p90",
+  "switches_p90",
+  "crosses_attempted_p90",
+  "fouls_won_p90",
+  "op_key_passes_p90"
+ ],
+ "27526-1041-11-27|4751-39-2-27": [
+  "ball_recoveries_p90",
+  "op_xg_assisted_p90",
+  "xg_assisted_p90",
+  "dribbled_past_p90",
+  "fouls_committed_p90",
+  "pressures_p90"
+ ],
+ "27526-1041-11-27|4926-220-11-27": [
+  "np_shots_p90",
+  "shots_p90",
+  "tackles_attempted_p90",
+  "goals_p90",
+  "xg_p90",
+  "tackles_won_p90"
+ ],
+ "27526-1041-11-27|5203-217-11-27": [
+  "ball_recoveries_p90",
+  "miscontrols_p90",
+  "clearances_p90",
+  "dispossessed_p90",
+  "interceptions_p90",
+  "fouls_committed_p90"
+ ],
+ "27526-1041-11-27|5512-226-12-27": [
+  "interceptions_p90",
+  "aerials_won_p90",
+  "box_entries_pass_p90",
+  "dribbles_completed_p90",
+  "miscontrols_p90",
+  "xg_assisted_direct_p90"
+ ],
+ "27526-1041-11-27|7049-231-12-27": [
+  "aerials_won_p90",
+  "clearances_p90",
+  "xg_p90",
+  "np_xg_p90",
+  "goals_p90",
+  "switches_p90"
+ ],
+ "27526-1041-11-27|9903-291-12-27": [
+  "switches_p90",
+  "crosses_attempted_p90",
+  "dribbled_past_p90",
+  "clearances_p90",
+  "tackles_attempted_p90",
+  "fouls_committed_p90"
+ ],
+ "2990-134-7-27|3057-26-2-27": [
+  "aerials_lost_p90",
+  "pressures_p90",
+  "aerials_won_p90",
+  "fouls_won_p90",
+  "blocks_p90",
+  "tackles_attempted_p90"
+ ],
+ "2990-134-7-27|3057-37-2-27": [
+  "fouls_won_p90",
+  "blocks_p90",
+  "aerials_won_p90",
+  "dispossessed_p90",
+  "pressures_p90",
+  "miscontrols_p90"
+ ],
+ "2990-134-7-27|31174-130-7-27": [
+  "team_pass_share",
+  "long_passes_attempted_p90",
+  "switches_p90",
+  "aerials_won_p90",
+  "aerial_win_pct",
+  "xg_assisted_direct_p90"
+ ],
+ "2990-134-7-27|3462-26-2-27": [
+  "dribbled_past_p90",
+  "tackles_attempted_p90",
+  "box_entries_pass_p90",
+  "switches_p90",
+  "dispossessed_p90",
+  "pressures_p90"
+ ],
+ "2990-134-7-27|3464-31-2-27": [
+  "tackles_attempted_p90",
+  "team_pass_share",
+  "miscontrols_p90",
+  "goals_p90",
+  "fouls_won_p90",
+  "clearances_p90"
+ ],
+ "2990-134-7-27|3961-22-2-27": [
+  "switches_p90",
+  "fouls_won_p90",
+  "long_passes_attempted_p90",
+  "aerials_won_p90",
+  "aerial_win_pct",
+  "ball_recoveries_p90"
+ ],
+ "2990-134-7-27|46801-156-7-27": [
+  "miscontrols_p90",
+  "aerials_won_p90",
+  "box_entries_carry_p90",
+  "aerials_lost_p90",
+  "switches_p90",
+  "team_pass_share"
+ ],
+ "2990-134-7-27|4751-39-2-27": [
+  "pressures_p90",
+  "miscontrols_p90",
+  "dribbles_attempted_p90",
+  "aerials_lost_p90",
+  "dribbled_past_p90",
+  "blocks_p90"
+ ],
+ "2990-134-7-27|4926-220-11-27": [
+  "aerials_won_p90",
+  "blocks_p90",
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "goals_p90",
+  "team_pass_share"
+ ],
+ "2990-134-7-27|5203-217-11-27": [
+  "miscontrols_p90",
+  "dispossessed_p90",
+  "interceptions_p90",
+  "aerials_lost_p90",
+  "final_third_entries_carry_p90",
+  "team_pass_share"
+ ],
+ "2990-134-7-27|5512-226-12-27": [
+  "interceptions_p90",
+  "fouls_won_p90",
+  "miscontrols_p90",
+  "crosses_attempted_p90",
+  "xg_assisted_direct_p90",
+  "tackles_won_p90"
+ ],
+ "2990-134-7-27|7049-231-12-27": [
+  "team_pass_share",
+  "fouls_won_p90",
+  "switches_p90",
+  "goals_p90",
+  "op_assists_p90",
+  "assists_p90"
+ ],
+ "2990-134-7-27|9903-291-12-27": [
+  "switches_p90",
+  "dribbled_past_p90",
+  "aerials_won_p90",
+  "blocks_p90",
+  "tackles_attempted_p90",
+  "np_shots_on_target_p90"
+ ],
+ "3057-26-2-27|3057-37-2-27": [
+  "interceptions_p90",
+  "dribbled_past_p90",
+  "goals_p90",
+  "final_third_entries_carry_p90",
+  "aerials_lost_p90",
+  "tackles_won_p90"
+ ],
+ "3057-26-2-27|31174-130-7-27": [
+  "long_passes_attempted_p90",
+  "pressures_p90",
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "aerials_lost_p90",
+  "switches_p90"
+ ],
+ "3057-26-2-27|3462-26-2-27": [
+  "aerials_lost_p90",
+  "aerials_won_p90",
+  "fouls_won_p90",
+  "clearances_p90",
+  "blocks_p90",
+  "interceptions_p90"
+ ],
+ "3057-26-2-27|3464-31-2-27": [
+  "aerials_lost_p90",
+  "blocks_p90",
+  "long_passes_attempted_p90",
+  "dribbled_past_p90",
+  "np_shots_p90",
+  "shots_p90"
+ ],
+ "3057-26-2-27|3961-22-2-27": [
+  "pressures_p90",
+  "tackles_attempted_p90",
+  "long_passes_attempted_p90",
+  "blocks_p90",
+  "tackles_won_p90",
+  "switches_p90"
+ ],
+ "3057-26-2-27|46801-156-7-27": [
+  "pressures_p90",
+  "blocks_p90",
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "np_shots_p90",
+  "shots_p90"
+ ],
+ "3057-26-2-27|4751-39-2-27": [
+  "op_xg_assisted_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "xg_assisted_p90",
+  "dribbles_attempted_p90",
+  "dribbles_completed_p90"
+ ],
+ "3057-26-2-27|4926-220-11-27": [
+  "long_passes_attempted_p90",
+  "fouls_won_p90",
+  "miscontrols_p90",
+  "dispossessed_p90",
+  "team_pass_share",
+  "switches_p90"
+ ],
+ "3057-26-2-27|5203-217-11-27": [
+  "np_shots_p90",
+  "shots_p90",
+  "xg_p90",
+  "clearances_p90",
+  "shots_on_target_p90",
+  "tackles_won_p90"
+ ],
+ "3057-26-2-27|5512-226-12-27": [
+  "pressures_p90",
+  "dribbled_past_p90",
+  "aerials_won_p90",
+  "aerials_lost_p90",
+  "xg_p90",
+  "fouls_committed_p90"
+ ],
+ "3057-26-2-27|7049-231-12-27": [
+  "aerials_lost_p90",
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "dribbled_past_p90",
+  "switches_p90",
+  "miscontrols_p90"
+ ],
+ "3057-26-2-27|9903-291-12-27": [
+  "switches_p90",
+  "shots_on_target_p90",
+  "np_shots_on_target_p90",
+  "crosses_attempted_p90",
+  "long_passes_attempted_p90",
+  "np_shots_p90"
+ ],
+ "3057-37-2-27|31174-130-7-27": [
+  "long_passes_attempted_p90",
+  "pressures_p90",
+  "blocks_p90",
+  "switches_p90",
+  "dispossessed_p90",
+  "tackles_attempted_p90"
+ ],
+ "3057-37-2-27|3462-26-2-27": [
+  "fouls_won_p90",
+  "aerials_won_p90",
+  "blocks_p90",
+  "dispossessed_p90",
+  "pressures_p90",
+  "assists_p90"
+ ],
+ "3057-37-2-27|3464-31-2-27": [
+  "blocks_p90",
+  "long_passes_attempted_p90",
+  "dispossessed_p90",
+  "box_entries_carry_p90",
+  "np_shots_p90",
+  "shots_p90"
+ ],
+ "3057-37-2-27|3961-22-2-27": [
+  "blocks_p90",
+  "pressures_p90",
+  "long_passes_attempted_p90",
+  "switches_p90",
+  "tackles_attempted_p90",
+  "dispossessed_p90"
+ ],
+ "3057-37-2-27|46801-156-7-27": [
+  "blocks_p90",
+  "fouls_won_p90",
+  "pressures_p90",
+  "box_entries_carry_p90",
+  "np_shots_p90",
+  "shots_p90"
+ ],
+ "3057-37-2-27|4751-39-2-27": [
+  "op_xg_assisted_p90",
+  "box_entries_carry_p90",
+  "xg_assisted_direct_p90",
+  "xg_assisted_p90",
+  "np_shots_p90",
+  "shots_p90"
+ ],
+ "3057-37-2-27|4926-220-11-27": [
+  "fouls_won_p90",
+  "long_passes_attempted_p90",
+  "dispossessed_p90",
+  "miscontrols_p90",
+  "goals_p90",
+  "interceptions_p90"
+ ],
+ "3057-37-2-27|5203-217-11-27": [
+  "fouls_won_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "box_entries_carry_p90",
+  "np_shots_on_target_p90",
+  "shots_on_target_p90"
+ ],
+ "3057-37-2-27|5512-226-12-27": [
+  "pressures_p90",
+  "interceptions_p90",
+  "aerials_won_p90",
+  "blocks_p90",
+  "long_passes_attempted_p90",
+  "dispossessed_p90"
+ ],
+ "3057-37-2-27|7049-231-12-27": [
+  "miscontrols_p90",
+  "blocks_p90",
+  "dispossessed_p90",
+  "aerials_won_p90",
+  "switches_p90",
+  "pressures_p90"
+ ],
+ "3057-37-2-27|9903-291-12-27": [
+  "switches_p90",
+  "np_shots_on_target_p90",
+  "shots_on_target_p90",
+  "dispossessed_p90",
+  "long_passes_attempted_p90",
+  "crosses_attempted_p90"
+ ],
+ "31174-130-7-27|3462-26-2-27": [
+  "team_pass_share",
+  "box_entries_carry_p90",
+  "aerials_won_p90",
+  "fouls_committed_p90",
+  "long_passes_attempted_p90",
+  "tackles_attempted_p90"
+ ],
+ "31174-130-7-27|3464-31-2-27": [
+  "tackles_attempted_p90",
+  "box_entries_carry_p90",
+  "tackles_won_p90",
+  "miscontrols_p90",
+  "crosses_attempted_p90",
+  "box_entries_pass_p90"
+ ],
+ "31174-130-7-27|3961-22-2-27": [
+  "team_pass_share",
+  "ball_recoveries_p90",
+  "fouls_committed_p90",
+  "fouls_won_p90",
+  "np_xg_p90",
+  "xg_p90"
+ ],
+ "31174-130-7-27|46801-156-7-27": [
+  "box_entries_carry_p90",
+  "miscontrols_p90",
+  "dribbles_attempted_p90",
+  "dribbles_completed_p90",
+  "crosses_attempted_p90",
+  "ball_recoveries_p90"
+ ],
+ "31174-130-7-27|4751-39-2-27": [
+  "pressures_p90",
+  "long_passes_attempted_p90",
+  "xg_assisted_direct_p90",
+  "op_xg_assisted_p90",
+  "box_entries_carry_p90",
+  "dribbles_attempted_p90"
+ ],
+ "31174-130-7-27|4926-220-11-27": [
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "blocks_p90",
+  "pressures_p90",
+  "aerials_lost_p90",
+  "np_shots_p90"
+ ],
+ "31174-130-7-27|5203-217-11-27": [
+  "box_entries_carry_p90",
+  "miscontrols_p90",
+  "long_passes_attempted_p90",
+  "fouls_committed_p90",
+  "aerial_win_pct",
+  "dispossessed_p90"
+ ],
+ "31174-130-7-27|5512-226-12-27": [
+  "interceptions_p90",
+  "aerial_win_pct",
+  "miscontrols_p90",
+  "tackles_won_p90",
+  "team_pass_share",
+  "box_entries_carry_p90"
+ ],
+ "31174-130-7-27|7049-231-12-27": [
+  "aerial_win_pct",
+  "op_assists_p90",
+  "assists_p90",
+  "fouls_committed_p90",
+  "dribbles_completed_p90",
+  "aerials_won_p90"
+ ],
+ "31174-130-7-27|9903-291-12-27": [
+  "crosses_attempted_p90",
+  "box_entries_carry_p90",
+  "tackles_attempted_p90",
+  "xg_assisted_direct_p90",
+  "fouls_committed_p90",
+  "blocks_p90"
+ ],
+ "3244-29-2-27|3813-22-2-27": [
+  "ball_recoveries_p90",
+  "final_third_entries_carry_p90",
+  "box_entries_pass_p90",
+  "team_pass_share",
+  "switches_p90",
+  "np_xg_p90"
+ ],
+ "3462-26-2-27|3464-31-2-27": [
+  "clearances_p90",
+  "fouls_won_p90",
+  "team_pass_share",
+  "miscontrols_p90",
+  "dribbles_completed_p90",
+  "aerial_win_pct"
+ ],
+ "3462-26-2-27|3961-22-2-27": [
+  "fouls_won_p90",
+  "aerials_won_p90",
+  "tackles_attempted_p90",
+  "aerial_win_pct",
+  "long_passes_attempted_p90",
+  "op_assists_p90"
+ ],
+ "3462-26-2-27|46801-156-7-27": [
+  "miscontrols_p90",
+  "aerials_won_p90",
+  "aerials_lost_p90",
+  "dribbles_attempted_p90",
+  "dribbles_completed_p90",
+  "tackles_attempted_p90"
+ ],
+ "3462-26-2-27|4751-39-2-27": [
+  "dribbles_attempted_p90",
+  "dribbles_completed_p90",
+  "aerials_lost_p90",
+  "op_xg_assisted_p90",
+  "aerials_won_p90",
+  "pressures_p90"
+ ],
+ "3462-26-2-27|4926-220-11-27": [
+  "aerials_won_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "blocks_p90",
+  "clearances_p90",
+  "interceptions_p90"
+ ],
+ "3462-26-2-27|5203-217-11-27": [
+  "interceptions_p90",
+  "miscontrols_p90",
+  "aerials_lost_p90",
+  "final_third_entries_carry_p90",
+  "ball_recoveries_p90",
+  "dispossessed_p90"
+ ],
+ "3462-26-2-27|5512-226-12-27": [
+  "interceptions_p90",
+  "fouls_won_p90",
+  "box_entries_pass_p90",
+  "crosses_attempted_p90",
+  "clearances_p90",
+  "dribbled_past_p90"
+ ],
+ "3462-26-2-27|7049-231-12-27": [
+  "fouls_won_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "team_pass_share",
+  "dribbled_past_p90",
+  "box_entries_carry_p90"
+ ],
+ "3462-26-2-27|9903-291-12-27": [
+  "aerials_won_p90",
+  "interceptions_p90",
+  "crosses_attempted_p90",
+  "np_shots_on_target_p90",
+  "shots_on_target_p90",
+  "op_assists_p90"
+ ],
+ "3464-31-2-27|3961-22-2-27": [
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "clearances_p90",
+  "miscontrols_p90",
+  "box_entries_pass_p90",
+  "crosses_attempted_p90"
+ ],
+ "3464-31-2-27|46801-156-7-27": [
+  "tackles_attempted_p90",
+  "clearances_p90",
+  "goals_p90",
+  "tackles_won_p90",
+  "op_assists_p90",
+  "aerials_lost_p90"
+ ],
+ "3464-31-2-27|4751-39-2-27": [
+  "ball_recoveries_p90",
+  "blocks_p90",
+  "aerials_lost_p90",
+  "op_xg_assisted_p90",
+  "long_passes_attempted_p90",
+  "dribbled_past_p90"
+ ],
+ "3464-31-2-27|4926-220-11-27": [
+  "blocks_p90",
+  "crosses_attempted_p90",
+  "np_shots_p90",
+  "shots_p90",
+  "aerials_lost_p90",
+  "box_entries_carry_p90"
+ ],
+ "3464-31-2-27|5203-217-11-27": [
+  "ball_recoveries_p90",
+  "aerial_win_pct",
+  "clearances_p90",
+  "aerials_lost_p90",
+  "tackles_attempted_p90",
+  "long_passes_attempted_p90"
+ ],
+ "3464-31-2-27|5512-226-12-27": [
+  "crosses_attempted_p90",
+  "interceptions_p90",
+  "aerial_win_pct",
+  "box_entries_pass_p90",
+  "goals_p90",
+  "dribbles_completed_p90"
+ ],
+ "3464-31-2-27|7049-231-12-27": [
+  "miscontrols_p90",
+  "tackles_attempted_p90",
+  "crosses_attempted_p90",
+  "aerial_win_pct",
+  "clearances_p90",
+  "op_assists_p90"
+ ],
+ "3464-31-2-27|9903-291-12-27": [
+  "blocks_p90",
+  "dribbled_past_p90",
+  "miscontrols_p90",
+  "goals_p90",
+  "clearances_p90",
+  "np_shots_on_target_p90"
+ ],
+ "3496-1-2-27|3668-1-2-27": [
+  "passes_attempted_p90",
+  "passes_completed_p90",
+  "final_third_entries_pass_p90",
+  "team_pass_share",
+  "progressive_passes_p90",
+  "restart_xg_assisted_p90"
+ ],
+ "3496-1-2-27|4320-217-11-27": [
+  "box_entries_carry_p90",
+  "shots_p90",
+  "dribbles_attempted_p90",
+  "np_shots_p90",
+  "dribbles_completed_p90",
+  "team_pass_share"
+ ],
+ "3496-1-2-27|5503-217-11-27": [
+  "np_shots_p90",
+  "shots_p90",
+  "dribbles_attempted_p90",
+  "dribbles_completed_p90",
+  "np_shots_on_target_p90",
+  "shots_on_target_p90"
+ ],
+ "3668-1-2-27|4320-217-11-27": [
+  "passes_attempted_p90",
+  "passes_completed_p90",
+  "progressive_carries_p90",
+  "final_third_entries_carry_p90",
+  "key_passes_p90",
+  "op_key_passes_p90"
+ ],
+ "3668-1-2-27|5503-217-11-27": [
+  "final_third_entries_pass_p90",
+  "passes_completed_p90",
+  "passes_attempted_p90",
+  "long_passes_attempted_p90",
+  "progressive_passes_p90",
+  "final_third_entries_carry_p90"
+ ],
+ "3961-22-2-27|46801-156-7-27": [
+  "miscontrols_p90",
+  "box_entries_carry_p90",
+  "fouls_won_p90",
+  "assists_p90",
+  "op_assists_p90",
+  "dribbles_completed_p90"
+ ],
+ "3961-22-2-27|4751-39-2-27": [
+  "pressures_p90",
+  "ball_recoveries_p90",
+  "long_passes_attempted_p90",
+  "blocks_p90",
+  "switches_p90",
+  "dribbles_completed_p90"
+ ],
+ "3961-22-2-27|4926-220-11-27": [
+  "tackles_attempted_p90",
+  "blocks_p90",
+  "tackles_won_p90",
+  "interceptions_p90",
+  "np_xg_p90",
+  "xg_p90"
+ ],
+ "3961-22-2-27|5203-217-11-27": [
+  "interceptions_p90",
+  "ball_recoveries_p90",
+  "long_passes_attempted_p90",
+  "miscontrols_p90",
+  "aerial_win_pct",
+  "switches_p90"
+ ],
+ "3961-22-2-27|5512-226-12-27": [
+  "interceptions_p90",
+  "aerial_win_pct",
+  "tackles_won_p90",
+  "miscontrols_p90",
+  "blocks_p90",
+  "key_passes_p90"
+ ],
+ "3961-22-2-27|7049-231-12-27": [
+  "np_xg_p90",
+  "xg_p90",
+  "aerial_win_pct",
+  "op_assists_p90",
+  "assists_p90",
+  "ball_recoveries_p90"
+ ],
+ "3961-22-2-27|9903-291-12-27": [
+  "interceptions_p90",
+  "tackles_attempted_p90",
+  "blocks_p90",
+  "crosses_attempted_p90",
+  "tackles_won_p90",
+  "box_entries_pass_p90"
+ ],
+ "4320-217-11-27|5503-217-11-27": [
+  "miscontrols_p90",
+  "long_passes_attempted_p90",
+  "fouls_committed_p90",
+  "fouls_won_p90",
+  "final_third_entries_pass_p90",
+  "crosses_attempted_p90"
+ ],
+ "46801-156-7-27|4751-39-2-27": [
+  "ball_recoveries_p90",
+  "pressures_p90",
+  "blocks_p90",
+  "tackles_won_p90",
+  "tackles_attempted_p90",
+  "long_passes_attempted_p90"
+ ],
+ "46801-156-7-27|4926-220-11-27": [
+  "blocks_p90",
+  "box_entries_carry_p90",
+  "tackles_attempted_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "tackles_won_p90"
+ ],
+ "46801-156-7-27|5203-217-11-27": [
+  "ball_recoveries_p90",
+  "interceptions_p90",
+  "dispossessed_p90",
+  "long_passes_attempted_p90",
+  "op_assists_p90",
+  "aerial_win_pct"
+ ],
+ "46801-156-7-27|5512-226-12-27": [
+  "interceptions_p90",
+  "crosses_attempted_p90",
+  "fouls_won_p90",
+  "dribbles_completed_p90",
+  "clearances_p90",
+  "box_entries_pass_p90"
+ ],
+ "46801-156-7-27|7049-231-12-27": [
+  "miscontrols_p90",
+  "box_entries_carry_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "crosses_attempted_p90",
+  "goals_p90"
+ ],
+ "46801-156-7-27|9903-291-12-27": [
+  "miscontrols_p90",
+  "blocks_p90",
+  "tackles_attempted_p90",
+  "interceptions_p90",
+  "assists_p90",
+  "op_assists_p90"
+ ],
+ "4751-39-2-27|4926-220-11-27": [
+  "box_entries_carry_p90",
+  "dribbles_attempted_p90",
+  "op_xg_assisted_p90",
+  "xg_assisted_p90",
+  "dribbles_completed_p90",
+  "xg_assisted_direct_p90"
+ ],
+ "4751-39-2-27|5203-217-11-27": [
+  "op_xg_assisted_p90",
+  "assists_p90",
+  "xg_assisted_p90",
+  "tackles_won_p90",
+  "xg_assisted_direct_p90",
+  "interceptions_p90"
+ ],
+ "4751-39-2-27|5512-226-12-27": [
+  "pressures_p90",
+  "dribbles_completed_p90",
+  "xg_assisted_direct_p90",
+  "dribbles_attempted_p90",
+  "xg_assisted_p90",
+  "op_xg_assisted_p90"
+ ],
+ "4751-39-2-27|7049-231-12-27": [
+  "miscontrols_p90",
+  "dribbled_past_p90",
+  "pressures_p90",
+  "box_entries_carry_p90",
+  "op_xg_assisted_p90",
+  "dribbles_attempted_p90"
+ ],
+ "4751-39-2-27|9903-291-12-27": [
+  "switches_p90",
+  "ball_recoveries_p90",
+  "miscontrols_p90",
+  "long_passes_attempted_p90",
+  "dribbles_attempted_p90",
+  "dribbles_completed_p90"
+ ],
+ "4926-220-11-27|5203-217-11-27": [
+  "np_shots_p90",
+  "np_xg_p90",
+  "shots_p90",
+  "xg_p90",
+  "box_entries_carry_p90",
+  "miscontrols_p90"
+ ],
+ "4926-220-11-27|5512-226-12-27": [
+  "goals_p90",
+  "xg_p90",
+  "np_xg_p90",
+  "aerials_won_p90",
+  "tackles_attempted_p90",
+  "miscontrols_p90"
+ ],
+ "4926-220-11-27|7049-231-12-27": [
+  "tackles_attempted_p90",
+  "tackles_won_p90",
+  "interceptions_p90",
+  "blocks_p90",
+  "aerials_won_p90",
+  "clearances_p90"
+ ],
+ "4926-220-11-27|9903-291-12-27": [
+  "crosses_attempted_p90",
+  "np_shots_on_target_p90",
+  "shots_on_target_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "goals_p90"
+ ],
+ "5203-217-11-27|5512-226-12-27": [
+  "crosses_attempted_p90",
+  "ball_recoveries_p90",
+  "final_third_entries_carry_p90",
+  "dribbles_completed_p90",
+  "fouls_committed_p90",
+  "fouls_won_p90"
+ ],
+ "5203-217-11-27|7049-231-12-27": [
+  "miscontrols_p90",
+  "interceptions_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "box_entries_carry_p90",
+  "dispossessed_p90"
+ ],
+ "5203-217-11-27|9903-291-12-27": [
+  "miscontrols_p90",
+  "dispossessed_p90",
+  "ball_recoveries_p90",
+  "switches_p90",
+  "long_passes_attempted_p90",
+  "tackles_attempted_p90"
+ ],
+ "5512-226-12-27|7049-231-12-27": [
+  "interceptions_p90",
+  "miscontrols_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "goals_p90",
+  "dribbles_completed_p90"
+ ],
+ "5512-226-12-27|9903-291-12-27": [
+  "crosses_attempted_p90",
+  "box_entries_pass_p90",
+  "dribbled_past_p90",
+  "miscontrols_p90",
+  "xg_assisted_direct_p90",
+  "switches_p90"
+ ],
+ "7049-231-12-27|9903-291-12-27": [
+  "crosses_attempted_p90",
+  "dribbled_past_p90",
+  "np_xg_p90",
+  "xg_p90",
+  "interceptions_p90",
+  "np_shots_on_target_p90"
+ ]
+}

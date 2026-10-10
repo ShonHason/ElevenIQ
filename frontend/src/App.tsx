@@ -5,6 +5,7 @@ import { ContractError, getManifest } from "./api";
 import { useRoute } from "./lib/router";
 import { UI } from "./lib/ui-text";
 import { Home } from "./pages/Home";
+import { Compare } from "./pages/Compare";
 import { Player } from "./pages/Player";
 
 export function App() {
@@ -23,6 +24,7 @@ export function App() {
         {contractError ? <p role="alert" className="pt-10 text-ink-2">{contractError}</p>
           : route.name === "home" ? <Home />
           : route.name === "player" ? <Player playerKey={route.key} />
+          : route.name === "compare" ? <Compare a={route.a} b={route.b} />
           : <section className="pt-10"><h1 className="text-[17px] font-semibold">{UI.notFound}</h1>
               <a href="#/" className="mt-2 inline-block">{UI.back}</a></section>}
       </main>

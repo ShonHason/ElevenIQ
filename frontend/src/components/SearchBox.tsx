@@ -6,7 +6,12 @@ import { href } from "../lib/router";
 import { search, type Entry } from "../lib/search";
 import { UI } from "../lib/ui-text";
 
-export function SearchBox({ autoFocus = false, size = "md" }: { autoFocus?: boolean; size?: "md" | "lg" }) {
+// `group` limits the results to one position group's profiled rows (the compare picker: same
+// group only, user 2026-10-09); `onPick` replaces navigation to the player page.
+export function SearchBox({ autoFocus = false, size = "md", group, exclude, onPick, label = UI.search.label }: {
+  autoFocus?: boolean; size?: "md" | "lg"; group?: string; exclude?: string;
+  onPick?: (e: Entry) => void; label?: string;
+}) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
@@ -16,11 +21,13 @@ export function SearchBox({ autoFocus = false, size = "md" }: { autoFocus?: bool
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => { getSearchIndex().then((d) => setEntries(d.entries)).catch(() => setFailed(true)); }, []);
-  const results = useMemo(() => search(entries, query), [entries, query]);
+  const pool = useMemo(() => group ? entries.filter((e) => e.group === group && e.profile === "dna" && e.key !== exclude) : entries,
+                       [entries, group, exclude]);
+  const results = useMemo(() => search(pool, query), [pool, query]);
   useEffect(() => setActive(0), [query]);
 
   const go = (e: Entry) => {
-    window.location.hash = href.player(e.key);
+    if (onPick) onPick(e); else window.location.hash = href.player(e.key);
     setOpen(false);
     setQuery("");
     input.current?.blur();
@@ -38,7 +45,7 @@ export function SearchBox({ autoFocus = false, size = "md" }: { autoFocus?: bool
 
   return (
     <div className="relative w-full">
-      <label className="sr-only" htmlFor={`${listId}-input`}>{UI.search.label}</label>
+      <label className="sr-only" htmlFor={`${listId}-input`}>{label}</label>
       <Search aria-hidden="true" size={big ? 18 : 15}
               className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-3 ${big ? "left-3.5" : "left-2.5"}`} />
       <input id={`${listId}-input`} ref={input} type="search" role="combobox" autoComplete="off"
@@ -56,7 +63,7 @@ export function SearchBox({ autoFocus = false, size = "md" }: { autoFocus?: bool
         </div>
       )}
       {listed && (
-        <ul id={listId} role="listbox" aria-label={UI.search.label}
+        <ul id={listId} role="listbox" aria-label={label}
             className="absolute left-0 right-0 z-30 mt-1 max-h-96 overflow-auto rounded-lg border border-line bg-surface-1 py-1 shadow-[var(--shadow)]">
           {results.map((e, i) => (
             <li key={e.key} id={`${listId}-${i}`} role="option" aria-selected={i === active}

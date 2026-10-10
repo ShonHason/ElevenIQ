@@ -49,3 +49,9 @@
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 .header-bar { background: color-mix(in srgb, var(--surface-0) 85%, transparent); backdrop-filter: blur(12px); }
 @media (prefers-reduced-transparency: reduce) { .header-bar { background: var(--surface-0); backdrop-filter: none; } }
+
+/* Profile shape text in viewBox units: larger on phones, where the 780-unit canvas renders at
+   about half size, so labels stay ~10 px or more. */
+.shape-label { font-size: 24px; }
+.shape-ring { font-size: 20px; }
+@media (min-width: 640px) { .shape-label { font-size: 16px; } .shape-ring { font-size: 13px; } }
