@@ -4,7 +4,7 @@
   "title": "players/<key>.json",
   "description": "One season row. metrics are in registry metric order; their shared facts are in groups/<identity.group>.json.",
   "type": "object", "additionalProperties": false,
-  "required": ["stamps", "identity", "metrics", "second_group", "signature_traits", "dna", "neighbours", "style_map"],
+  "required": ["stamps", "identity", "stand_out", "defensive_rates", "metrics", "second_group", "signature_traits", "dna", "neighbours", "style_map"],
   "$defs": {
     "phrasePair": {
       "type": "object", "additionalProperties": false, "required": ["metric", "label", "a_phrase", "b_phrase"],
@@ -18,7 +18,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["key", "player_id", "team_id", "competition_id", "season_id", "name", "nickname", "display_name",
                    "team", "league", "group", "group_text", "second_group", "minutes", "minutes_text",
-                   "nominal_minutes", "nominal_minutes_text", "meets_gate", "near_gate", "role_text", "dmcm_slot"],
+                   "nominal_minutes", "nominal_minutes_text", "meets_gate", "near_gate", "role_text", "dmcm_slot", "summary"],
       "properties": {
         "key": {"$ref": "common.schema.json#/$defs/rowKey"},
         "player_id": {"type": "integer"}, "team_id": {"type": "integer"},
@@ -34,6 +34,9 @@
         "meets_gate": {"type": "boolean"},
         "near_gate": {"type": "boolean", "description": "\"Fewer minutes: less reliable\": only CB and FB-WB rows with 900 ≤ nominal minutes < 1,350 (ADR 004 §14 sign-off note 3)."},
         "role_text": {"type": ["string", "null"]},
+        "summary": {"type": "array", "description": "The season summary line: the pipeline's own counts.", "items": {
+          "type": "object", "additionalProperties": false, "required": ["key", "label", "text"],
+          "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "text": {"type": "string"}}}},
         "dmcm_slot": {
           "type": ["object", "null"], "additionalProperties": false,
           "required": ["label", "label_text", "share6", "share6_text", "pivot", "pivot_text"],
@@ -42,6 +45,28 @@
                          "pivot": {"enum": ["single", "double", "cm", "mixed"]}, "pivot_text": {"type": "string"}}
         }
       }
+    },
+    "stand_out": {
+      "type": "array", "maxItems": 6,
+      "description": "What stands out: the 6 metrics whose shown league percentile is furthest from 50 (style included), ranked by the exporter; ties by registry metric order. order indexes the group metadata.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["metric", "order", "label", "direction", "pct", "pct_text", "phrase", "bin"],
+        "properties": {"metric": {"type": "string"}, "order": {"type": "integer"}, "label": {"type": "string"},
+                       "direction": {"enum": ["higher_better", "lower_better", "style"]},
+                       "pct": {"type": "number"}, "pct_text": {"type": "string"}, "phrase": {"type": "string"},
+                       "bin": {"$ref": "common.schema.json#/$defs/bin"}}}
+    },
+    "defensive_rates": {
+      "type": "array",
+      "description": "Compare mode's defensive rate (user-approved label): each count per 100 opponent open-play passes made while the player was on the pitch (season counts; the pipeline's exposure column). A plain rate: no percentile, never adjusted. metric is the per-90 metric it accompanies. Empty for goalkeepers; rate null without exposure.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["metric", "count", "exposure", "rate", "rate_text"],
+        "properties": {"metric": {"type": "string"}, "count": {"type": "integer", "minimum": 0},
+                       "exposure": {"type": "integer", "minimum": 0},
+                       "rate": {"type": ["number", "null"], "minimum": 0},
+                       "rate_text": {"type": ["string", "null"]}}}
     },
     "metrics": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/metricRow"}},
     "second_group": {

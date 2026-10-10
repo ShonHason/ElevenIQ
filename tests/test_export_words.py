@@ -273,3 +273,56 @@ def test_w3_player_page_words_are_the_approved_wording():
 
 def test_around_average_is_the_percentile_band_at_50():
     assert W.AROUND_AVERAGE == "around average" == W.pct_words(50.0)[1]
+
+
+def test_summary_labels_singular_for_one():
+    assert W.summary_label("goals", 1) == "goal" and W.summary_label("goals", 3) == "goals"
+    assert W.summary_label("xg", 1) == "xG"
+
+
+# 60.0 is "Above average" here while pct_words(60) says "around average": the bands are
+# lower-inclusive by spec (display round), the phrases inclusive at both 40 and 60.
+@pytest.mark.parametrize("p,want", [
+    (100, "Top 1%"), (99.0, "Top 1%"), (98.999999, "Top 5%"), (95.0, "Top 5%"), (90.0, "Top 10%"),
+    (75.0, "Top 25%"), (74.9, "Above average"), (60.0, "Above average"), (59.9, "Around average"),
+    (40.0, "Around average"), (39.9, "Below average"), (25.0, "Below average"),
+    (24.9, "Bottom 25%"), (10.0, "Bottom 25%"), (9.9, "Bottom 10%"), (5.0, "Bottom 10%"),
+    (4.9, "Bottom 5%"), (0.0, "Bottom 5%")])
+def test_band_boundaries_are_lower_inclusive_and_cover_the_range(p, want):
+    assert W.band(p, False) == want
+
+
+def test_style_band_is_neutral_and_out_of_range_refused():
+    assert {W.band(p, True) for p in (0, 30, 39.9)} == {"Lower than most"}
+    assert {W.band(p, True) for p in (40.0, 50, 60.0)} == {"Around average"}
+    assert W.band(60.1, True) == "Higher than most"
+    assert W.band(100, True) == "Higher than most"
+    for bad in (-0.1, 100.1):
+        with pytest.raises(ValueError):
+            W.band(bad, False)
+        with pytest.raises(ValueError):
+            W.style_words(bad)
+
+
+@pytest.mark.parametrize("text,want", [
+    ("1", "1st percentile"), ("2", "2nd percentile"), ("3", "3rd percentile"),
+    ("11", "11th percentile"), ("12", "12th percentile"), ("13", "13th percentile"),
+    ("21", "21st percentile"), ("22", "22nd percentile"), ("90", "90th percentile"),
+    ("99", "99th percentile"),
+    (">99", "above the 99th percentile"), ("<1", "below the 1st percentile")])
+def test_ordinal_percentile(text, want):
+    assert W.ordinal_percentile(text) == want
+
+
+def test_merge_notes_dedupes_short_and_joins_distinct_fulls_in_order():
+    N = R.NoteText
+    got = W.merge_notes([N("a", "x"), N("b", "y"), N("a", "z"), N("a", "x")])
+    assert [(n.short, n.full) for n in got] == [("a", "x; z"), ("b", "y")]
+    assert W.merge_notes([]) == []
+
+
+def test_possession_reasons_share_one_short_text_and_keep_their_full_texts():
+    a, b = W.reason_note(R.R_TEAM_STYLE), W.reason_note(R.R_MAJORITY)
+    assert a.short == b.short == W.POSSESSION_SHORT
+    assert a.full != b.full
+    assert len(W.merge_notes([a, b])) == 1

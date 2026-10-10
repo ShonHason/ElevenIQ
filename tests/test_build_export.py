@@ -163,16 +163,32 @@ def test_full_export_every_metric_cell_has_a_number_or_a_status_text(full):
                 assert (c[scope]["pct_text"] is None) != (c[scope]["status_text"] is None), (p, c)
 
 
-def test_fixed_display_reasons_are_not_page_text():
-    """W3: a fixed_display spec reason is ADR shorthand ("D12: raw volume"); it is not exported.
-    The approved reason texts still are."""
+def test_fixed_display_reasons_are_not_page_text_and_reasons_join_the_notes():
+    """W3: a fixed_display spec reason (ADR shorthand) is not exported; the approved reason texts
+    are, as notes; each short text once (W3 fix round)."""
     from eleveniq.analytics import dna as D
     fixed = next((m, g) for (m, g), c in R.REGISTRY.cells.items()
                  if g in B.GROUPS and R.R_FIXED in c.reasons)
-    assert B.metric_meta(fixed[0], fixed[1], D.withheld_for(fixed[1]))["reasons"] is None
+    spec = next(s for s in R.SPECS if s.column == fixed[0])
+    notes = B.metric_meta(fixed[0], fixed[1], D.withheld_for(fixed[1]))["notes"]
+    assert spec.fixed_display.reason not in {n["full"] for n in notes}
     d17 = next((m, g) for (m, g), c in R.REGISTRY.cells.items()
                if g in B.GROUPS and c.reasons == (R.R_D17,))
-    assert B.metric_meta(d17[0], d17[1], D.withheld_for(d17[1]))["reasons"] == R.REASON_TEXT[R.R_D17]
+    notes = B.metric_meta(d17[0], d17[1], D.withheld_for(d17[1]))["notes"]
+    assert {"short": R.REASON_TEXT[R.R_D17], "full": R.REASON_TEXT[R.R_D17]} in notes
+
+
+def test_team_possession_reasons_show_once():
+    """Pass completion in DM-CM: the majority and trigger reasons are one note, both full texts
+    in the popover (user, W3 fix round)."""
+    from eleveniq.analytics import dna as D
+    cell = R.REGISTRY.cell("pass_completion_pct", "DM-CM")
+    assert {R.R_MAJORITY, R.R_TEAM_STYLE} <= set(cell.reasons)
+    notes = B.metric_meta("pass_completion_pct", "DM-CM", D.withheld_for("DM-CM"))["notes"]
+    shorts = [n["short"] for n in notes]
+    assert shorts.count("associated with team possession") == 1 and len(shorts) == len(set(shorts))
+    full = next(n["full"] for n in notes if n["short"] == "associated with team possession")
+    assert R.REASON_TEXT[R.R_MAJORITY] in full and R.REASON_TEXT[R.R_TEAM_STYLE] in full
 
 
 def test_labels_carry_the_player_page_words_and_the_metric_order():
@@ -195,3 +211,52 @@ def test_group_metadata_follows_the_metric_order():
     for g in B.GROUPS:
         held = D.withheld_for(g)
         assert [B.metric_meta(m, g, held)["metric"] for m in order] == order
+
+
+# ── W3 polish (user, 2026-10-10) ──────────────────────────────────────────────────
+
+def test_style_words_are_neutral():
+    from eleveniq.export import words as W
+    assert [W.style_words(p) for p in (95.0, 61.0, 60.0, 50.0, 40.0, 39.0, 3.0)] == [
+        "higher than most", "higher than most", "around average", "around average",
+        "around average", "lower than most", "lower than most"]
+
+
+def test_stand_out_furthest_from_50_style_included():
+    """What stands out (user, 2026-10-10): the 6 shown league percentiles furthest from 50,
+    style included; ties by registry order; rows without a shown percentile left out."""
+    specs = list(R.SPECS)
+    order = [s.column for s in specs]
+    pct = {s.column: 50.0 for s in specs}
+    pct.update({"interceptions_p90": 99.0, "tackles_attempted_p90": 99.0,   # style, in
+                "dispossessed_p90": 2.0,                                    # shown low, in
+                "ball_recoveries_p90": 97.0, "blocks_p90": 96.0, "op_key_passes_p90": 95.0,
+                "np_xg_p90": 94.0})
+    rows = [{"local": {"pct": pct[s.column], "pct_text": "x", "phrase": "x", "bin": None}}
+            for s in specs]
+    rows[order.index("np_xg_p90")]["local"]["pct"] = None                 # no shown pct → out
+    got = [h["metric"] for h in B.stand_out("DM-CM", rows)]
+    tied = sorted(["interceptions_p90", "tackles_attempted_p90"], key=order.index)
+    assert got == [*tied, "dispossessed_p90", "ball_recoveries_p90", "blocks_p90",
+                   "op_key_passes_p90"]
+    assert B.stand_out("GK", rows) == []
+
+
+
+def test_defensive_rates_per_100_opponent_open_play_passes():
+    """User-approved figure (2026-10-10): count / exposure × 100, numerator and denominator kept;
+    goalkeepers none; no exposure → null, never 0. Kanté interceptions 110 of 16,226 → 0.68."""
+    from eleveniq.export import words as W
+    ident = {"position_group": "DM-CM", "opponent_open_play_passes_while_on": 16226,
+             "tackles_attempted": 164, "interceptions": 110, "ball_recoveries": 270,
+             "pressures": 906, "blocks": 112, "clearances": 77}
+    got = {r["metric"]: r for r in B.defensive_rates(ident)}
+    assert list(got) == [f"{c}_p90" for c in W.RATE_METRICS]
+    assert got["interceptions_p90"]["rate_text"] == "0.68"
+    assert got["interceptions_p90"]["count"] == 110 and got["interceptions_p90"]["exposure"] == 16226
+    assert got["pressures_p90"]["rate"] == pytest.approx(100 * 906 / 16226, abs=1e-6)
+    assert B.defensive_rates({**ident, "position_group": "GK"}) == []
+    zero = B.defensive_rates({**ident, "opponent_open_play_passes_while_on": 0})
+    assert all(r["rate"] is None and r["rate_text"] is None for r in zero)
+    assert W.RATE_LABEL == "per 100 opponent open-play passes (while on the pitch)"
+    assert "adjusted" not in W.RATE_LABEL and "corrected" not in W.RATE_LABEL

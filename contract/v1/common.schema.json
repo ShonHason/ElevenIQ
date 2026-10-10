@@ -42,12 +42,14 @@
     },
     "scope": {
       "type": "object", "additionalProperties": false,
-      "required": ["pct", "pct_text", "phrase", "bin", "n", "population_text", "status", "status_text"],
-      "description": "One percentile scope (local: league × group; global: group across the pool leagues). pct is the stored Hazen percentile (0–100); pct_text is \">99\" / \"<1\" for rows outside their population, else half-up 1–99; a null pct shows status_text instead.",
+      "required": ["pct", "pct_text", "phrase", "band", "note", "bin", "n", "population_text", "status", "status_text"],
+      "description": "One percentile scope (local: league × group; global: group across the pool leagues). pct is the shown percentile (0–100): the stored Hazen percentile, direction-adjusted for a lower-better metric (100 − p; W0 decision 1), so number, phrase, bar and bin agree; pct_text is \">99\" / \"<1\" for rows outside their population, else half-up 1–99; a null pct shows status_text instead.",
       "properties": {
         "pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
         "pct_text": {"type": ["string", "null"]},
         "phrase": {"type": ["string", "null"], "description": "words.pct_words: \"top 5%\", \"around average\", \"bottom 12%\"."},
+        "band": {"type": ["string", "null"], "description": "The fixed band of the shown percentile (Top 1% … Bottom 5%; style metrics: Higher than most / Around average / Lower than most). It replaces the number in every cell."},
+        "note": {"type": ["string", "null"], "description": "The exact number for the popover, e.g. \"97th percentile among Premier League 2015/16 central midfielders\"."},
         "bin": {"$ref": "#/$defs/bin"},
         "n": {"type": ["integer", "null"], "minimum": 0},
         "population_text": {"type": ["string", "null"], "description": "\"n 64 of 157 STs with ≥ 43 long passes\" for a ratio, else \"n 157\"."},
@@ -57,11 +59,12 @@
     },
     "metricRow": {
       "type": "object", "additionalProperties": false,
-      "required": ["value", "value_text", "local", "global", "basis", "zero_tie"],
+      "required": ["value", "value_text", "total_text", "local", "global", "basis", "zero_tie"],
       "description": "The row facts of one metric; its shared facts are in groups/<group>.json at the same index (registry metric order).",
       "properties": {
         "value": {"type": ["number", "null"]},
         "value_text": {"type": "string", "description": "Percent with 1 decimal for shares and _pct metrics, 3 decimals for ratios, else 2; \"—\" when null."},
+        "total_text": {"type": ["string", "null"], "description": "The season total (\"176 total\") or a ratio's made / attempted counts (\"1,812 / 2,215\"), from the season parquet; null on second-group rows."},
         "local": {"$ref": "#/$defs/scope"},
         "global": {"$ref": "#/$defs/scope"},
         "basis": {"enum": ["local", "global", null]},

@@ -229,10 +229,14 @@ def _population_text(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, An
 
 
 def _scope(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, Any], scope: str,
-           spec: R.MetricSpec, cell: R.Cell | None, biased: bool, zero_tie: bool) -> dict:
-    # The percentile at the contract's precision: its text, phrase and bin all read the number
-    # the file carries (89.99999999999999 is 90.0, "top 10%", the top bin; stats-reviewer W1d).
-    p = rnd(row[f"pct_{scope}"])
+           spec: R.MetricSpec, cell: R.Cell | None, biased: bool, zero_tie: bool,
+           where: Mapping[str, str]) -> dict:
+    # The shown percentile (W0 decision 1, user 2026-10-10): direction-adjusted, so a
+    # lower-better metric shows 100 − p as its number, phrase and bar (dispossessed 78 → 22);
+    # the raw value is unchanged. At the contract's precision, so text, phrase and bin all read
+    # the number the file carries (stats-reviewer W1d).
+    raw = row[f"pct_{scope}"]
+    p = rnd(X.adjusted(spec, raw)) if raw is not None else None
     status = row[f"status_{scope}"]
     signature = row["registry_status"] == "signature"
     shown = p is not None and not zero_tie and not signature
@@ -247,13 +251,27 @@ def _scope(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, Any], scope:
     return {
         "pct": p if shown else None,
         "pct_text": X.format_pct(p) if shown else None,
-        "phrase": W.pct_words(p)[1] if shown else None,
-        "bin": X.percentile_bin(spec, biased, p) if shown else None,
+        "phrase": (W.style_words(p) if spec.direction == "style" else W.pct_words(p)[1])
+                  if shown else None,
+        # The band replaces the number in every cell (display round, user 2026-10-10); the
+        # number is in `note`, for the popover.
+        "band": W.band(p, spec.direction == "style") if shown else None,
+        "note": (((W.PCT_NOTE_LOCAL if scope == "local" else W.PCT_NOTE_GLOBAL).format(
+            ordinal=W.ordinal_percentile(X.format_pct(p)), **where))
+            + (f" ({W.LOWER_BETTER_NOTE})" if spec.direction == "lower_better" else ""))
+            if shown else None,
+        "bin": X.shown_bin(spec, biased, p) if shown else None,
         "n": row[f"n_{scope}"],
         "population_text": _population_text(rows, row, scope, spec, cell),
         "status": status,
         "status_text": text,            # a number or a reason, never neither
     }
+
+
+def _where(row: Mapping[str, Any]) -> dict[str, str]:
+    """League and group words for a percentile note."""
+    return {"league": league_label(row["competition_id"], row["season_id"]),
+            "group": W.GROUP_TEXT.get(row["position_group"], row["position_group"])}
 
 
 def metric_meta(metric: str, group: str, held: Mapping[str, str]) -> dict:
@@ -263,15 +281,17 @@ def metric_meta(metric: str, group: str, held: Mapping[str, str]) -> dict:
     cell = REGISTRY.cell(metric, group) if group in GROUPS else None
     biased = bool(cell and cell.team_style_biased)
     status = cell.status if cell else None
-    # Why a metric is display-only, in the approved reason texts (registry.REASON_TEXT). A
-    # fixed_display spec reason is ADR shorthand ("D12: raw volume"), not page text: it is not
-    # exported (plan 006 W3; rewording it would be new site text for the user to approve).
-    reasons = None
-    if cell is not None and cell.status != "dna" and R.R_FIXED not in cell.reasons:
-        reasons = ", ".join(R.reason_text(r) for r in cell.reasons)
-    notes = [R.note_text(n) for n in (cell.notes if cell else ())]
+    # Notes and display reasons as one list, each short text once (W3 fix round, user): the
+    # team-possession reasons (the trigger and the majority rule) and the team-possession note
+    # share the short "associated with team possession"; their full texts join in the popover.
+    # A fixed_display spec reason is ADR shorthand, not page text: not exported (W3).
+    items: list[R.NoteText] = []
     if metric == "long_pass_completion_pct":
-        notes.insert(0, W.LONG_PASS_NOTE)
+        items.append(W.LONG_PASS_NOTE)
+    items += [R.note_text(n) for n in (cell.notes if cell else ())]
+    if cell is not None and cell.status != "dna" and R.R_FIXED not in cell.reasons:
+        items += [W.reason_note(r) for r in cell.reasons]
+    notes = W.merge_notes(items)
     fam = spec.family
     return {
         "metric": metric, "label": W.metric_label(metric, group), "family": fam,
@@ -279,19 +299,37 @@ def metric_meta(metric: str, group: str, held: Mapping[str, str]) -> dict:
         "direction_text": (W.NO_READING if metric == "long_pass_completion_pct"
                            else spec.direction.replace("_", " ")),
         "registry_status": status,
+        "unit": W.unit_text(metric, spec.unit),
+        "definition": W.METRIC_DEFINITIONS[metric],
         "uncoloured": X.uncoloured(spec, biased),
         # Option c on every measured cell (user, 2026-10-09): out when the registry's
         # possession check triggers on the cell's measurement, whatever step it left at.
         "gap_eligible": X.gap_eligible(spec, status, biased or bool(
             group in GROUPS and R.measured_possession_triggered(metric, group))),
-        "notes": [{"short": n.short, "full": n.full} for n in dict.fromkeys(notes)],
-        "reasons": reasons,
+        "notes": [{"short": n.short, "full": n.full} for n in notes],
         "withheld_tag": W.withheld_tag(fam, held[fam]) if fam in held else None,
     }
 
 
-def metric_row(rows: Mapping[str, Mapping[str, Any]], metric: str) -> dict:
-    """One metric of one row (one cohort role): only what differs between rows."""
+def _total_text(spec: R.MetricSpec, ident: Mapping[str, Any]) -> str | None:
+    """The season total next to a value (display round, user): a per-90 metric's season count
+    ("176 total"); a ratio's made / attempted counts ("1,812 / 2,215": the numerator over the
+    denominator the pipeline divides by). Counts the parquets keep; no new statistic."""
+    if spec.ratio is not None:
+        r = spec.ratio
+        num = ident[r.numerator]
+        den = sum(ident[c] for c in r.denominator_plus) - sum(ident[c] for c in r.denominator_minus)
+        dec = isinstance(num, float) and r.numerator in W.SUM_COLUMNS
+        return f"{X.format_count(num, dec)} / {X.format_count(den)}"
+    if spec.count_column:
+        return f"{X.format_count(ident[spec.count_column], not spec.integer_count)} {W.TOTAL_WORD}"
+    return None
+
+
+def metric_row(rows: Mapping[str, Mapping[str, Any]], metric: str,
+               ident: Mapping[str, Any] | None = None) -> dict:
+    """One metric of one row (one cohort role): only what differs between rows. `ident` (the
+    season row) adds the season total; second-group rows are called without it (no totals)."""
     row = rows[metric]
     spec = X.SPECS_BY_COLUMN[metric]
     group = row["position_group"]
@@ -307,11 +345,54 @@ def metric_row(rows: Mapping[str, Mapping[str, Any]], metric: str) -> dict:
     return {
         "value": rnd(row["value"]),
         "value_text": X.format_value(metric, row["value"]),
-        "local": _scope(rows, row, "local", spec, cell, biased, zero_tie),
-        "global": _scope(rows, row, "global", spec, cell, biased, zero_tie),
+        "total_text": _total_text(spec, ident) if ident is not None else None,
+        "local": _scope(rows, row, "local", spec, cell, biased, zero_tie, _where(row)),
+        "global": _scope(rows, row, "global", spec, cell, biased, zero_tie, _where(row)),
         "basis": row["basis"],
         "zero_tie": zero_tie,
     }
+
+
+RATE_EXPOSURE = "opponent_open_play_passes_while_on"
+
+
+def defensive_rates(ident: Mapping[str, Any]) -> list[dict]:
+    """The compare-mode defensive rate (user, 2026-10-10): each RATE_METRICS season count per 100
+    opponent open-play passes made while the player was on the pitch (the pipeline's exposure
+    column). A plain rate: no percentile, no adjustment; numerator and denominator kept beside
+    it. None for a goalkeeper; a row without exposure has no rate (null, never 0)."""
+    if ident["position_group"] == "GK":
+        return []
+    exposure = ident[RATE_EXPOSURE]
+    out = []
+    for c in W.RATE_METRICS:
+        count = ident[c]
+        rate = 100.0 * count / exposure if exposure else None
+        shown = rnd(rate)
+        out.append({"metric": f"{c}_p90", "count": count, "exposure": exposure,
+                    "rate": shown, "rate_text": None if shown is None else f"{shown:.2f}"})
+    return out
+
+
+def stand_out(group: str, rows: list[dict]) -> list[dict]:
+    """"What stands out" (W3 fix round, user 2026-10-10): the W.STAND_OUT_N metrics whose shown
+    league percentile is furthest from 50, among every metric with a shown league percentile
+    (style metrics included, with their neutral phrase and no colour; signature traits and zero
+    ties have none); ties by registry metric order. Ranked in Python (ADR 005 §1). `order`
+    points at the group metadata (label, tag, notes)."""
+    if group not in GROUPS:
+        return []
+    out = []
+    for s, row in zip(SPECS_IN_ORDER, rows):
+        p = row["local"]["pct"]
+        if p is None:
+            continue
+        out.append((-abs(p - 50.0), ORDER[s.column], s, row))
+    return [{"metric": s.column, "order": ORDER[s.column], "label": W.metric_label(s.column, group),
+             "direction": s.direction, "pct": row["local"]["pct"],
+             "pct_text": row["local"]["pct_text"], "phrase": row["local"]["phrase"],
+             "bin": row["local"]["bin"]}
+            for _, _, s, row in sorted(out, key=lambda t: t[:2])[:W.STAND_OUT_N]]
 
 
 # ── Players ──────────────────────────────────────────────────────────────────────
@@ -343,6 +424,10 @@ def _identity(ident: Mapping[str, Any], positions: Mapping[str, float] | None) -
         "near_gate": X.near_gate(group, ident["minutes_nominal_equiv"]) and bool(ident["meets_min_minutes"]),
         "role_text": role,
         "dmcm_slot": slot,
+        # The season summary line (display round, user): the pipeline's own counts.
+        "summary": [{"key": c, "label": W.summary_label(c, ident[c]),
+                     "text": X.format_number(ident[c]) if c == "minutes_played"
+                     else X.format_count(ident[c], c in W.SUM_COLUMNS)} for c in W.SUMMARY_LABELS],
     }
 
 
@@ -558,10 +643,13 @@ def build(inp: Inputs, keys: Iterable[tuple] | None = None,
         if prim is None or set(prim) != {s.column for s in SPECS}:
             raise ExportError(f"{k}: percentile rows missing")
         second = pct_rows[k].get("second")
+        rows_m = [metric_row(prim, s.column, ident) for s in SPECS_IN_ORDER]
         doc = {
             "stamps": stamps,
             "identity": _identity(ident, pos.get(k)),
-            "metrics": [metric_row(prim, s.column) for s in SPECS_IN_ORDER],
+            "stand_out": stand_out(group, rows_m),
+            "defensive_rates": defensive_rates(ident),
+            "metrics": rows_m,
             "second_group": ({"group": second[X.POPULATION_REFERENCE_METRIC]["position_group"],
                               "metrics": [metric_row(second, s.column) for s in SPECS_IN_ORDER]}
                              if second else None),
@@ -617,7 +705,12 @@ def labels_doc(stamps: Mapping[str, Any]) -> dict:
                   "neighbours_label": W.NEIGHBOURS_LABEL, "attribution": W.ATTRIBUTION,
                   "portfolio": W.PORTFOLIO, "profile_shape_title": W.PROFILE_SHAPE_TITLE,
                   "profile_shape_note": W.PROFILE_SHAPE_NOTE, "neighbours_title": W.NEIGHBOURS_TITLE,
-                  "around_average": W.AROUND_AVERAGE,
+                  "around_average": W.AROUND_AVERAGE, "basis_legend": W.BASIS_LEGEND,
+                  "stand_out_title": W.STAND_OUT_TITLE, "stand_out_note": W.STAND_OUT_NOTE,
+                  "lower_better": W.LOWER_BETTER, "basis_marker": W.BASIS_MARKER,
+                  "rate_label": W.RATE_LABEL, "exact_hint": W.EXACT_HINT, "compare_top_title": W.COMPARE_TOP_TITLE,
+                  "compare_top_note": W.COMPARE_TOP_NOTE, "compare_all_title": W.COMPARE_ALL_TITLE,
+                  "compare_same_group": W.COMPARE_SAME_GROUP,
                   "most_alike": W.MOST_ALIKE, "most_different": W.MOST_DIFFERENT,
                   "signature_title": W.SIGNATURE_TITLE, "signature_note": W.SIGNATURE_NOTE,
                   **{f"chip_{k}": v for k, v in W.CHIPS.items()},

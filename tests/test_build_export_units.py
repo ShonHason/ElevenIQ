@@ -10,6 +10,7 @@ import pytest
 from eleveniq.analytics import registry as R
 from eleveniq.export import build_export as B
 from eleveniq.export import display as X
+from eleveniq.export import words as W
 
 STAMPS = {"contract_version": "1.0.0", "registry_version": "0" * 64, "measurement_source": "statsbomb",
           "source": "statsbomb", "season_ids": [27], "season_parquet_sha256": "0" * 64,
@@ -18,7 +19,8 @@ STAMPS = {"contract_version": "1.0.0", "registry_version": "0" * 64, "measuremen
 
 
 def _row(metric, group, value, pct, n=100, status="ok", reg="signature"):
-    return {"player_id": 1, "position_group": group, "registry_status": reg, "value": value,
+    return {"player_id": 1, "competition_id": 11, "season_id": 27,
+            "position_group": group, "registry_status": reg, "value": value,
             "pct_local": pct, "pct_global": pct, "n_local": n, "n_global": n,
             "status_local": status, "status_global": status, "basis": "season",
             "percentile_status": status, "cohort_role": "primary"}
@@ -74,7 +76,8 @@ def _ident(group="CB", meets=True, nominal=1000.0, second="FB-WB", nick=None):
     return {"player_id": 7, "team_id": 2, "competition_id": 11, "season_id": 27,
             "source": "statsbomb", "position_group": group, "player_name": "A B",
             "player_nickname": nick, "team_name": "T", "second_position_group": second,
-            "meets_min_minutes": meets, "minutes_played": 1000.0, "minutes_nominal_equiv": nominal}
+            "meets_min_minutes": meets, "minutes_played": 1000.0, "minutes_nominal_equiv": nominal,
+            "appearances": 12, "goals": 1, "assists": 2, "xg": 1.25, "shots": 9}
 
 
 def test_identity_hides_second_group_and_near_gate_below_gate():
@@ -144,3 +147,70 @@ def test_a_measured_zero_share_makes_a_tie_without_the_registry_reason():
     assert R.measured_zero_share(m, "CB") > 0.30
     out = B.metric_row({m: _row(m, "CB", 0.0, 50.0, reg="display")}, m)
     assert out["zero_tie"] and out["local"]["status_text"] == "tied at zero, not a rank"
+
+
+def _spec(col):
+    return X.SPECS_BY_COLUMN[col]
+
+
+def _lower_better_col():
+    return next(s.column for s in X.SPECS_BY_COLUMN.values() if s.direction == "lower_better")
+
+
+def test_scope_lower_better_shows_flipped_percentile_with_note_and_band():
+    col = _lower_better_col()
+    spec = _spec(col)
+    row = _row(col, "CB", 1.0, 78.0, reg="dna")
+    cell = R.REGISTRY.cell(col, "CB")
+    got = B._scope({col: row}, row, "local", spec, cell, False, False,
+                   {"league": "La Liga 2015/16", "group": "centre-backs"})
+    assert got["pct"] == 22.0
+    assert got["band"] == "Bottom 25%"
+    assert "22nd percentile" in got["note"] and W.LOWER_BETTER_NOTE in got["note"]
+    assert got["phrase"] == "bottom 22%"
+    # the raw percentile is untouched
+    assert row["pct_local"] == 78.0
+
+
+def test_scope_null_percentile_has_no_band_note_or_bin():
+    col = _lower_better_col()
+    row = _row(col, "CB", 1.0, None, status="cohort_too_small", reg="dna")
+    got = B._scope({col: row}, row, "global", _spec(col), R.REGISTRY.cell(col, "CB"), False,
+                   False, {"league": "x", "group": "y"})
+    assert got["pct"] is None and got["band"] is None and got["note"] is None
+    assert got["bin"] is None and got["phrase"] is None
+
+
+def test_scope_style_metric_uses_neutral_phrase_and_band():
+    col = next(s.column for s in X.SPECS_BY_COLUMN.values() if s.direction == "style")
+    row = _row(col, "CB", 1.0, 97.0, reg="dna")
+    got = B._scope({col: row}, row, "local", _spec(col), R.REGISTRY.cell(col, "CB"), False,
+                   False, {"league": "x", "group": "y"})
+    assert got["phrase"] == "higher than most" and got["band"] == "Higher than most"
+    assert "lower is better" not in got["note"]
+
+
+def test_total_text_ratio_and_count():
+    # A ratio: numerator over (Σ plus − Σ minus); counts are distinct, so a wrong term shows.
+    ratio = next(s for s in X.SPECS_BY_COLUMN.values()
+                 if s.ratio is not None and s.ratio.denominator_minus)
+    r = ratio.ratio
+    ident = {c: 0 for c in r.terms}
+    ident[r.numerator] = 1812
+    for i, c in enumerate(r.denominator_plus):
+        ident[c] = ident.get(c, 0) + 2000 + 100 * i
+    for c in r.denominator_minus:
+        ident[c] = ident.get(c, 0) + 7
+    den = (sum(ident[c] for c in r.denominator_plus)
+           - sum(ident[c] for c in r.denominator_minus))
+    assert B._total_text(ratio, ident) == f"{X.format_count(ident[r.numerator])} / {X.format_count(den)}"
+    per90 = next(s for s in X.SPECS_BY_COLUMN.values() if s.count_column and s.ratio is None
+                 and s.integer_count)
+    assert B._total_text(per90, {per90.count_column: 1176}) == "1,176 total"
+
+
+def test_format_count_none_and_decimals():
+    assert X.format_count(None) == "—"
+    assert X.format_count(0) == "0"
+    assert X.format_count(12.5, True) == "12.50"
+    assert X.format_count(0.0, True) == "0.00"

@@ -78,6 +78,51 @@ class Mismatch:
             self.errors.append(f"{where}: export {got!r} ≠ reference {want!r}")
 
 
+def registry_directions() -> dict[str, str]:
+    """Metric column -> direction, parsed from the registry's SPECS as source text (never
+    imported): _p90(base, name, family, direction), _ratio(...) is higher_better, MetricSpec(...)
+    has a direction keyword."""
+    import ast
+    tree = ast.parse(cm.REGISTRY_SOURCE.read_text())
+    specs = next(n for n in tree.body if isinstance(n, ast.AnnAssign)
+                 and isinstance(n.target, ast.Name) and n.target.id == "SPECS")
+    out: dict[str, str] = {}
+    for call in specs.value.elts:                                      # type: ignore[union-attr]
+        f = call.func.id
+        kw = {k.arg: k.value for k in call.keywords}
+        if f == "_p90":
+            out[call.args[0].value + "_p90"] = call.args[3].value
+        elif f == "_ratio":
+            out[call.args[0].value] = "higher_better"
+        elif f == "MetricSpec":
+            out[kw["column"].value] = kw["direction"].value
+        else:
+            fail(f"registry SPECS: unknown builder {f}: update registry_directions")
+    return out
+
+
+DIRECTION = registry_directions()
+
+
+def style_words(p: float) -> str:
+    """W3 polish (user, 2026-10-10): a style metric's phrase, written out (no eleveniq)."""
+    if 40.0 <= p <= 60.0:
+        return "around average"
+    return "higher than most" if p > 60.0 else "lower than most"
+
+
+# The display round's bands (user, 2026-10-10), written out (no eleveniq).
+BANDS = ((99.0, "Top 1%"), (95.0, "Top 5%"), (90.0, "Top 10%"), (75.0, "Top 25%"),
+         (60.0, "Above average"), (40.0, "Around average"), (25.0, "Below average"),
+         (10.0, "Bottom 25%"), (5.0, "Bottom 10%"), (0.0, "Bottom 5%"))
+
+
+def band(shown: float, style: bool) -> str:
+    if style:
+        return style_words(shown).capitalize()
+    return next(label for lo, label in BANDS if shown >= lo)
+
+
 def at6(p: float | None) -> float | None:
     """A percentile at the contract's precision (6 decimals): the export's texts, phrases and
     bins read the number the file carries."""
@@ -177,10 +222,15 @@ def check_players(out: Path, mm: Mismatch, ctx: dict) -> int:
                     if p is None:
                         mm.eq(f"{w} {role} {m} {scope} pct", e["pct"], None)
                         continue
+                    if DIRECTION[m] == "lower_better":    # W0 decision 1: shown as 100 − p
+                        p = 100.0 - p
                     mm.eq(f"{w} {role} {m} {scope} pct", e["pct"], p)
                     mm.eq(f"{w} {role} {m} {scope} pct_text", e["pct_text"], format_pct(at6(p)))
                     mm.eq(f"{w} {role} {m} {scope} phrase", e["phrase"],
-                          page_mod.pct_words(at6(p))[1])
+                          style_words(at6(p)) if DIRECTION[m] == "style"
+                          else page_mod.pct_words(at6(p))[1])
+                    mm.eq(f"{w} {role} {m} {scope} band", e["band"],
+                          band(at6(p), DIRECTION[m] == "style"))
                     mm.eq(f"{w} {role} {m} {scope} text or number",
                           (e["pct_text"] is None) != (e["status_text"] is None), True)
         dna = ctx["dna_rows"].get(k)

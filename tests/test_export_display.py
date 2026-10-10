@@ -60,3 +60,12 @@ def test_gap_eligibility_option_c():
     for m, g in noted:
         c = REGISTRY.cell(m, g)
         assert not X.gap_eligible(S[m], c.status, c.team_style_biased)
+
+
+def test_shown_bin_reads_the_shown_value_directly():
+    """W0 decision 1: a lower-better cell's bin is the band of its shown percentile; exact at
+    the boundaries."""
+    spec = S["dispossessed_p90"]
+    for shown, want in [(90.0, 4), (89.999999, 3), (60.0, 2), (40.0, 2), (10.0, 0), (21.641791, 1)]:
+        assert X.shown_bin(spec, False, shown) == want
+    assert X.shown_bin(spec, False, None) is None

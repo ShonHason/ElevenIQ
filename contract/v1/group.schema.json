@@ -12,18 +12,19 @@
       "type": "array",
       "items": {
         "type": "object", "additionalProperties": false,
-        "required": ["metric", "label", "family", "order", "direction", "direction_text", "registry_status",
-                     "uncoloured", "gap_eligible", "notes", "reasons", "withheld_tag"],
+        "required": ["metric", "label", "family", "order", "direction", "direction_text", "unit", "definition", "registry_status",
+                     "uncoloured", "gap_eligible", "notes", "withheld_tag"],
         "properties": {
           "metric": {"type": "string"}, "label": {"type": "string"}, "family": {"type": "string"},
           "order": {"type": "integer", "minimum": 0},
           "direction": {"enum": ["higher_better", "lower_better", "style"]},
           "direction_text": {"type": "string"},
+          "unit": {"type": "string", "description": "Shown next to the value: \"per 90\", \"per shot\", or empty when the value text carries it (%)."},
+          "definition": {"type": "string", "description": "One plain sentence from the metric's implementation (checked by the stats-reviewer)."},
           "registry_status": {"type": ["string", "null"]},
           "uncoloured": {"type": "boolean"},
           "gap_eligible": {"type": "boolean", "description": "May headline compare mode's top-6 gap list (user, 2026-10-09, option c): not a signature trait, not associated with team possession, not long pass completion. The site also needs a percentile on both rows."},
-          "notes": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/noteText"}},
-          "reasons": {"type": ["string", "null"], "description": "Why a non-DNA metric is display-only, as registry reason text."},
+          "notes": {"type": "array", "description": "Notes and display reasons, each short text once; full texts joined for the popover.", "items": {"$ref": "common.schema.json#/$defs/noteText"}},
           "withheld_tag": {"type": ["string", "null"], "description": "\"(<Family> score withheld: <reason>)\" when the metric's family score is withheld in this group."}
         }
       }

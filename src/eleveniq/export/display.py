@@ -66,7 +66,7 @@ STATUS_TEXT: dict[str, str] = {
     "null_value": "no value",
     "cohort_too_small": "population below the minimum size",
     "d9_undefined": "not testable (league populations too small or unmeasured)",
-    "league_inconsistent": "not used: league means differ",
+    "league_inconsistent": "not ranked across leagues",       # W3 polish (user): plain wording
 }
 
 
@@ -100,6 +100,14 @@ def format_number(v: Any) -> str:
     if isinstance(v, float):
         return str(math.floor(v + 0.5)) if not v.is_integer() else str(int(v))
     return str(v)
+
+
+def format_count(v: Any, decimals: bool = False) -> str:
+    """A season total: a count with thousands separators, or a sum such as xG (`decimals`) to 2
+    decimals whatever its value."""
+    if v is None:
+        return "—"
+    return f"{v:,.2f}" if decimals else f"{int(v):,}"
 
 
 def status_text(status: str) -> str:
@@ -148,8 +156,19 @@ def gap_eligible(spec: MetricSpec, registry_status: str | None, team_style_biase
     return not (spec.column == "long_pass_completion_pct" or team_style_biased)
 
 
+def shown_bin(spec: MetricSpec, team_style_biased: bool, shown: float | None) -> int | str | None:
+    """The bin of an already direction-adjusted (shown) percentile (W0 decision 1), computed
+    from the shown value itself (no flip back and forth, so no float noise at a boundary)."""
+    if shown is None:
+        return None
+    if not 0 <= shown <= 100:
+        raise DisplayError(f"percentile out of range: {shown}")
+    return "uncoloured" if uncoloured(spec, team_style_biased) else _band(shown)
+
+
 def adjusted(spec: MetricSpec, p: float) -> float:
-    """The direction-adjusted percentile: lower-better as 100 − p (style metrics unchanged)."""
+    """The direction-adjusted percentile: lower-better as 100 − p (style metrics unchanged); the
+    shown percentile of every cell (W0 decision 1)."""
     return 100.0 - p if spec.direction == "lower_better" else p
 
 
@@ -161,7 +180,11 @@ def percentile_bin(spec: MetricSpec, team_style_biased: bool, p: float | None) -
         raise DisplayError(f"percentile out of range: {p}")
     if uncoloured(spec, team_style_biased):
         return "uncoloured"
-    a = adjusted(spec, p)
+    return _band(adjusted(spec, p))
+
+
+def _band(a: float) -> int:
+    """The DESIGN §4 bin of a direction-adjusted percentile."""
     if a <= 10:
         return 0
     if a < W.MID_LO:
@@ -186,8 +209,9 @@ def fold(text: str) -> str:
 def gap_order(metas: list[dict], a: list[dict], b: list[dict], n: int = 6) -> list[str]:
     """Compare mode's top-n gap list, the Python reference of the browser's ordering (ADR 005
     §1 exception; user, 2026-10-09, option c): the metrics whose group metadata is
-    gap_eligible and whose local percentile both rows show, by the absolute gap of their
-    direction-adjusted local percentiles (largest first), ties by registry metric order.
+    gap_eligible and whose local percentile both rows show, by the absolute gap of their shown
+    (already direction-adjusted, W0 decision 1) local percentiles, largest first, ties by
+    registry metric order.
     `metas` is groups/<group>.json's metrics; `a` and `b` the two player files' metrics (same
     order)."""
     rows = []
@@ -195,7 +219,5 @@ def gap_order(metas: list[dict], a: list[dict], b: list[dict], n: int = 6) -> li
         pa, pb = ra["local"]["pct"], rb["local"]["pct"]
         if not meta["gap_eligible"] or pa is None or pb is None:
             continue
-        sa = 100.0 - pa if meta["direction"] == "lower_better" else pa
-        sb = 100.0 - pb if meta["direction"] == "lower_better" else pb
-        rows.append((-abs(sa - sb), meta["order"], meta["metric"]))
+        rows.append((-abs(pa - pb), meta["order"], meta["metric"]))
     return [m for _, _, m in sorted(rows)[:n]]

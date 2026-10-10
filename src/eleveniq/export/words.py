@@ -108,6 +108,41 @@ def pct_words(p: float) -> tuple[str, str]:
     return ("Very low" if p <= 10 else "Low"), f"bottom {max(1, math.ceil(p - 1e-9))}%"
 
 
+# Style metrics have no good or bad end (W3 polish, user): a neutral phrase, not top / bottom N%.
+STYLE_HIGHER, STYLE_LOWER = "higher than most", "lower than most"
+
+
+def style_words(p: float) -> str:
+    """The phrase for a style metric's percentile: around average in the 40–60 band (as
+    pct_words), else higher / lower than most."""
+    if not 0 <= p <= 100:
+        raise ValueError(f"percentile out of range: {p}")
+    if MID_LO <= p <= MID_HI:
+        return "around average"
+    return STYLE_HIGHER if p > MID_HI else STYLE_LOWER
+
+
+POSSESSION_SHORT = "associated with team possession"
+
+
+def reason_note(code: str) -> NoteText:
+    """A display reason as a note: the team-possession reasons share the short text."""
+    full = R.reason_text(code)
+    short = POSSESSION_SHORT if code in (R.R_TEAM_STYLE, R.R_MAJORITY) else full
+    return NoteText(short, full)
+
+
+def merge_notes(items: list[NoteText]) -> list[NoteText]:
+    """Each short text once, in first-seen order; the full texts of one short text join (each
+    once) for the popover."""
+    fulls: dict[str, list[str]] = {}
+    for n in items:
+        lst = fulls.setdefault(n.short, [])
+        if n.full not in lst:
+            lst.append(n.full)
+    return [NoteText(short, "; ".join(f)) for short, f in fulls.items()]
+
+
 def in_sentence(label: str) -> str:
     """A label inside a sentence: first letter lowered unless it starts an acronym (xG)."""
     return label if label[1:2].isupper() else label[:1].lower() + label[1:]
@@ -125,8 +160,9 @@ SIGNATURE_ROW = "signature trait — see below"
 NEAR_GATE_CHIP = "Fewer minutes: less reliable"
 HOLDER, NON_HOLDER = "holder", "non-holder"
 NOT_ASSESSED = "not assessed: {reason}"
-NEIGHBOURS_LABEL = ("Statistically similar: DNA distance within position group (provisional "
-                    "until the M5 similarity engine)")
+# W3 polish (user, 2026-10-10): no internal jargon on the page ("DNA distance", milestones).
+NEIGHBOURS_LABEL = ("Players whose profiles are most like this one, in the same position "
+                    "(provisional)")
 ATTRIBUTION = "Data: StatsBomb Open Data"
 # Player page and chips (plan 006 W3; DESIGN.md §6 chip set; the Profile shape note is the user's
 # W4 leaning, checked by the stats-reviewer in the final text pass).
@@ -143,6 +179,28 @@ AROUND_AVERAGE = "around average"
 NEIGHBOURS_TITLE = "Similar players"
 MOST_ALIKE, MOST_DIFFERENT = "Most alike", "Most different"
 SIGNATURE_TITLE = "Signature traits"
+BASIS_LEGEND = "The bold percentile is the one the player's profile uses for that metric."
+# What stands out (W3 fix round, user 2026-10-10): the 6 league percentiles furthest from 50.
+STAND_OUT_TITLE = "What stands out"
+STAND_OUT_NOTE = ("The six metrics where the player is furthest from the league average for the "
+                  "position, high or low. Lower-is-better metrics are counted from their better "
+                  "end; style metrics have no better end.")
+STAND_OUT_N = 6
+# The compare-mode defensive rate (user-approved label, 2026-10-10): a plain rate, no
+# percentile, never "adjusted" or "corrected".
+RATE_LABEL = "per 100 opponent open-play passes (while on the pitch)"
+# Compare mode (W4; user decisions 2026-10-09: same group only, no distance, top 6 by gap).
+COMPARE_TOP_TITLE = "Where they differ most"
+COMPARE_TOP_NOTE = ("The six metrics with the largest gap between the two players' league "
+                    "percentiles. Long pass completion, signature traits and metrics associated "
+                    "with team possession are left out, so team differences are not shown as "
+                    "player differences.")
+COMPARE_ALL_TITLE = "All metrics"
+COMPARE_SAME_GROUP = "Only players in the same position group can be compared."
+RATE_METRICS = ("tackles_attempted", "interceptions", "ball_recoveries", "pressures", "blocks",
+                "clearances")
+LOWER_BETTER = "lower better"
+BASIS_MARKER = "used for the profile"      # screen-reader text of the bold (basis) percentile
 SIGNATURE_NOTE = ("A holder / non-holder flag, not a percentile: most players in the group record "
                   "none, so a rank would mostly compare zeros.")
 PORTFOLIO = "A non-commercial portfolio project."
@@ -342,3 +400,131 @@ def defending_note(group: str, derivation: R.Derivation | None = None) -> str | 
     under = " (underpowered)" if any(n.startswith("underpowered") for n in fs.notes) else ""
     closing = NOT_A_FINDING if fs.status == R.POSSESSION_CRITERIA_FAILED else EXPECTED_STATE
     return f"Defending scores are withheld: {DEFENDING_CLAUSE[fs.status]}{under}. {closing}"
+
+
+# ── Display round (user, 2026-10-10): percentile bands, units, definitions ─────────────
+# A fixed band on the shown (direction-adjusted) league percentile replaces the number in every
+# cell; the number moves to the popover. Lower bounds, compared with the shown 6-decimal value
+# (the tolerance of the other display rules). Style metrics keep their neutral phrase.
+BANDS: tuple[tuple[float, str], ...] = (
+    (99.0, "Top 1%"), (95.0, "Top 5%"), (90.0, "Top 10%"), (75.0, "Top 25%"),
+    (60.0, "Above average"), (40.0, "Around average"), (25.0, "Below average"),
+    (10.0, "Bottom 25%"), (5.0, "Bottom 10%"), (0.0, "Bottom 5%"),
+)
+STYLE_BANDS = {"higher than most": "Higher than most", "around average": "Around average",
+               "lower than most": "Lower than most"}
+
+
+def band(shown: float, style: bool) -> str:
+    """The band label of a shown percentile (style metrics: the neutral phrase)."""
+    if not 0 <= shown <= 100:
+        raise ValueError(f"percentile out of range: {shown}")
+    if style:
+        return STYLE_BANDS[style_words(shown)]
+    return next(label for lo, label in BANDS if shown >= lo)
+
+
+def ordinal_percentile(pct_text: str) -> str:
+    """"97th percentile", or "above the 99th percentile" / "below the 1st percentile" for a row
+    ranked against a population it is not in (pct_text ">99" / "<1")."""
+    if pct_text == ">99":
+        return "above the 99th percentile"
+    if pct_text == "<1":
+        return "below the 1st percentile"
+    n = int(pct_text)
+    suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix} percentile"
+
+
+PCT_NOTE_LOCAL = "{ordinal} among {league} {group}"
+PCT_NOTE_GLOBAL = "{ordinal} among {group} in all leagues"
+LOWER_BETTER_NOTE = "lower is better, so it is counted from the better end"
+
+# Units of a value, from the metric definition (MetricSpec.unit; the xG ratios are per shot).
+UNIT_TEXT = {"per90": "per 90", "share": "", "ratio": ""}
+PER_SHOT = frozenset({"np_xg_per_shot", "xg_per_shot"})
+TOTAL_WORD = "total"
+EXACT_HINT = "show the exact percentile"
+SUM_COLUMNS = frozenset({"xg", "np_xg", "xg_assisted", "xg_assisted_direct", "op_xg_assisted",
+                         "restart_xg_assisted"})        # sums, shown to 2 decimals     # screen-reader hint on a band's popover trigger
+SUMMARY_LABELS = {"appearances": "appearances", "minutes_played": "minutes", "goals": "goals",
+                  "assists": "assists", "xg": "xG", "shots": "shots"}
+SUMMARY_SINGULAR = {"appearances": "appearance", "minutes_played": "minute", "goals": "goal",
+                    "assists": "assist", "shots": "shot"}
+
+
+def summary_label(key: str, value: float) -> str:
+    """The label of a summary count, singular for exactly one (1 goal, 3 goals; xG unchanged)."""
+    return SUMMARY_SINGULAR.get(key, SUMMARY_LABELS[key]) if value == 1 else SUMMARY_LABELS[key]
+
+
+def unit_text(column: str, unit: str) -> str:
+    """The unit shown next to a value ('%' is already part of a percentage value's text)."""
+    if column in PER_SHOT:
+        return "per shot"
+    return UNIT_TEXT[unit]
+
+
+# One plain sentence per metric, written from the implementation (src/eleveniq/metrics/ and
+# pipeline/build_player_match._aggregate_events; thresholds in StatsBomb pitch units, the
+# pitch being 120 × 80). Per-90 values divide the season count by minutes played × 90.
+# Restarts are corners, free kicks, goal kicks, kick-offs and throw-ins. Checked by the
+# stats-reviewer against the code.
+_RESTART = "corners, free kicks, goal kicks, kick-offs and throw-ins"
+METRIC_DEFINITIONS: dict[str, str] = {
+    "pass_completion_pct": "Completed passes as a share of all passes, leaving out passes with an unknown outcome and injury clearances.",
+    "long_pass_completion_pct": "Completed long passes (30 units or more, restarts excluded) as a share of long passes, leaving out unknown outcomes and injury clearances.",
+    "long_passes_attempted_p90": f"Passes of 30 pitch units or more, excluding {_RESTART}.",
+    "team_pass_share": "The player's open-play passes as a share of all the team's open-play passes while the player was on the pitch.",
+    "passes_attempted_p90": "Every pass the player attempted, completed or not, restarts included.",
+    "passes_completed_p90": "Passes StatsBomb records as completed (no failed or unknown outcome).",
+    "switches_p90": "Passes StatsBomb marks as a switch of play, restarts included.",
+    "progressive_passes_p90": f"Completed passes, not from {_RESTART}, starting outside the team's own 40% of the pitch, that move the ball at least 10 units closer to the opponent's goal or into the penalty area from outside.",
+    "final_third_entries_pass_p90": f"Completed passes, not from {_RESTART}, that start before the final third and end inside it.",
+    "box_entries_pass_p90": f"Completed passes, not from {_RESTART}, that start outside the opponent's penalty area and end inside it.",
+    "progressive_carries_p90": "Carries that move the ball at least 5 units closer to the opponent's goal and cover at least 5 units.",
+    "final_third_entries_carry_p90": "Carries that start before the final third and end inside it.",
+    "box_entries_carry_p90": "Carries that start outside the opponent's penalty area and end inside it.",
+    "dribbles_attempted_p90": "Take-ons (StatsBomb dribbles) the player attempted.",
+    "dribbles_completed_p90": "Take-ons (StatsBomb dribbles) recorded as complete.",
+    "dribble_success_pct": "Completed take-ons as a share of take-ons attempted.",
+    "carries_p90": "Every carry: the player moving with the ball under control.",
+    "fouls_won_p90": "Fouls committed against the player.",
+    "op_key_passes_p90": "Passes that led directly to a shot or assisted a goal, from open play (not from a restart).",
+    "op_xg_assisted_p90": "The xG of the shots the player's open-play passes set up (not from a restart).",
+    "key_passes_p90": "Passes that led directly to a shot or assisted a goal, restarts included.",
+    "xg_assisted_p90": "The xG of the shots the player's passes set up, restarts included.",
+    "xg_assisted_direct_p90": "The xG of the shots the player's passes set up, leaving out shots where the shooter dribbled or carried the ball more than 10 units first, or where that could not be checked.",
+    "crosses_attempted_p90": "Passes StatsBomb marks as crosses, restarts included.",
+    "cross_completion_pct": "Completed crosses as a share of crosses, leaving out crosses with an unknown outcome.",
+    "op_assists_p90": "Passes, from open play (not from a restart), that StatsBomb records as a goal assist.",
+    "assists_p90": "Passes that StatsBomb records as a goal assist, restarts included.",
+    "restart_key_passes_p90": "Passes from corners, free kicks, goal kicks, kick-offs and throw-ins that led directly to a shot or assisted a goal.",
+    "restart_xg_assisted_p90": "The xG of the shots set up by the player's passes from corners, free kicks, goal kicks, kick-offs and throw-ins.",
+    "restart_assists_p90": "Goal assists from corners, free kicks, goal kicks, kick-offs and throw-ins.",
+    "np_shots_p90": "Shots, leaving out penalties.",
+    "np_xg_p90": "The StatsBomb xG of the player's shots, leaving out penalties.",
+    "np_shots_on_target_p90": "Shots that scored or were saved by the goalkeeper (including onto the post), leaving out penalties.",
+    "shots_on_target_p90": "Shots that scored or were saved by the goalkeeper (including onto the post), penalties included.",
+    "np_xg_per_shot": "The average StatsBomb xG of the player's non-penalty shots.",
+    "shots_p90": "Every shot, penalties included.",
+    "xg_p90": "The StatsBomb xG of the player's shots, penalties included.",
+    "xg_per_shot": "The average StatsBomb xG of the player's shots, penalties included.",
+    "goals_p90": "Goals the player scored, penalties included (penalty shoot-outs excluded).",
+    "tackles_attempted_p90": "Tackles the player attempted (StatsBomb tackle duels), won or lost.",
+    "tackles_won_p90": "Tackles recorded as won, including those where the ball went out of play.",
+    "tackle_success_pct": "Tackles won as a share of tackles attempted.",
+    "defensive_duel_success_pct": "Tackles won as a share of tackles attempted plus times the player was dribbled past.",
+    "interceptions_p90": "Times the player intercepted the ball.",
+    "ball_recoveries_p90": "Loose balls the player recovered, leaving out failed recoveries.",
+    "pressures_p90": "Times the player pressed an opponent who had the ball.",
+    "clearances_p90": "Clearances the player made.",
+    "blocks_p90": "Shots or passes the player blocked, leaving out blocks by the attacking side and goalkeeper save-blocks.",
+    "dribbled_past_p90": "Times an opponent's take-on went past the player.",
+    "fouls_committed_p90": "Fouls the player committed.",
+    "aerials_won_p90": "Aerial duels the player won.",
+    "aerial_win_pct": "Aerial duels won as a share of aerial duels won and lost.",
+    "aerials_lost_p90": "Aerial duels the player lost.",
+    "dispossessed_p90": "Times the player lost the ball to an opponent's challenge.",
+    "miscontrols_p90": "Times the player lost the ball through a bad touch.",
+}

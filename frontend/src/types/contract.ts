@@ -73,7 +73,7 @@ export interface NoteText {
   full: string;
 }
 /**
- * One percentile scope (local: league × group; global: group across the pool leagues). pct is the stored Hazen percentile (0–100); pct_text is ">99" / "<1" for rows outside their population, else half-up 1–99; a null pct shows status_text instead.
+ * One percentile scope (local: league × group; global: group across the pool leagues). pct is the shown percentile (0–100): the stored Hazen percentile, direction-adjusted for a lower-better metric (100 − p; W0 decision 1), so number, phrase, bar and bin agree; pct_text is ">99" / "<1" for rows outside their population, else half-up 1–99; a null pct shows status_text instead.
  *
  * This interface was referenced by `ElevenIQContractV1SharedDefinitions`'s JSON-Schema
  * via the `definition` "scope".
@@ -85,6 +85,14 @@ export interface Scope {
    * words.pct_words: "top 5%", "around average", "bottom 12%".
    */
   phrase: string | null;
+  /**
+   * The fixed band of the shown percentile (Top 1% … Bottom 5%; style metrics: Higher than most / Around average / Lower than most). It replaces the number in every cell.
+   */
+  band: string | null;
+  /**
+   * The exact number for the popover, e.g. "97th percentile among Premier League 2015/16 central midfielders".
+   */
+  note: string | null;
   bin: Bin;
   n: number | null;
   /**
@@ -106,6 +114,10 @@ export interface MetricRow {
    * Percent with 1 decimal for shares and _pct metrics, 3 decimals for ratios, else 2; "—" when null.
    */
   value_text: string;
+  /**
+   * The season total ("176 total") or a ratio's made / attempted counts ("1,812 / 2,215"), from the season parquet; null on second-group rows.
+   */
+  total_text: string | null;
   local: Scope;
   global: Scope;
   basis: "local" | "global" | null;
@@ -215,17 +227,24 @@ export interface GroupsGroupJson {
     order: number;
     direction: "higher_better" | "lower_better" | "style";
     direction_text: string;
+    /**
+     * Shown next to the value: "per 90", "per shot", or empty when the value text carries it (%).
+     */
+    unit: string;
+    /**
+     * One plain sentence from the metric's implementation (checked by the stats-reviewer).
+     */
+    definition: string;
     registry_status: string | null;
     uncoloured: boolean;
     /**
      * May headline compare mode's top-6 gap list (user, 2026-10-09, option c): not a signature trait, not associated with team possession, not long pass completion. The site also needs a percentile on both rows.
      */
     gap_eligible: boolean;
-    notes: NoteText[];
     /**
-     * Why a non-DNA metric is display-only, as registry reason text.
+     * Notes and display reasons, each short text once; full texts joined for the popover.
      */
-    reasons: string | null;
+    notes: NoteText[];
     /**
      * "(<Family> score withheld: <reason>)" when the metric's family score is withheld in this group.
      */
@@ -273,6 +292,14 @@ export interface PlayersKeyJson {
      */
     near_gate: boolean;
     role_text: string | null;
+    /**
+     * The season summary line: the pipeline's own counts.
+     */
+    summary: {
+      key: string;
+      label: string;
+      text: string;
+    }[];
     dmcm_slot: {
       label: "6" | "8" | "mixed";
       label_text: string;
@@ -282,6 +309,308 @@ export interface PlayersKeyJson {
       pivot_text: string;
     } | null;
   };
+  /**
+   * What stands out: the 6 metrics whose shown league percentile is furthest from 50 (style included), ranked by the exporter; ties by registry metric order. order indexes the group metadata.
+   *
+   * @maxItems 6
+   */
+  stand_out:
+    | []
+    | [
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        }
+      ]
+    | [
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        }
+      ]
+    | [
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        }
+      ]
+    | [
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        }
+      ]
+    | [
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        }
+      ]
+    | [
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        },
+        {
+          metric: string;
+          order: number;
+          label: string;
+          direction: "higher_better" | "lower_better" | "style";
+          pct: number;
+          pct_text: string;
+          phrase: string;
+          /**
+           * DESIGN.md §4 colour bin of the direction-adjusted percentile: 0 (≤ 10), 1 (< 40), 2 (40–60), 3 (< 90), 4 (≥ 90); "uncoloured" for style metrics, long pass completion and cells associated with team possession; null without a percentile.
+           */
+          bin: number | "uncoloured" | null;
+        }
+      ];
+  /**
+   * Compare mode's defensive rate (user-approved label): each count per 100 opponent open-play passes made while the player was on the pitch (season counts; the pipeline's exposure column). A plain rate: no percentile, never adjusted. metric is the per-90 metric it accompanies. Empty for goalkeepers; rate null without exposure.
+   */
+  defensive_rates: {
+    metric: string;
+    count: number;
+    exposure: number;
+    rate: number | null;
+    rate_text: string | null;
+  }[];
   metrics: MetricRow[];
   /**
    * Display only (ADR 004 D5): scored against a population that does not contain the player.

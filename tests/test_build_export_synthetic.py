@@ -32,6 +32,9 @@ SPECS = dna_specs(R.REGISTRY, R.SPECS, G)
 DNA_METRICS = [s.column for s in SPECS]
 WEIGHTS = split_weights(SPECS, set(DNA_METRICS))
 SIG = {s.count_column for s in R.SPECS if s.count_column}
+# Every season column a metric's total reads: per-90 counts and ratio terms (display round).
+COUNTS = SIG | {t for s in R.SPECS if s.ratio for t in s.ratio.terms} | {
+    "appearances", "goals", "assists", "xg", "shots"}
 STAMPS = {"contract_version": "1.0.0", "registry_version": R.REGISTRY_VERSION,
           "measurement_source": "statsbomb", "source": "statsbomb", "season_ids": [27],
           **{f"{n}_sha256": "0" * 64 for n in ("season_parquet", "percentiles_parquet",
@@ -59,7 +62,11 @@ def _world():
                        "second_position_group": "CB" if k[0] == 101 else None,
                        "minutes_played": minutes, "minutes_nominal_equiv": minutes * 0.95,
                        "meets_min_minutes": kind != "below",
-                       **{c: 3 for c in SIG}})
+                       **{c: 3 for c in COUNTS},
+                       # the compare-mode defensive rate's season counts and exposure
+                       "opponent_open_play_passes_while_on": 900 if kind != "below" else 0,
+                       **{c: 9 for c in ("tackles_attempted", "interceptions", "ball_recoveries",
+                                          "pressures", "blocks", "clearances")}})
         pos.append({**dict(zip(B.KEY, k)), "position": "Goalkeeper" if kind == "gk"
                     else "Center Defensive Midfield", "minutes": minutes / 2})
         if kind != "gk":
@@ -237,7 +244,7 @@ def test_gap_order_fixed_expectations():
     row = lambda *ps: [{"local": {"pct": p}} for p in ps]  # noqa: E731
     a = row(50, 10, 40, 1, 50, None)
     b = row(70, 30, 90, 99, 50, 90)
-    # gaps: a 20, b 20 (direction-adjusted: 90 vs 70), c 50, lp 98 (not eligible), d 0, e no pct
+    # gaps of the shown percentiles: a 20, b 20, c 50, lp 98 (not eligible), d 0, e no pct
     assert X.gap_order(metas, a, b) == ["c", "a", "b", "d"]
 
 
@@ -316,3 +323,11 @@ def test_fixture_cli_refuses_a_changing_fixture_unless_update_flag(monkeypatch, 
     B.main()
     assert f.read_bytes() == before
     assert "changed" in capsys.readouterr().out
+
+
+def test_synthetic_defensive_rates(docs):
+    """9 of 900 opponent open-play passes → 1.00; the below-gate row without exposure → null."""
+    rates = docs["players/100-10-2-27.json"]["defensive_rates"]
+    assert [r["rate_text"] for r in rates] == ["1.00"] * 6
+    assert all(r["rate"] is None for r in docs["players/500-13-2-27.json"]["defensive_rates"])
+    assert docs["players/400-13-2-27.json"]["defensive_rates"] == []          # goalkeeper

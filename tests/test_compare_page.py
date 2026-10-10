@@ -195,7 +195,7 @@ def test_null_percentile_shows_reason_not_blank():
     a = _player("CB", overrides={"interceptions_p90": {"pct": None, "status": "league_inconsistent"}})
     b = _player("CB", key={**_KEY, "player_id": 2}, name="Player Two")
     page = P.render([a, b])
-    assert "not used: league means differ" in page
+    assert "not ranked across leagues" in page        # W3 polish wording (user, 2026-10-10)
     for chunk in page.split('<div class="scope')[1:]:
         body = chunk.split("</div>")[0]
         assert "|pct_" in body or 'class="reason"' in body
