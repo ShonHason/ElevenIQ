@@ -1,36 +1,89 @@
-// W2 stub: the identity strip only; the profile shape, tables and neighbours are W3/W4.
-import { useEffect, useRef, useState } from "react";
-import { getPlayer } from "../api";
-import type { PlayersKeyJson } from "../types/contract";
+// The player page (plan 006 W3): identity strip, Profile shape, metric table, signature traits,
+// neighbours. Every figure and statement comes from the export.
+import { useEffect, useRef } from "react";
+import { getGroup, getLabels, getPlayer } from "../api";
+import { Chip } from "../components/Chip";
+import { MetricTable } from "../components/MetricTable";
+import { Neighbours } from "../components/Neighbours";
+import { ProfileShape } from "../components/ProfileShape";
 import { UI } from "../lib/ui-text";
+import { useData } from "../lib/useData";
 
 export function Player({ playerKey }: { playerKey: string }) {
-  const [doc, setDoc] = useState<PlayersKeyJson | null>(null);
-  const [failed, setFailed] = useState(false);
+  const { data, failed } = useData(async () => {
+    const doc = await getPlayer(playerKey);
+    const [group, labels] = await Promise.all([getGroup(doc.identity.group), getLabels()]);
+    return { doc, group, labels };
+  }, [playerKey]);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    let current = true;                       // a late answer for another player is ignored
-    setDoc(null); setFailed(false);
-    getPlayer(playerKey).then((d) => { if (current) setDoc(d); })
-      .catch(() => { if (current) setFailed(true); });
-    return () => { current = false; };
-  }, [playerKey]);
-  // Once the page has its heading: title and focus (the route change fires before the data).
-  useEffect(() => {
-    if (!doc) return;
-    document.title = `${doc.identity.display_name} — ${UI.site}`;
+    if (!data) return;
+    document.title = `${data.doc.identity.display_name} — ${UI.site}`;
     heading.current?.focus();
-  }, [doc]);
+  }, [data]);
+
   if (failed) return <p className="pt-10 text-ink-2">{UI.error}</p>;
-  if (!doc) return <p className="pt-10 text-ink-3">{UI.loading}</p>;
+  if (!data) return <p className="pt-10 text-ink-3">{UI.loading}</p>;
+  const { doc, group, labels } = data;
   const i = doc.identity;
+  const w = labels.words;
+  const defendingNote = doc.dna?.dimensions.find((d) => d.defending_note)?.defending_note;
+  const noProfile = !doc.dna ? (i.group === "GK" ? labels.statuses.goalkeeper
+    : !i.meets_gate ? labels.statuses.below_gate : labels.statuses.not_in_pool) : null;
+
   return (
-    <section className="pt-8">
-      <h1 ref={heading} tabIndex={-1} className="text-[24px] font-semibold leading-[30px] tracking-[-0.01em] outline-none">{i.display_name}</h1>
-      <div className="mt-1 flex flex-wrap gap-x-4 text-ink-2">
-        <span>{i.team}</span><span>{i.league}</span><span>{i.group_text}</span>
-        <span><span className="num" data-src={`players/${i.key}.json#identity.minutes_text`}>{i.minutes_text}</span> min</span>
-      </div>
-    </section>
+    <article className="pt-8">
+      <header className="rounded-lg border border-line bg-surface-1 px-4 py-3">
+        <h1 ref={heading} tabIndex={-1} className="text-[24px] font-semibold leading-[30px] tracking-[-0.01em] outline-none">{i.display_name}</h1>
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-ink-2">
+          <span>{i.team}</span><span>{i.league}</span><span>{i.group_text}</span>
+          <span><span className="num" data-src={`players/${i.key}.json#identity.minutes_text`}>{i.minutes_text}</span> {w.column_minutes}</span>
+          {i.role_text && <span>{i.role_text}</span>}
+          {i.near_gate && <Chip kind="caution">{w.near_gate_chip}</Chip>}
+        </div>
+      </header>
+
+      {noProfile ? (
+        <p className="mt-6 text-ink-2">{noProfile}</p>
+      ) : (
+        <div className="mt-6 grid gap-8 lg:grid-cols-[380px_1fr]">
+          <div>
+            <ProfileShape series={[{ key: i.key, name: i.display_name, dims: doc.dna!.dimensions }]}
+                          labels={{ title: w.profile_shape_title, note: w.profile_shape_note,
+                                    withheld: w.chip_withheld, average: w.around_average }} />
+            <ul className="mt-3 space-y-1 text-[12px] leading-4">
+              {doc.dna!.dimensions.filter((d) => d.withheld_short).map((d) => (
+                <li key={d.family} className="flex flex-wrap items-center gap-2">
+                  <Chip kind="withheld">{w.chip_withheld}</Chip>
+                  <span className="font-medium">{d.label}</span>
+                  <span className="text-ink-3">{d.withheld_full}</span>
+                </li>
+              ))}
+            </ul>
+            {defendingNote && <p className="mt-2 text-[12px] leading-4 text-ink-3">{defendingNote}</p>}
+          </div>
+          {doc.neighbours && <Neighbours nb={doc.neighbours} from={i.key} labels={labels} />}
+        </div>
+      )}
+
+      <section className="mt-10">
+        <MetricTable doc={doc} group={group} labels={labels} />
+      </section>
+
+      {doc.signature_traits.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-[17px] font-semibold leading-6">{w.signature_title}</h2>
+          <p className="mt-0.5 text-[12px] leading-4 text-ink-3">{w.signature_note}</p>
+          <ul className="mt-3 divide-y divide-line rounded-lg border border-line bg-surface-1">
+            {doc.signature_traits.map((t) => (
+              <li key={t.metric} className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2">
+                <span>{t.label}</span>
+                <span className={t.holder ? "font-medium text-ink" : "text-ink-2"}>{t.holder_text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </article>
   );
 }

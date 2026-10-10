@@ -19,6 +19,8 @@ export const UI = {
   registry: "Registry",
   attributionFallback: "Data: StatsBomb Open Data",
   loading: "Loading…",
+  table: { metric: "Metric", notes: "Notes" },
+  compare: "Compare",
   notFound: "Page not found",
   back: "Back to search",
   error: "The data could not be loaded.",
