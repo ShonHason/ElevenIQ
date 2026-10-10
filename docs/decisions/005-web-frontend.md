@@ -189,6 +189,11 @@ Requirements the choice must meet:
 - **Gate before any public deploy:** read the StatsBomb `LICENSE.pdf` (the Public Data User Agreement) directly and record its terms in ADR 001.
   - It must confirm public hosting of derived per-player statistics and downloadable derived JSON, and the logo and attribution rules.
   - Until then, deploys are private previews only (password or unlisted).
+- **Licence reading and decision (user, 2026-10-10):**
+  - The agreement (`docs/legal/`, last updated 8 September 2023) allows sharing "analysis or conclusions" publicly, with StatsBomb named and the logo shown (1.4). Clauses 1.2.1 and 7 forbid distributing or providing "the data" to third parties without written consent. Whether bulk downloadable per-player derived values count as analysis or as data is not settled by the text.
+  - **Until StatsBomb's (Hudl's) written answer:** the site deploys only as a private preview on Cloudflare Pages behind Cloudflare Access (invite-only).
+  - The repository stays private, and no public-repo steps are planned.
+  - The user is asking Hudl / StatsBomb for written consent.
 
 ## 9. Fit with the remaining M4 chunks
 - **M4g3–M4g6 change data, not the contract.**
