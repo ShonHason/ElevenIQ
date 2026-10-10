@@ -1,7 +1,7 @@
 // The one data module (ADR 005 §1): typed fetches of the static contract files. v1 reads static
 // JSON; M7 swaps these for the API with the same contract. Pages never fetch directly.
 import type {
-  GroupsGroupJson, LabelsJson, ManifestJson, PlayersKeyJson, SearchIndexJson,
+  GemsGroupJson, GroupsGroupJson, LabelsJson, ManifestJson, PlayersKeyJson, SearchIndexJson,
 } from "../types/contract";
 
 export const CONTRACT_MAJOR = "1";
@@ -41,3 +41,4 @@ export const getSearchIndex = () => getJson<SearchIndexJson>("search-index.json"
 export const getLabels = () => getJson<LabelsJson>("labels.json");
 export const getPlayer = (key: string) => getJson<PlayersKeyJson>(`players/${key}.json`);
 export const getGroup = (group: string) => getJson<GroupsGroupJson>(`groups/${group}.json`);
+export const getGems = (group: string) => getJson<GemsGroupJson>(`gems/${group}.json`);

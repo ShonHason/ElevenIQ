@@ -206,6 +206,16 @@ export interface LabelsJson {
    * Registry metric order: the order of every metrics array and the compare gap tie-break.
    */
   metric_order: string[];
+  /**
+   * The Methodology page: sections of plain paragraphs (export/words.py METHODOLOGY).
+   */
+  methodology: {
+    title: string;
+    sections: {
+      title: string;
+      paragraphs: string[];
+    }[];
+  };
 }
 /**
  * The provenance of the export, repeated in every file. No wall-clock time: two exports of the same data are byte-identical.
@@ -1764,6 +1774,68 @@ export interface StyleMapsGroupJson {
   texts: {
     [k: string]: string;
   };
+}
+/**
+ * The provenance of the export, repeated in every file. No wall-clock time: two exports of the same data are byte-identical.
+ */
+/**
+ * Gem Finder for one position group: profiled rows with their family scores (the exported dimension scores). Every order is computed by the exporter (ADR 005 §1); the page filters by league, team and minutes tier and never sorts by a statistic.
+ */
+export interface GemsGroupJson {
+  stamps: Stamps;
+  group: string;
+  families: {
+    family: string;
+    label: string;
+    /**
+     * What the family score measures; null for a withheld family.
+     */
+    definition: string | null;
+    withheld_short: string | null;
+    withheld_full: string | null;
+  }[];
+  rows: {
+    /**
+     * <player_id>-<team_id>-<competition_id>-<season_id>: ids only, never a name (plan 006 decision 9).
+     */
+    key: string;
+    display_name: string;
+    team_id: number;
+    team: string;
+    competition_id: number;
+    league: string;
+    minutes_text: string;
+    near_gate: boolean;
+    /**
+     * The minutes tiers (minutes played, at least) this row meets.
+     */
+    minutes_tiers: string[];
+    scores: {
+      [k: string]: {
+        score: number | null;
+        score_text: string | null;
+      };
+    };
+  }[];
+  /**
+   * Scored family -> row indices, highest score first; equal scores by name, then key; unscored rows last.
+   */
+  order: {
+    [k: string]: number[];
+  };
+  leagues: {
+    competition_id: number;
+    league: string;
+  }[];
+  teams: {
+    team_id: number;
+    team: string;
+    competition_id: number;
+  }[];
+  minutes_tiers: {
+    value: string;
+    text: string;
+  }[];
 }
 /**
  * The provenance of the export, repeated in every file. No wall-clock time: two exports of the same data are byte-identical.

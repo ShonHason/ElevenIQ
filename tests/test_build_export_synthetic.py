@@ -331,3 +331,72 @@ def test_synthetic_defensive_rates(docs):
     assert [r["rate_text"] for r in rates] == ["1.00"] * 6
     assert all(r["rate"] is None for r in docs["players/500-13-2-27.json"]["defensive_rates"])
     assert docs["players/400-13-2-27.json"]["defensive_rates"] == []          # goalkeeper
+
+
+# ── Gem Finder (plan 006 W5): gems_doc ─────────────────────────────────────────────
+
+def _gem_player(key, name, score, minutes=1800, group="CB", team_id=1, in_dna=True):
+    defs = B.family_definitions(group, D.withheld_for(group))
+    dims = [{"family": f, "score": score, "score_text": None if score is None else str(score)}
+            for f in defs]
+    return {"identity": {"key": key, "display_name": name, "group": group, "team_id": team_id,
+                         "team": f"T{team_id}", "competition_id": 2, "league": "L",
+                         "minutes_text": str(minutes), "minutes": minutes, "near_gate": False},
+            "dna": {"dimensions": dims} if in_dna else None}
+
+
+def test_gems_equal_scores_by_folded_name_then_key_and_unscored_last():
+    docs_ = {f"players/{k}.json": _gem_player(k, n, s) for k, n, s in [
+        ("5-1-2-27", "Zed", 80.0),
+        ("4-1-2-27", "Álvaro", 80.0),          # accent folds to a: before Zed, after nothing higher
+        ("3-1-2-27", "Bob", 90.0),
+        ("2-1-2-27", "Bob", 80.0),             # same name as key 1 below: key breaks the tie
+        ("1-1-2-27", "Bob", 80.0),
+        ("6-1-2-27", "Aaron", None),           # unscored: last, even before-alphabetically
+        ("7-1-2-27", "Gone", 99.0)]}
+    docs_["players/7-1-2-27.json"] = _gem_player("7-1-2-27", "Gone", 99.0, in_dna=False)
+    g = B.gems_doc("CB", docs_)
+    keys = [r["key"] for r in g["rows"]]
+    assert "7-1-2-27" not in keys                          # no profile -> not a Gem row
+    for fam, order in g["order"].items():
+        assert [keys[i] for i in order] == ["3-1-2-27", "4-1-2-27", "1-1-2-27", "2-1-2-27",
+                                            "5-1-2-27", "6-1-2-27"], fam
+
+
+def test_gems_excludes_other_groups_and_withheld_families_have_no_order(docs):
+    g = docs["gems/DM-CM.json"]
+    keys = {r["key"] for r in g["rows"]}
+    assert "400-13-2-27" not in keys and "500-13-2-27" not in keys    # goalkeeper, below gate
+    assert {"200-10-2-27", "200-11-2-27"} <= keys                     # a mover keeps both clubs
+    assert {(t["team_id"], t["team"], t["competition_id"]) for t in g["teams"]} == {
+        (r["team_id"], r["team"], r["competition_id"]) for r in g["rows"]}
+    assert len(g["teams"]) == len({t["team_id"] for t in g["teams"]})
+    for f in g["families"]:
+        assert (f["family"] in g["order"]) == (f["definition"] is not None)
+        if f["definition"] is None:
+            assert f["withheld_short"] and f["withheld_full"]
+    assert not keys & {r["key"] for r in docs["gems/CB.json"]["rows"]}     # one group per row
+
+
+def test_gems_minutes_tier_boundary_is_inclusive():
+    docs_ = {"players/a.json": _gem_player("1-1-2-27", "A", 1.0, minutes=1800),
+             "players/b.json": _gem_player("2-1-2-27", "B", 1.0, minutes=1799.9),
+             "players/c.json": _gem_player("3-1-2-27", "C", 1.0, minutes=900)}
+    rows = {r["key"]: r["minutes_tiers"] for r in B.gems_doc("CB", docs_)["rows"]}
+    assert rows == {"1-1-2-27": ["1350", "1800"], "2-1-2-27": ["1350"], "3-1-2-27": []}
+
+
+def test_gems_empty_group_is_a_valid_document():
+    g = B.gems_doc("CB", {})
+    assert g["rows"] == [] and all(o == [] for o in g["order"].values())
+    assert g["leagues"] == [] and g["teams"] == []
+
+
+def test_write_manages_the_gems_directory(docs, tmp_path):
+    out = tmp_path / "v1"
+    (out / "gems").mkdir(parents=True)
+    stale = out / "gems" / "OLD.json"
+    stale.write_text("{}")
+    sizes = B.write(docs, out, "fixture")
+    assert not stale.exists() and "gems/DM-CM.json" in sizes
+    assert B.schema_name("gems/CB.json") == "gems"

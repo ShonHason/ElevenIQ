@@ -3,9 +3,10 @@ import { UI } from "../lib/ui-text";
 import { SearchBox } from "./SearchBox";
 import { ThemeToggle } from "./ThemeToggle";
 
-// Pages appear in the navigation once they are built (Gem Finder and Methodology: W4–W5).
 const NAV: { label: string; to: string; match: Route["name"][] }[] = [
   { label: UI.nav.similar, to: href.home(), match: ["home", "player", "compare"] },
+  { label: UI.nav.gems, to: href.gems(), match: ["gems"] },
+  { label: UI.nav.methodology, to: href.methodology(), match: ["methodology"] },
 ];
 
 export function Header({ route }: { route: Route }) {

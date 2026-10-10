@@ -6,6 +6,8 @@ import { useRoute } from "./lib/router";
 import { UI } from "./lib/ui-text";
 import { Home } from "./pages/Home";
 import { Compare } from "./pages/Compare";
+import { Gems } from "./pages/Gems";
+import { Methodology } from "./pages/Methodology";
 import { Player } from "./pages/Player";
 
 export function App() {
@@ -25,6 +27,8 @@ export function App() {
           : route.name === "home" ? <Home />
           : route.name === "player" ? <Player playerKey={route.key} />
           : route.name === "compare" ? <Compare a={route.a} b={route.b} />
+          : route.name === "gems" ? <Gems group={route.group} />
+          : route.name === "methodology" ? <Methodology />
           : <section className="pt-10"><h1 className="text-[17px] font-semibold">{UI.notFound}</h1>
               <a href="#/" className="mt-2 inline-block">{UI.back}</a></section>}
       </main>

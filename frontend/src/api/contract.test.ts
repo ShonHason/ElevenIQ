@@ -27,6 +27,7 @@ describe("contract (ADR 005 §2)", () => {
     check("labels", "labels.json");
     for (const f of readdirSync(join(fixture, "players"))) check("player", `players/${f}`);
     for (const f of readdirSync(join(fixture, "groups"))) check("group", `groups/${f}`);
+    for (const f of readdirSync(join(fixture, "gems"))) check("gems", `gems/${f}`);
   });
   it("the generated TypeScript types are current", () => {
     expect(() => execFileSync("node", ["scripts/gen-types.mjs", "--check"], { cwd: join(root, "frontend") })).not.toThrow();

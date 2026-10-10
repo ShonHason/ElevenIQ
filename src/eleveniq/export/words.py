@@ -626,3 +626,84 @@ FAMILY_DEFINITIONS: dict[str, dict[str, FamilyDefinition]] = {
         "Progression": _PROG_3,
     },
 }
+
+
+# ── Gem Finder (plan 006 simple mode, W5) ──────────────────────────────────────────────
+# One position group's profiled players with their family scores; orders are computed by the
+# exporter (ADR 005 §1), the page only filters by league, team and minutes tier.
+GEMS_TITLE = "Gem Finder"
+GEMS_LEAD = ("Players of one position with a profile, ordered by a family score, highest first. "
+             "A family score is the average of the player's league percentiles for the scored "
+             "metrics of that family.")
+GEMS_SORT_NOTE = "Equal scores are listed by name."
+GEMS_LIKE_TITLE = "Players like"
+GEMS_LIKE_NOTE = ("The players whose profiles are most like this one, in the same position, from "
+                  "other teams (provisional).")
+# Minutes tiers for the filter: minutes played, at least (the profile gate is 900).
+GEMS_MINUTES_TIERS: tuple[int, ...] = (1350, 1800, 2250, 2700)
+GEMS_MINUTES_ANY = "Any (at least 900)"
+
+
+# ── Methodology page (plan 006 simple mode, W5; final stats-reviewer pass) ──────────────
+# (title, paragraphs). Every claim restates a rule in config, the registry or an ADR.
+METHODOLOGY_TITLE = "Methodology"
+METHODOLOGY: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Data", (
+        "Event data from StatsBomb Open Data for the 2015/16 season: La Liga, the Premier League, "
+        "Serie A and Ligue 1 in full, and part of the 1. Bundesliga. The 1. Bundesliga is not "
+        "fully covered, so its players have no percentiles or profiles.",
+        "A player who moved clubs during the season has one row per club. Careers are never "
+        "merged.",
+    )),
+    ("Per 90 and minimum minutes", (
+        "Counts are shown per 90 minutes played, next to the season total. Only players with at "
+        "least 900 minutes are ranked, so a short run of games cannot make a player look elite. "
+        "A rate such as pass completion is ranked only for players with enough attempts.",
+    )),
+    ("Position groups", (
+        "Each player is placed in one of six position groups by where they played most: "
+        "goalkeepers, centre-backs, full-backs and wing-backs, central and defensive "
+        "midfielders, attacking midfielders and wingers, and strikers. Players are only ever "
+        "compared with their own group. Goalkeepers have no profile.",
+    )),
+    ("Percentiles and bands", (
+        "A percentile ranks a player within their own league and position group: 90 means they "
+        "are ahead of about 90% of that group. Tables show it as a band (Top 1%, Top 5%, …, "
+        "Bottom 5%); the exact number and the rank across all four full leagues are one tap "
+        "away. Leagues are not adjusted for strength.",
+        "For a lower-is-better metric, such as times dispossessed, the percentile is counted "
+        "from the better end, so a high number is always good.",
+    )),
+    ("Hollow bars", (
+        "Some metrics have no good or poor end. Style metrics describe how a player plays, not "
+        "how well. Other metrics rise or fall with how much the team has the ball, so a high "
+        "value may say more about the team than the player. Both show a hollow bar and read "
+        "\"higher than most\", \"around average\" or \"lower than most\".",
+    )),
+    ("Profile shape and family scores", (
+        "The metrics are grouped into families such as Progressive passing or Aerial. A family "
+        "score is the average of the player's league percentiles for the family's scored "
+        "metrics; style metrics are not scored. Tap a family name to see what it measures: "
+        "most families count how often a player does something, not how well.",
+        "A family is withheld for a position when its metrics are not shown to describe the "
+        "player rather than the team. Defending is withheld for every position in this season, "
+        "and Passing for all but strikers. There is no overall rating.",
+    )),
+    ("Similar players", (
+        "Similar players are found by comparing league percentiles on the profile's metrics "
+        "within the same position group, with each family weighted equally. The closest "
+        "players are listed; a player from the same team is marked. The method is provisional "
+        "and will change.",
+    )),
+    ("Defensive rate", (
+        "In compare mode, tackles, interceptions, ball recoveries, pressures, blocks and "
+        "clearances also show a rate per 100 opponent open-play passes while the player was on "
+        "the pitch. The rate shows how often the player acts relative to how much the opponent "
+        "had the ball; it does not remove team effects.",
+    )),
+    ("Limits", (
+        "One season only. No ages, because the open data has no birth dates. Team effects are "
+        "not removed. Percentiles from different leagues rank players within their own league "
+        "and are not adjusted for league strength.",
+    )),
+)

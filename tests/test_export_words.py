@@ -326,3 +326,19 @@ def test_possession_reasons_share_one_short_text_and_keep_their_full_texts():
     assert a.short == b.short == W.POSSESSION_SHORT
     assert a.full != b.full
     assert len(W.merge_notes([a, b])) == 1
+
+
+def test_methodology_and_gems_claims_match_the_registry_and_config():
+    """The Methodology page and Gem Finder state rules in plain words; they must fail here, not
+    go stale, when the registry or config changes (qa-tester W5)."""
+    from eleveniq import config
+    from eleveniq.analytics import dna as D
+    groups = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
+    text = " ".join(p for _, ps in W.METHODOLOGY for p in ps)
+    assert "Defending is withheld for every position" in text
+    assert all("Defending" in D.withheld_for(g) for g in groups)
+    assert "Passing for all but strikers" in text
+    assert {g for g in groups if "Passing" in D.withheld_for(g)} == set(groups) - {"ST"}
+    assert config.MIN_MINUTES_THRESHOLD == 900
+    assert "900 minutes" in text and "900" in W.GEMS_MINUTES_ANY
+    assert min(W.GEMS_MINUTES_TIERS) > config.MIN_MINUTES_THRESHOLD

@@ -25,4 +25,17 @@ export const UI = {
   notFound: "Page not found",
   back: "Back to search",
   error: "The data could not be loaded.",
+  gems: {
+    position: "Position",
+    league: "League", allLeagues: "All leagues",
+    team: "Team", allTeams: "All teams",
+    minutes: "Minutes played",
+    orderBy: "Order by",
+    player: "Player",
+    count: (n: number, total: number) => `${n} of ${total} players`,
+    likeLabel: "Players like…",
+    clearLike: "Clear",
+    none: "No player matches these filters.",
+    more: (n: number) => `Show ${n} more`,
+  },
 };

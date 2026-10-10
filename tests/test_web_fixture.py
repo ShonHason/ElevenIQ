@@ -333,3 +333,47 @@ def test_family_definitions_cover_scored_families(docs):
                 assert dim["family"] in defs and defs[dim["family"]], (p, dim["family"])
             else:
                 assert dim["family"] not in defs, (p, dim["family"])
+
+
+def test_gems_orders_are_by_score_and_withheld_families_never_order(docs):
+    """Gem Finder (W5): each scored family's order lists every row once, highest score first,
+    equal scores by folded name; unscored rows last. Withheld families have no order. Rows are
+    the group's profiled players; minutes tiers agree with the player file's minutes."""
+    from eleveniq.export import display as X
+    from eleveniq.export import words as W
+    for g in ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST"):
+        gem = docs[f"gems/{g}.json"]
+        players = {d["identity"]["key"]: d for p, d in docs.items()
+                   if p.startswith("players/") and d["identity"]["group"] == g and d["dna"]}
+        assert sorted(r["key"] for r in gem["rows"]) == sorted(players)
+        withheld = {f["family"] for f in gem["families"] if f["definition"] is None}
+        assert withheld and not withheld & set(gem["order"])
+        assert set(gem["order"]) == {f["family"] for f in gem["families"]} - withheld
+        for fam, order in gem["order"].items():
+            assert sorted(order) == list(range(len(gem["rows"])))
+            keys = []
+            for i in order:
+                r = gem["rows"][i]
+                sc = r["scores"][fam]["score"]
+                dim = next(x for x in players[r["key"]]["dna"]["dimensions"] if x["family"] == fam)
+                assert sc == dim["score"]
+                keys.append((sc is None, -(sc or 0), X.fold(r["display_name"])))
+            assert keys == sorted(keys), (g, fam)
+        for r in gem["rows"]:
+            mins = players[r["key"]]["identity"]["minutes"]
+            assert r["minutes_tiers"] == [str(t) for t in W.GEMS_MINUTES_TIERS if mins >= t]
+    # "Players like X": every neighbour of a fixture anchor is a row of the anchor's Gem file.
+    kante = docs["players/3961-22-2-27.json"]
+    rows = {r["key"] for r in docs["gems/DM-CM.json"]["rows"]}
+    assert {n["key"] for n in kante["neighbours"]["items"]} <= rows
+
+
+def test_methodology_sections_present(docs):
+    m = docs["labels.json"]["methodology"]
+    titles = [s["title"] for s in m["sections"]]
+    assert "Defensive rate" in titles and all(s["paragraphs"] for s in m["sections"])
+    rate = next(s for s in m["sections"] if s["title"] == "Defensive rate")["paragraphs"][0]
+    assert "does not remove team effects" in rate                   # the approved sentence
+    text = " ".join(p for s in m["sections"] for p in s["paragraphs"]).lower()
+    for word in ("adjusted rate", "corrected", "overall rating of"):
+        assert word not in text

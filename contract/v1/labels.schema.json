@@ -4,7 +4,7 @@
   "title": "labels.json",
   "description": "Group, family and status texts, the registry reason and note texts and the shared words. An unknown status or code has no entry: the exporter fails rather than ship it.",
   "type": "object", "additionalProperties": false,
-  "required": ["stamps", "groups", "families", "statuses", "dimension_statuses", "reasons", "notes", "words", "metric_order"],
+  "required": ["stamps", "groups", "families", "statuses", "dimension_statuses", "reasons", "notes", "words", "metric_order", "methodology"],
   "properties": {
     "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
     "groups": {"type": "object", "additionalProperties": {
@@ -16,6 +16,11 @@
     "reasons": {"type": "object", "additionalProperties": {"type": "string"}},
     "notes": {"type": "object", "additionalProperties": {"$ref": "common.schema.json#/$defs/noteText"}},
     "words": {"type": "object", "additionalProperties": {"type": "string"}},
-    "metric_order": {"type": "array", "items": {"type": "string"}, "description": "Registry metric order: the order of every metrics array and the compare gap tie-break."}
+    "metric_order": {"type": "array", "items": {"type": "string"}, "description": "Registry metric order: the order of every metrics array and the compare gap tie-break."},
+    "methodology": {"type": "object", "additionalProperties": false, "required": ["title", "sections"],
+      "description": "The Methodology page: sections of plain paragraphs (export/words.py METHODOLOGY).",
+      "properties": {"title": {"type": "string"}, "sections": {"type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["title", "paragraphs"],
+        "properties": {"title": {"type": "string"}, "paragraphs": {"type": "array", "items": {"type": "string"}}}}}}}
   }
 }

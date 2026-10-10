@@ -96,7 +96,7 @@ GROUPS = ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
 FLOAT_DP = 6
 logger = logging.getLogger(__name__)
 # The files write() manages under the export directory (and nothing else).
-MANAGED_DIRS = ("players", "groups", "style-maps")
+MANAGED_DIRS = ("players", "groups", "style-maps", "gems")
 MANAGED_FILES = ("manifest.json", "search-index.json", "labels.json")
 
 
@@ -730,6 +730,8 @@ def build(inp: Inputs, keys: Iterable[tuple] | None = None,
             "profile": "dna" if doc["dna"] else ("gated" if idt["meets_gate"] else "below_gate"),
         })
     docs["search-index.json"] = {"stamps": stamps, "entries": search}
+    for g in GROUPS:
+        docs[f"gems/{g}.json"] = {"stamps": stamps, **gems_doc(g, docs)}
     for g in style_groups:
         sm = S.fit(g, dna_specs(REGISTRY, SPECS, g), rows[g])
         docs[f"style-maps/{g}.json"] = {"stamps": stamps, **style_map_doc(
@@ -744,6 +746,61 @@ def build(inp: Inputs, keys: Iterable[tuple] | None = None,
         }
     docs["labels.json"] = labels_doc(stamps)
     return docs
+
+
+def gems_doc(group: str, docs: Mapping[str, Any]) -> dict:
+    """Gem Finder (plan 006 simple mode, W5): the group's profiled rows with their family scores
+    (the exported dimension scores, no new statistic). Every order is computed here (ADR 005 §1:
+    the page never sorts by a statistic): per scored family, row indices by score, highest
+    first, equal scores (at the exported precision) by display name then key, unscored rows
+    last. The page filters by league, team and minutes tier, all exported keys."""
+    held = D.withheld_for(group)
+    defs = family_definitions(group, held)
+    if not defs:
+        raise ExportError(f"{group}: no scored family to order Gem Finder by")
+    rows = []
+    for path in sorted(p for p in docs if p.startswith("players/")):
+        d = docs[path]
+        idt = d["identity"]
+        if idt["group"] != group or not d["dna"]:
+            continue
+        dims = {x["family"]: x for x in d["dna"]["dimensions"]}
+        rows.append({
+            "key": idt["key"], "display_name": idt["display_name"],
+            "team_id": idt["team_id"], "team": idt["team"],
+            "competition_id": idt["competition_id"], "league": idt["league"],
+            "minutes_text": idt["minutes_text"], "near_gate": idt["near_gate"],
+            # Minutes played, at least each tier (the filter's key; no comparison in the page).
+            "minutes_tiers": [str(t) for t in W.GEMS_MINUTES_TIERS if idt["minutes"] >= t],
+            "scores": {f: {"score": dims[f]["score"], "score_text": dims[f]["score_text"]}
+                       for f in defs},
+        })
+    order = {}
+    for f in defs:
+        def key(i: int, f: str = f) -> tuple:
+            sc = rows[i]["scores"][f]["score"]
+            return (sc is None, -(sc or 0.0), X.fold(rows[i]["display_name"]), rows[i]["key"])
+        order[f] = sorted(range(len(rows)), key=key)
+    families = sorted({*defs, *held}, key=lambda f: W.family_label(f))
+    return {
+        "group": group,
+        "families": [{"family": f, "label": W.family_label(f), "definition": defs.get(f),
+                      "withheld_short": W.withheld_text(held[f]).short if f in held else None,
+                      "withheld_full": (" ".join(filter(None, (
+                          W.withheld_text(held[f]).full,
+                          W.defending_note(group) if f == "Defending" else None)))
+                          if f in held else None)}
+                     for f in families],
+        "rows": rows,
+        "order": order,
+        "leagues": [{"competition_id": c, "league": lg} for c, lg in sorted(
+            {(r["competition_id"], r["league"]) for r in rows}, key=lambda t: t[1])],
+        "teams": [{"team_id": t, "team": n, "competition_id": c} for t, n, c in sorted(
+            {(r["team_id"], r["team"], r["competition_id"]) for r in rows},
+            key=lambda t: (X.fold(t[1]), t[0]))],
+        "minutes_tiers": [{"value": str(t), "text": f"{X.format_number(t)}+"}
+                          for t in W.GEMS_MINUTES_TIERS],
+    }
 
 
 def scored_members(group: str, family: str) -> tuple[str, ...]:
@@ -789,7 +846,10 @@ def labels_doc(stamps: Mapping[str, Any]) -> dict:
                   "stand_out_title": W.STAND_OUT_TITLE, "stand_out_note": W.STAND_OUT_NOTE,
                   "lower_better": W.LOWER_BETTER, "basis_marker": W.BASIS_MARKER,
                   "rate_label": W.RATE_LABEL, "hollow_legend": W.HOLLOW_LEGEND,
-                  "compare_league_note": W.COMPARE_LEAGUE_NOTE, "exact_hint": W.EXACT_HINT, "compare_top_title": W.COMPARE_TOP_TITLE,
+                  "compare_league_note": W.COMPARE_LEAGUE_NOTE,
+                  "gems_title": W.GEMS_TITLE, "gems_lead": W.GEMS_LEAD,
+                  "gems_sort_note": W.GEMS_SORT_NOTE, "gems_like_title": W.GEMS_LIKE_TITLE,
+                  "gems_like_note": W.GEMS_LIKE_NOTE, "gems_minutes_any": W.GEMS_MINUTES_ANY, "exact_hint": W.EXACT_HINT, "compare_top_title": W.COMPARE_TOP_TITLE,
                   "compare_top_note": W.COMPARE_TOP_NOTE, "compare_all_title": W.COMPARE_ALL_TITLE,
                   "compare_same_group": W.COMPARE_SAME_GROUP,
                   "most_alike": W.MOST_ALIKE, "most_different": W.MOST_DIFFERENT,
@@ -797,6 +857,8 @@ def labels_doc(stamps: Mapping[str, Any]) -> dict:
                   **{f"chip_{k}": v for k, v in W.CHIPS.items()},
                   **{f"column_{k}": v for k, v in W.COLUMNS.items()}},
         "metric_order": [s.column for s in SPECS_IN_ORDER],
+        "methodology": {"title": W.METHODOLOGY_TITLE,
+                        "sections": [{"title": t, "paragraphs": list(ps)} for t, ps in W.METHODOLOGY]},
     }
 
 
@@ -815,6 +877,8 @@ def schema_name(path: str) -> str:
         return "style-map"
     if path.startswith("groups/"):
         return "group"
+    if path.startswith("gems/"):
+        return "gems"
     raise ExportError(f"no schema for {path}")
 
 

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eleveniq.local/contract/v1/gems.schema.json",
+  "title": "gems/<group>.json",
+  "description": "Gem Finder for one position group: profiled rows with their family scores (the exported dimension scores). Every order is computed by the exporter (ADR 005 §1); the page filters by league, team and minutes tier and never sorts by a statistic.",
+  "type": "object", "additionalProperties": false,
+  "required": ["stamps", "group", "families", "rows", "order", "leagues", "teams", "minutes_tiers"],
+  "properties": {
+    "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
+    "group": {"type": "string"},
+    "families": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["family", "label", "definition", "withheld_short", "withheld_full"],
+      "properties": {
+        "family": {"type": "string"}, "label": {"type": "string"},
+        "definition": {"type": ["string", "null"], "description": "What the family score measures; null for a withheld family."},
+        "withheld_short": {"type": ["string", "null"]}, "withheld_full": {"type": ["string", "null"]}}}},
+    "rows": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "display_name", "team_id", "team", "competition_id", "league", "minutes_text", "near_gate", "minutes_tiers", "scores"],
+      "properties": {
+        "key": {"$ref": "common.schema.json#/$defs/rowKey"},
+        "display_name": {"type": "string"},
+        "team_id": {"type": "integer"}, "team": {"type": "string"},
+        "competition_id": {"type": "integer"}, "league": {"type": "string"},
+        "minutes_text": {"type": "string"}, "near_gate": {"type": "boolean"},
+        "minutes_tiers": {"type": "array", "items": {"type": "string"}, "description": "The minutes tiers (minutes played, at least) this row meets."},
+        "scores": {"type": "object", "additionalProperties": {
+          "type": "object", "additionalProperties": false, "required": ["score", "score_text"],
+          "properties": {"score": {"type": ["number", "null"]}, "score_text": {"type": ["string", "null"]}}}}}}},
+    "order": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+              "description": "Scored family -> row indices, highest score first; equal scores by name, then key; unscored rows last."},
+    "leagues": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["competition_id", "league"],
+      "properties": {"competition_id": {"type": "integer"}, "league": {"type": "string"}}}},
+    "teams": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["team_id", "team", "competition_id"],
+      "properties": {"team_id": {"type": "integer"}, "team": {"type": "string"}, "competition_id": {"type": "integer"}}}},
+    "minutes_tiers": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["value", "text"],
+      "properties": {"value": {"type": "string"}, "text": {"type": "string"}}}}
+  }
+}
