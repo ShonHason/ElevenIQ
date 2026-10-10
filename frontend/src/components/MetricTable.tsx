@@ -3,7 +3,7 @@
 // (the number, the all-leagues percentile and the population in the popover), then notes.
 // Every display string is exported; nothing is computed here.
 import type { GroupsGroupJson, LabelsJson, PlayersKeyJson } from "../types/contract";
-import { BandCell, MetricName, ValueText } from "./Cells";
+import { BandCell, HollowLegend, MetricName, ValueText } from "./Cells";
 import { NotePopover } from "./NotePopover";
 import { UI } from "../lib/ui-text";
 
@@ -39,6 +39,8 @@ export function MetricTable({ doc, group, labels }: { doc: PlayersKeyJson; group
   const key = doc.identity.key;
   const families = [...new Set(group.metrics.map((m) => m.family))];
   return (
+    <>
+    <div className="mb-2"><HollowLegend text={w.hollow_legend} /></div>
     <div className="overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={UI.table.metrics}>
       <table className="w-full border-collapse text-[13px] leading-[18px]">
         <thead className="text-[12px] text-ink-2">
@@ -81,5 +83,6 @@ export function MetricTable({ doc, group, labels }: { doc: PlayersKeyJson; group
         })}
       </table>
     </div>
+    </>
   );
 }

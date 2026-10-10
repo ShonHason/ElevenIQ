@@ -31,6 +31,7 @@ are byte-identical.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import logging
@@ -251,11 +252,10 @@ def _scope(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, Any], scope:
     return {
         "pct": p if shown else None,
         "pct_text": X.format_pct(p) if shown else None,
-        "phrase": (W.style_words(p) if spec.direction == "style" else W.pct_words(p)[1])
-                  if shown else None,
+        "phrase": _phrase(spec, biased, p) if shown else None,
         # The band replaces the number in every cell (display round, user 2026-10-10); the
-        # number is in `note`, for the popover.
-        "band": W.band(p, spec.direction == "style") if shown else None,
+        # number is in `note`, for the popover. A hollow-bar cell takes the neutral band.
+        "band": W.band(p, _neutral(spec, biased)) if shown else None,
         "note": (((W.PCT_NOTE_LOCAL if scope == "local" else W.PCT_NOTE_GLOBAL).format(
             ordinal=W.ordinal_percentile(X.format_pct(p)), **where))
             + (f" ({W.LOWER_BETTER_NOTE})" if spec.direction == "lower_better" else ""))
@@ -266,6 +266,22 @@ def _scope(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, Any], scope:
         "status": status,
         "status_text": text,            # a number or a reason, never neither
     }
+
+
+def _neutral(spec: R.MetricSpec, biased: bool) -> bool:
+    """Hollow bar = neutral words (user, 2026-10-10): every uncoloured cell (style, long pass
+    completion, associated with team possession) reads higher than most / around average /
+    lower than most, never top / bottom N%, so number, phrase and bar agree."""
+    neutral = X.uncoloured(spec, biased)
+    if neutral and spec.direction == "lower_better":
+        # The neutral words read the shown (flipped) percentile; no such cell exists yet.
+        raise ExportError(f"{spec.column}: an uncoloured lower-better cell has no neutral reading")
+    return neutral
+
+
+def _phrase(spec: R.MetricSpec, biased: bool, p: float) -> str:
+    """The phrase of a shown percentile: neutral on a hollow-bar cell, else top / bottom N%."""
+    return W.style_words(p) if _neutral(spec, biased) else W.pct_words(p)[1]
 
 
 def _where(row: Mapping[str, Any]) -> dict[str, str]:
@@ -296,7 +312,8 @@ def metric_meta(metric: str, group: str, held: Mapping[str, str]) -> dict:
     return {
         "metric": metric, "label": W.metric_label(metric, group), "family": fam,
         "order": ORDER[metric], "direction": spec.direction,
-        "direction_text": (W.NO_READING if metric == "long_pass_completion_pct"
+        # A hollow-bar metric has no good / poor reading, whatever its registry direction.
+        "direction_text": (W.NO_READING if X.uncoloured(spec, biased) and spec.direction != "style"
                            else spec.direction.replace("_", " ")),
         "registry_status": status,
         "unit": W.unit_text(metric, spec.unit),
@@ -374,25 +391,58 @@ def defensive_rates(ident: Mapping[str, Any]) -> list[dict]:
     return out
 
 
+# Variants of one base metric (user, 2026-10-10): What stands out lists at most one of them.
+SHOT_VARIANTS = frozenset({"shots_p90", "np_shots_p90", "shots_on_target_p90",
+                           "np_shots_on_target_p90"})
+
+
+@functools.cache
+def _collinear(group: str) -> frozenset[frozenset[str]]:
+    """The group's measured D17 pairs at |ρ| ≥ COLLINEAR_RHO ("ranks players almost the same as
+    another metric"; ADR 004 D17), from the committed measurements."""
+    return frozenset(frozenset((p["a"], p["b"])) for p in R.load_measurements()["collinear_pairs"]
+                     if p["group"] == group and abs(p["rho"]) >= config.COLLINEAR_RHO)
+
+
+def is_variant(group: str, a: str, b: str) -> bool:
+    """Near-duplicates for What stands out: two shot variants, or a measured D17 pair."""
+    return (a in SHOT_VARIANTS and b in SHOT_VARIANTS) or frozenset((a, b)) in _collinear(group)
+
+
 def stand_out(group: str, rows: list[dict]) -> list[dict]:
     """"What stands out" (W3 fix round, user 2026-10-10): the W.STAND_OUT_N metrics whose shown
     league percentile is furthest from 50, among every metric with a shown league percentile
     (style metrics included, with their neutral phrase and no colour; signature traits and zero
-    ties have none); ties by registry metric order. Ranked in Python (ADR 005 §1). `order`
-    points at the group metadata (label, tag, notes)."""
+    ties have none); ties by registry metric order. Near-duplicates are left out (user,
+    2026-10-10): walking that order, a metric that is a variant (is_variant) of one already
+    picked is skipped, unless it is a DNA member and the picked one is not, when it takes that
+    one's place. Pairwise, not transitive: one metric with spurious pairs (DM-CM
+    defensive_duel_success_pct, ρ ±1 on 3 rows; ADR 004) cannot chain unrelated metrics. Ranked
+    in Python (ADR 005 §1). `order` points at the group metadata (label, tag, notes)."""
     if group not in GROUPS:
         return []
-    out = []
-    for s, row in zip(SPECS_IN_ORDER, rows):
-        p = row["local"]["pct"]
-        if p is None:
-            continue
-        out.append((-abs(p - 50.0), ORDER[s.column], s, row))
+    cands = sorted(((-abs(row["local"]["pct"] - 50.0), ORDER[s.column], s, row)
+                    for s, row in zip(SPECS_IN_ORDER, rows) if row["local"]["pct"] is not None),
+                   key=lambda t: t[:2])
+    picked: list[tuple] = []
+
+    def dna(c: tuple) -> bool:
+        return REGISTRY.cell(c[2].column, group).status == "dna"
+    for c in cands:
+        hit = next((i for i, q in enumerate(picked) if is_variant(group, q[2].column, c[2].column)),
+                   None)
+        if hit is None:
+            picked.append(c)
+        elif dna(c) and not dna(picked[hit]):
+            # The DNA member takes the place; any other pick it pairs with leaves too.
+            picked = [q for q in picked if not is_variant(group, q[2].column, c[2].column)]
+            picked.append(c)
+    picked = sorted(picked, key=lambda t: t[:2])[:W.STAND_OUT_N]
     return [{"metric": s.column, "order": ORDER[s.column], "label": W.metric_label(s.column, group),
              "direction": s.direction, "pct": row["local"]["pct"],
              "pct_text": row["local"]["pct_text"], "phrase": row["local"]["phrase"],
              "bin": row["local"]["bin"]}
-            for _, _, s, row in sorted(out, key=lambda t: t[:2])[:W.STAND_OUT_N]]
+            for _, _, s, row in picked]
 
 
 # ── Players ──────────────────────────────────────────────────────────────────────
@@ -493,9 +543,16 @@ def _neighbours(k: tuple, group: str, nb: P.RowNeighbours, rows: Mapping[tuple, 
         a, b = rows[k], rows[n.key]
 
         def phrase(m: str) -> dict:
+            # The table's words for the same cell: shown (direction-adjusted) percentile,
+            # neutral on a hollow-bar cell.
+            spec = X.SPECS_BY_COLUMN[m]
+            biased = REGISTRY.cell(m, group).team_style_biased
+
+            def words(pct: float | None) -> str:
+                return _phrase(spec, biased, rnd(X.adjusted(spec, pct)))  # type: ignore[arg-type]
             return {"metric": m, "label": W.metric_label(m, group),
-                    "a_phrase": W.pct_words(rnd(a.cells[m].pct_local))[1],  # type: ignore[arg-type]
-                    "b_phrase": W.pct_words(rnd(b.cells[m].pct_local))[1]}  # type: ignore[arg-type]
+                    "a_phrase": words(a.cells[m].pct_local),
+                    "b_phrase": words(b.cells[m].pct_local)}
         if not 0 <= n.distance < 1:
             raise ExportError(f"distance {n.distance} outside [0, 1)")
         code = f"{n.distance:.4f}"
@@ -683,9 +740,32 @@ def build(inp: Inputs, keys: Iterable[tuple] | None = None,
             "stamps": stamps, "group": g,
             "metrics": [metric_meta(s.column, g, held) for s in SPECS_IN_ORDER],
             "defending_note": W.defending_note(g) if g in GROUPS else None,
+            "family_definitions": family_definitions(g, held) if g in GROUPS else {},
         }
     docs["labels.json"] = labels_doc(stamps)
     return docs
+
+
+def scored_members(group: str, family: str) -> tuple[str, ...]:
+    """The metrics a family score can average in a group (dna._dimensions: the family's DNA
+    metrics with a good / poor direction), in name order."""
+    return tuple(sorted(s.column for s in dna_specs(REGISTRY, SPECS, group)
+                        if s.family == family and s.direction != "style"))
+
+
+def family_definitions(group: str, held: Mapping[str, str]) -> dict[str, str]:
+    """What each scored family measures (W.FAMILY_DEFINITIONS), checked against the members the
+    scores use: a stale text fails the export. Withheld families show their reason instead."""
+    defs = W.FAMILY_DEFINITIONS[group]
+    scored = sorted(f for f in dict.fromkeys(s.family for s in SPECS)
+                    if f not in held and scored_members(group, f))
+    if sorted(defs) != scored:
+        raise ExportError(f"{group}: family definitions {sorted(defs)} ≠ scored families {scored}")
+    for fam, d in defs.items():
+        if tuple(sorted(d.members)) != scored_members(group, fam):
+            raise ExportError(f"{group} {fam}: definition members {d.members} ≠ "
+                              f"{scored_members(group, fam)}")
+    return {f: defs[f].text for f in scored}
 
 
 def labels_doc(stamps: Mapping[str, Any]) -> dict:
@@ -708,7 +788,8 @@ def labels_doc(stamps: Mapping[str, Any]) -> dict:
                   "around_average": W.AROUND_AVERAGE, "basis_legend": W.BASIS_LEGEND,
                   "stand_out_title": W.STAND_OUT_TITLE, "stand_out_note": W.STAND_OUT_NOTE,
                   "lower_better": W.LOWER_BETTER, "basis_marker": W.BASIS_MARKER,
-                  "rate_label": W.RATE_LABEL, "exact_hint": W.EXACT_HINT, "compare_top_title": W.COMPARE_TOP_TITLE,
+                  "rate_label": W.RATE_LABEL, "hollow_legend": W.HOLLOW_LEGEND,
+                  "compare_league_note": W.COMPARE_LEAGUE_NOTE, "exact_hint": W.EXACT_HINT, "compare_top_title": W.COMPARE_TOP_TITLE,
                   "compare_top_note": W.COMPARE_TOP_NOTE, "compare_all_title": W.COMPARE_ALL_TITLE,
                   "compare_same_group": W.COMPARE_SAME_GROUP,
                   "most_alike": W.MOST_ALIKE, "most_different": W.MOST_DIFFERENT,

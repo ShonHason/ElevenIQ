@@ -3,11 +3,12 @@
   "$id": "https://eleveniq.local/contract/v1/group.schema.json",
   "title": "groups/<group>.json",
   "description": "What every row of a position group shares per metric, in registry metric order (the index matches a player file's metrics array).",
-  "type": "object", "additionalProperties": false, "required": ["stamps", "group", "metrics", "defending_note"],
+  "type": "object", "additionalProperties": false, "required": ["stamps", "group", "metrics", "defending_note", "family_definitions"],
   "properties": {
     "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
     "group": {"$ref": "common.schema.json#/$defs/anyGroup"},
     "defending_note": {"type": ["string", "null"], "description": "The sentence shown with a withheld Defending score (ADR 004 §14 N2 / N3)."},
+    "family_definitions": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Family -> one plain line on what the family score measures (scored families only; withheld families show their reason). Checked against the score's members at export."},
     "metrics": {
       "type": "array",
       "items": {

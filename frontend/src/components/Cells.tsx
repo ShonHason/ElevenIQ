@@ -35,3 +35,13 @@ export function BandCell({ row, src, hint }: { row: Row; src: string; hint: stri
     </span>
   );
 }
+
+/** The hollow-bar legend (user, 2026-10-10): a hollow bar is not read as good or poor. */
+export function HollowLegend({ text }: { text: string }) {
+  return (
+    <p className="m-0 flex items-center gap-2 text-[12px] leading-4 text-ink-3" data-legend="hollow">
+      <span className="inline-block h-1.5 w-6 shrink-0 rounded-[3px] shadow-[inset_0_0_0_1.5px_var(--ink-3)]" aria-hidden="true" />
+      {text}
+    </p>
+  );
+}

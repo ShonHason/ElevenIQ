@@ -188,3 +188,45 @@ test("the season summary traces to the fixture", async ({ page }) => {
     await expect(page.locator(`[data-summary="${s.key}"]`)).toHaveText(`${s.text} ${s.label}`);
   }
 });
+
+const BENZEMA = "19677-220-11-27";
+
+test("hollow bars read neutral words, with one legend line", async ({ page }) => {
+  await page.goto(`/#/player/${BENZEMA}`);
+  const doc = await fx(page, `players/${BENZEMA}.json`);
+  const labels = await fx(page, "labels.json");
+  await expect(page.locator('[data-legend="hollow"]').first()).toHaveText(labels.words.hollow_legend);
+  const group = await fx(page, "groups/ST.json");
+  for (const [i, meta] of (group.metrics as { metric: string; uncoloured: boolean }[]).entries()) {
+    const band = doc.metrics[i].local.band as string | null;
+    if (!meta.uncoloured || band === null) continue;
+    const cell = page.locator(`tr[data-metric="${meta.metric}"] [data-src$="#metrics.${i}.local.band"]`);
+    await expect(cell).toHaveText(band);
+    expect(band).toMatch(/^(Higher than most|Around average|Lower than most)$/);
+  }
+});
+
+test("What stands out: at most one shots-type metric (Benzema)", async ({ page }) => {
+  await page.goto(`/#/player/${BENZEMA}`);
+  const items = page.locator("#stand-out-title ~ ol li");
+  await expect(items).toHaveCount(6);
+  const text = await items.allInnerTexts();
+  expect(text.filter((t) => /^Shots/m.test(t)).length).toBeLessThanOrEqual(1);
+});
+
+test("Profile shape: each scored family name opens its definition", async ({ page }) => {
+  await page.goto(`/#/player/${BENZEMA}`);
+  const group = await fx(page, "groups/ST.json");
+  const defs = group.family_definitions as Record<string, string>;
+  expect(Object.keys(defs).sort()).toEqual(["Aerial", "Carrying", "Goal threat", "Passing", "Progression"]);
+  // Goal threat sits at the bottom of the shape (the top labels can sit under the sticky header).
+  await page.locator('[data-family-def="Goal threat"]').click();
+  await expect(page.getByRole("dialog")).toContainText(defs["Goal threat"]);
+  await expect(page.locator('[data-family-def="Defending"]')).toHaveCount(0);   // withheld: its reason
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // keyboard: focus a label and open it with Enter
+  await page.locator('[data-family-def="Passing"]').focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toContainText(defs.Passing);
+});

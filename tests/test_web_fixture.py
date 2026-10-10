@@ -207,7 +207,7 @@ def test_every_cell_band_agrees_with_its_number(docs):
                 assert s["band"] is None and s["note"] is None, p
                 continue
             n += 1
-            if meta["direction"] == "style":
+            if meta["uncoloured"]:            # hollow bar = neutral words (user, 2026-10-10)
                 want = ("Around average" if 40 <= s["pct"] <= 60
                         else "Higher than most" if s["pct"] > 60 else "Lower than most")
             else:
@@ -273,3 +273,63 @@ def test_totals_and_summary_literals_for_kante(docs):
     s = {x["key"]: (x["text"], x["label"]) for x in d["identity"]["summary"]}
     assert s["appearances"] == ("37", "appearances") and s["minutes_played"] == ("3240", "minutes")
     assert s["goals"] == ("1", "goal") and s["xg"][1] == "xG" and "." in s["xg"][0]
+
+
+TOP_BOTTOM = ("top ", "bottom ")
+
+
+def test_no_hollow_bar_cell_carries_a_top_or_bottom_label(docs):
+    """Hollow bar = neutral words (user, 2026-10-10): every uncoloured cell, in the table, What
+    stands out and the neighbour reasons, reads higher than most / around average / lower than
+    most; number, phrase and bar agree."""
+    n = 0
+    for p, _, meta, c in _cells(docs):
+        for scope in ("local", "global"):
+            s = c[scope]
+            if s["pct"] is None:
+                continue
+            assert (s["bin"] == "uncoloured") == meta["uncoloured"], (p, meta["metric"])
+            if meta["uncoloured"]:
+                n += 1
+                assert not s["band"].lower().startswith(TOP_BOTTOM), (p, meta["metric"], s["band"])
+                assert not s["phrase"].startswith(TOP_BOTTOM), (p, meta["metric"], s["phrase"])
+    assert n > 100
+    for p, d in docs.items():
+        if not p.startswith("players/"):
+            continue
+        metas = {m["metric"]: m for m in docs[f"groups/{d['identity']['group']}.json"]["metrics"]}
+        for h in d["stand_out"]:
+            if metas[h["metric"]]["uncoloured"]:
+                assert h["bin"] == "uncoloured" and not h["phrase"].startswith(TOP_BOTTOM), (p, h)
+        for nb in (d["neighbours"] or {}).get("items", []):
+            for r in nb["most_different"] + nb["most_alike"]:
+                if metas[r["metric"]]["uncoloured"]:
+                    for ph in (r["a_phrase"], r["b_phrase"]):
+                        assert not ph.startswith(TOP_BOTTOM), (p, r)
+
+
+SHOT_TYPES = {"shots_p90", "np_shots_p90", "shots_on_target_p90", "np_shots_on_target_p90"}
+
+
+def test_stand_out_has_at_most_one_shots_metric(docs):
+    """No near-duplicates (user, 2026-10-10): Benzema's What stands out lists at most one
+    shots-type metric, and no player lists two."""
+    benzema = docs["players/19677-220-11-27.json"]
+    assert len([h for h in benzema["stand_out"] if h["metric"] in SHOT_TYPES]) == 1
+    for p, d in docs.items():
+        if p.startswith("players/"):
+            assert len([h for h in d["stand_out"] if h["metric"] in SHOT_TYPES]) <= 1, p
+
+
+def test_family_definitions_cover_scored_families(docs):
+    """Every scored family on a Profile shape has its one-line definition in the group file; a
+    withheld family has none (it shows its reason)."""
+    for p, d in docs.items():
+        if not p.startswith("players/") or not d["dna"]:
+            continue
+        defs = docs[f"groups/{d['identity']['group']}.json"]["family_definitions"]
+        for dim in d["dna"]["dimensions"]:
+            if dim["status"] == "ok":
+                assert dim["family"] in defs and defs[dim["family"]], (p, dim["family"])
+            else:
+                assert dim["family"] not in defs, (p, dim["family"])

@@ -59,7 +59,8 @@ export function Player({ playerKey }: { playerKey: string }) {
             <div>
               <ProfileShape series={[{ key: i.key, name: i.display_name, dims: doc.dna!.dimensions }]}
                             labels={{ title: w.profile_shape_title, note: w.profile_shape_note,
-                                      withheld: w.chip_withheld, average: w.around_average }} />
+                                      withheld: w.chip_withheld, average: w.around_average }}
+                            definitions={group.family_definitions} />
               <ul className="mt-3 space-y-1.5 text-[12px] leading-4">
                 {doc.dna!.dimensions.filter((d) => d.withheld_short).map((d) => (
                   <li key={d.family} className="flex flex-wrap items-center gap-2">

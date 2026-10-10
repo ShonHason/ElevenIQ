@@ -1,8 +1,9 @@
 // What stands out (W3 fix round): the 6 league percentiles furthest from 50, chosen and ranked
-// by the exporter; style metrics included with their neutral phrase and a hollow bar.
+// by the exporter; hollow-bar metrics included with their neutral phrase.
 import type { GroupsGroupJson, LabelsJson, PlayersKeyJson } from "../types/contract";
 import { Bar } from "./MetricTable";
 import { Details } from "./Details";
+import { HollowLegend } from "./Cells";
 
 export function StandOut({ doc, group, labels }: { doc: PlayersKeyJson; group: GroupsGroupJson; labels: LabelsJson }) {
   if (doc.stand_out.length === 0) return null;
@@ -11,6 +12,7 @@ export function StandOut({ doc, group, labels }: { doc: PlayersKeyJson; group: G
     <section aria-labelledby="stand-out-title" className="rounded-lg border border-line bg-surface-1 px-4 py-3">
       <h2 id="stand-out-title" className="text-[17px] font-semibold leading-6 tracking-[-0.005em]">{w.stand_out_title}</h2>
       <p className="mt-0.5 text-[12px] leading-4 text-ink-3">{w.stand_out_note}</p>
+      {doc.stand_out.some((h) => h.bin === "uncoloured") && <div className="mt-1.5"><HollowLegend text={w.hollow_legend} /></div>}
       <ol className="mt-3 grid gap-y-2">
         {doc.stand_out.map((h) => {
           // The family name only: the withheld explanation sits under the Profile shape (user).

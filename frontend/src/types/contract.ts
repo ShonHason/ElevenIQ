@@ -220,6 +220,12 @@ export interface GroupsGroupJson {
    * The sentence shown with a withheld Defending score (ADR 004 §14 N2 / N3).
    */
   defending_note: string | null;
+  /**
+   * Family -> one plain line on what the family score measures (scored families only; withheld families show their reason). Checked against the score's members at export.
+   */
+  family_definitions: {
+    [k: string]: string;
+  };
   metrics: {
     metric: string;
     label: string;

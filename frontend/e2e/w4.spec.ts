@@ -107,3 +107,10 @@ test("compare: each rate names its player for screen readers", async ({ page }) 
   const line = page.locator('table[data-table="all"] [data-rate="interceptions_p90"]');
   await expect(line).toContainText("N'Golo Kanté:");
 });
+
+test("compare: the league note and the hollow-bar legend", async ({ page }) => {
+  await page.goto(`/#/compare/${A}/${B}`);
+  const labels = await fx(page, "labels.json");
+  await expect(page.locator('[data-note="league"]')).toHaveText(labels.words.compare_league_note);
+  await expect(page.locator('[data-legend="hollow"]').first()).toHaveText(labels.words.hollow_legend);
+});

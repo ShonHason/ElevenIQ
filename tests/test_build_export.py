@@ -243,6 +243,23 @@ def test_stand_out_furthest_from_50_style_included():
 
 
 
+def test_stand_out_skips_variants_and_prefers_the_dna_member():
+    """No near-duplicates (user, 2026-10-10): one shots-type metric, the DNA member even when a
+    display variant is further from 50; a D17 pair keeps one; unrelated metrics unaffected."""
+    specs = list(R.SPECS)
+    pct = {s.column: 50.0 for s in specs}
+    pct.update({"shots_p90": 99.5, "shots_on_target_p90": 99.0, "np_shots_p90": 90.0,
+                "xg_p90": 98.0, "np_xg_p90": 97.0,          # D17 pair in DM-CM; np_xg is DNA
+                "ball_recoveries_p90": 80.0})
+    rows = [{"local": {"pct": pct[s.column], "pct_text": "x", "phrase": "x", "bin": None}}
+            for s in specs]
+    got = [h["metric"] for h in B.stand_out("DM-CM", rows)]
+    assert R.REGISTRY.cell("np_shots_p90", "DM-CM").status == "dna"
+    assert R.REGISTRY.cell("np_xg_p90", "DM-CM").status == "dna"
+    assert got[:3] == ["np_xg_p90", "np_shots_p90", "ball_recoveries_p90"]
+    assert not {"shots_p90", "shots_on_target_p90", "xg_p90"} & set(got)
+
+
 def test_defensive_rates_per_100_opponent_open_play_passes():
     """User-approved figure (2026-10-10): count / exposure × 100, numerator and denominator kept;
     goalkeepers none; no exposure → null, never 0. Kanté interceptions 110 of 16,226 → 0.68."""

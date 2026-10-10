@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 import { getGroup, getLabels, getPlayer } from "../api";
 import { ProfileShape, STROKES, Swatch } from "../components/ProfileShape";
 import { familyTag } from "../components/MetricTable";
-import { BandCell, MetricName, ValueText } from "../components/Cells";
+import { BandCell, HollowLegend, MetricName, ValueText } from "../components/Cells";
 import { SearchBox } from "../components/SearchBox";
 import { gapOrder } from "../lib/gapOrder";
 import { href } from "../lib/router";
@@ -146,10 +146,13 @@ export function Compare({ a: ka, b: kb }: { a: string; b: string }) {
         <ProfileShape series={[{ key: ia.key, name: ia.display_name, dims: a.dna.dimensions },
                                { key: ib.key, name: ib.display_name, dims: b.dna.dimensions }]}
                       labels={{ title: w.profile_shape_title, note: w.profile_shape_note,
-                                withheld: w.chip_withheld, average: w.around_average }} />
+                                withheld: w.chip_withheld, average: w.around_average }}
+                      definitions={group.family_definitions} />
         <section>
           <h2 className="text-[17px] font-semibold leading-6">{w.compare_top_title}</h2>
           <p className="mt-0.5 text-[12px] leading-4 text-ink-3">{w.compare_top_note}</p>
+          <p className="mt-0.5 text-[12px] leading-4 text-ink-3" data-note="league">{w.compare_league_note}</p>
+          <div className="mt-1.5"><HollowLegend text={w.hollow_legend} /></div>
           <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={w.compare_top_title}>
             <table className="w-full border-collapse text-[13px] leading-[18px]" data-table="top">
               <Head a={a} b={b} labels={labels} />

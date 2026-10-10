@@ -3,6 +3,7 @@
 // labelled with the withheld chip, never drawn as 0, and the polygon closes over the scored
 // vertices only. No overall number. The 50 ring is "around average". Up to two series (compare).
 // Geometry is layout only: the scores themselves are the exported numbers.
+import { Popover } from "@base-ui/react/popover";
 import type { PlayersKeyJson } from "../types/contract";
 
 type Dim = NonNullable<PlayersKeyJson["dna"]>["dimensions"][number];
@@ -28,9 +29,11 @@ function point(i: number, n: number, value: number) {
   return [C + r * Math.cos(a), C + r * Math.sin(a)] as const;
 }
 
-export function ProfileShape({ series, labels }: {
+export function ProfileShape({ series, labels, definitions = {} }: {
   series: Series[];
   labels: { title: string; note: string; withheld: string; average: string };
+  // Family -> what its score measures (groups/<g>.json family_definitions); hover or tap a label.
+  definitions?: Record<string, string>;
 }) {
   if (series.length < 1 || series.length > STROKES.length) throw new Error("one or two series");
   const families = series[0].dims;
@@ -51,7 +54,7 @@ export function ProfileShape({ series, labels }: {
           </ul>
         )}
       </figcaption>
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" className="mx-auto mt-2 block w-full max-w-[780px]"
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="group" className="mx-auto mt-2 block w-full max-w-[780px]"
            aria-label={`${labels.title}: ${series.map((s) => s.name).join(", ")}`}>
         {[25, 50, 75, 100].map((ring) => (
           <polygon key={ring} fill="none" stroke="var(--line)" strokeWidth={ring === 50 ? 1.5 : 1}
@@ -87,9 +90,12 @@ export function ProfileShape({ series, labels }: {
         {families.map((d, i) => {
           const [x, y] = point(i, n, 122);
           const anchor = Math.abs(x - C) < 8 ? "middle" : x > C ? "start" : "end";
-          return (
-            <text key={d.family} x={x} y={y} textAnchor={anchor} dominantBaseline="middle" className="shape-label" fill="var(--ink-2)">
-              <tspan x={x} dy="-0.4em" fontWeight={600} fill="var(--ink)">{d.label}</tspan>
+          const def = definitions[d.family];
+          const name = <tspan x={x} dy="-0.4em" fontWeight={600} fill="var(--ink)"
+                              textDecoration={def ? "underline dotted" : undefined}>{d.label}</tspan>;
+          const text = (
+            <text x={x} y={y} textAnchor={anchor} dominantBaseline="middle" className="shape-label" fill="var(--ink-2)">
+              {name}
               {d.score === null ? <tspan x={x} dy="1.25em">{labels.withheld}</tspan>
                 : series.map((s, si) => (
                   <tspan key={s.key} x={si === 0 ? x : undefined} dy={si === 0 ? "1.25em" : undefined}
@@ -97,13 +103,39 @@ export function ProfileShape({ series, labels }: {
                 ))}
             </text>
           );
+          if (!def) return <g key={d.family}>{text}</g>;
+          // A transparent hit area over the label's two lines (a tap between glyphs still opens
+          // the definition; a larger target on phones). Sized in em of the label font.
+          const shift = anchor === "end" ? "-100%" : anchor === "middle" ? "-50%" : "0";
+          const label = (
+            <g className="shape-label cursor-pointer">
+              <rect x={x} y={y} width={`${Math.max(d.label.length, 4) * 0.6}em`} height="2.4em" fill="transparent"
+                    style={{ transformBox: "fill-box", transform: `translate(${shift}, -40%)` }} />
+              {text}
+            </g>
+          );
+          return (
+            <Popover.Root key={d.family}>
+              <Popover.Trigger nativeButton={false} openOnHover delay={150} render={label}
+                               aria-label={`${d.label}: ${def}`} data-family-def={d.family} />
+              <Popover.Portal>
+                <Popover.Positioner sideOffset={6}>
+                  <Popover.Popup className="max-w-xs rounded-lg border border-line bg-surface-1 px-3 py-2 text-[13px] leading-[18px] text-ink shadow-[var(--shadow)] transition-[opacity,transform] duration-[120ms] ease-out data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
+                    <p className="m-0"><span className="font-semibold">{d.label}:</span> {def}</p>
+                  </Popover.Popup>
+                </Popover.Positioner>
+              </Popover.Portal>
+            </Popover.Root>
+          );
         })}
       </svg>
-      {/* The chart's content for screen readers: every family's score, or withheld. */}
+      {/* The chart's content for screen readers: every family's score, or withheld, and its
+          definition. The svg is a group, not an img: its family labels are buttons. */}
       <ul className="sr-only">
         {families.map((d, i) => (
           <li key={d.family}>
             {d.label}: {d.score === null ? labels.withheld : series.map((s) => `${s.name} ${s.dims[i].score_text}`).join(", ")}
+            {definitions[d.family] && <>. {definitions[d.family]}</>}
           </li>
         ))}
       </ul>

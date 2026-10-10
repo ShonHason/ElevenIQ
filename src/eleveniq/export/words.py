@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+from dataclasses import dataclass
 
 from eleveniq.analytics import dna as D
 from eleveniq.analytics import movers, style_map
@@ -184,7 +185,8 @@ BASIS_LEGEND = "The bold percentile is the one the player's profile uses for tha
 STAND_OUT_TITLE = "What stands out"
 STAND_OUT_NOTE = ("The six metrics where the player is furthest from the league average for the "
                   "position, high or low. Lower-is-better metrics are counted from their better "
-                  "end; style metrics have no better end.")
+                  "end; metrics with a hollow bar have no better end. Close variants of a metric "
+                  "already listed are left out.")
 STAND_OUT_N = 6
 # The compare-mode defensive rate (user-approved label, 2026-10-10): a plain rate, no
 # percentile, never "adjusted" or "corrected".
@@ -527,4 +529,100 @@ METRIC_DEFINITIONS: dict[str, str] = {
     "aerials_lost_p90": "Aerial duels the player lost.",
     "dispossessed_p90": "Times the player lost the ball to an opponent's challenge.",
     "miscontrols_p90": "Times the player lost the ball through a bad touch.",
+}
+
+
+# ── Hollow bars and family definitions (user, 2026-10-10) ──────────────────────────────
+# One legend line for the hollow (uncoloured) bar; its cells read the neutral words
+# (higher than most / around average / lower than most), never top / bottom N%.
+HOLLOW_LEGEND = ("Hollow bar: not read as good or poor (style, or associated with team "
+                 "possession).")
+# Compare mode: percentiles of two players from different leagues (user, 2026-10-10).
+COMPARE_LEAGUE_NOTE = "Each percentile ranks the player within their own league and position."
+
+# What each Profile shape family score measures, per position group: the plain meaning of its
+# scored members (the family's DNA metrics with a good / poor direction; style metrics are not
+# scored). `members` must equal the exporter's scored members for that group and family, or the
+# export fails, so a text cannot outlive a registry change. Withheld families show their reason
+# instead. Statistical text: in the final stats-reviewer pass.
+@dataclass(frozen=True)
+class FamilyDefinition:
+    members: tuple[str, ...]
+    text: str
+
+
+_AERIAL = FamilyDefinition(
+    ("aerials_won_p90",),
+    "How many aerial duels the player wins per 90: involvement in the air, not the share won.")
+_PROG_3 = FamilyDefinition(
+    ("box_entries_pass_p90", "final_third_entries_pass_p90", "progressive_passes_p90"),
+    "How often the player passes the ball forward, into the final third and into the box, per "
+    "90: volume, not pass accuracy.")
+_PROG_2 = FamilyDefinition(
+    ("box_entries_pass_p90", "progressive_passes_p90"),
+    "How often the player passes the ball forward and into the box, per 90: volume, not pass "
+    "accuracy.")
+_CARRY_BOX = FamilyDefinition(
+    ("box_entries_carry_p90", "progressive_carries_p90"),
+    "How often the player carries the ball forward and into the box, per 90: volume, not "
+    "dribbling success.")
+_KEY_PASSES = FamilyDefinition(
+    ("op_key_passes_p90",),
+    "How many open-play passes per 90 lead to a shot: volume of chances made, not their quality.")
+
+FAMILY_DEFINITIONS: dict[str, dict[str, FamilyDefinition]] = {
+    "CB": {
+        "Aerial": _AERIAL,
+        "Carrying": FamilyDefinition(
+            ("final_third_entries_carry_p90", "progressive_carries_p90"),
+            "How often the player carries the ball forward and into the final third, per 90: "
+            "volume, not dribbling success."),
+        "Progression": _PROG_3,
+    },
+    "FB-WB": {
+        "Aerial": _AERIAL, "Carrying": _CARRY_BOX, "Creation": _KEY_PASSES,
+        "Goal threat": FamilyDefinition(
+            ("np_shots_p90",), "How many non-penalty shots the player takes per 90: volume, "
+                               "not finishing."),
+        "Progression": _PROG_2,
+    },
+    "DM-CM": {
+        "Aerial": _AERIAL,
+        "Carrying": FamilyDefinition(
+            ("box_entries_carry_p90", "final_third_entries_carry_p90", "progressive_carries_p90"),
+            "How often the player carries the ball forward, into the final third and into the "
+            "box, per 90: volume, not dribbling success."),
+        "Creation": FamilyDefinition(
+            ("op_key_passes_p90", "op_xg_assisted_p90"),
+            "How many open-play passes per 90 lead to a shot, and the expected goals of those "
+            "shots: chances made, weighted by their quality."),
+        "Goal threat": FamilyDefinition(
+            ("np_shots_on_target_p90", "np_shots_p90", "np_xg_p90"),
+            "How many non-penalty shots the player takes and puts on target per 90, and their "
+            "expected goals: volume and chance quality, not finishing."),
+        "Progression": _PROG_2,
+    },
+    "AM-Winger": {
+        "Aerial": _AERIAL, "Carrying": _CARRY_BOX, "Creation": _KEY_PASSES,
+        "Goal threat": FamilyDefinition(
+            ("np_shots_on_target_p90", "np_shots_p90"),
+            "How many non-penalty shots the player takes and puts on target per 90: volume, not "
+            "finishing."),
+        "Progression": _PROG_3,
+    },
+    "ST": {
+        "Aerial": FamilyDefinition(
+            ("aerial_win_pct", "aerials_won_p90"),
+            "How many aerial duels the player wins per 90, and the share of aerial duels won "
+            "(counted only for players with enough aerial duels): involvement and success in "
+            "the air."),
+        "Carrying": _CARRY_BOX,
+        "Goal threat": FamilyDefinition(
+            ("np_shots_p90",), "How many non-penalty shots the player takes per 90: volume, "
+                               "not finishing."),
+        "Passing": FamilyDefinition(
+            ("pass_completion_pct",), "The share of the player's passes that are completed: "
+                                      "accuracy, not difficulty or ambition."),
+        "Progression": _PROG_3,
+    },
 }
