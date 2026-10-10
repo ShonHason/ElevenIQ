@@ -263,11 +263,12 @@ def metric_meta(metric: str, group: str, held: Mapping[str, str]) -> dict:
     cell = REGISTRY.cell(metric, group) if group in GROUPS else None
     biased = bool(cell and cell.team_style_biased)
     status = cell.status if cell else None
+    # Why a metric is display-only, in the approved reason texts (registry.REASON_TEXT). A
+    # fixed_display spec reason is ADR shorthand ("D12: raw volume"), not page text: it is not
+    # exported (plan 006 W3; rewording it would be new site text for the user to approve).
     reasons = None
-    if cell is not None and cell.status != "dna":
-        fixed = spec.fixed_display
-        reasons = (fixed.reason if fixed is not None and R.R_FIXED in cell.reasons
-                   else ", ".join(R.reason_text(r) for r in cell.reasons))
+    if cell is not None and cell.status != "dna" and R.R_FIXED not in cell.reasons:
+        reasons = ", ".join(R.reason_text(r) for r in cell.reasons)
     notes = [R.note_text(n) for n in (cell.notes if cell else ())]
     if metric == "long_pass_completion_pct":
         notes.insert(0, W.LONG_PASS_NOTE)
@@ -614,7 +615,13 @@ def labels_doc(stamps: Mapping[str, Any]) -> dict:
                   "grey_rule_table": W.GREY_RULE_TABLE, "near_gate_chip": W.NEAR_GATE_CHIP,
                   "map_caption": W.MAP_CAPTION, "zero_tie": W.ZERO_TIE,
                   "neighbours_label": W.NEIGHBOURS_LABEL, "attribution": W.ATTRIBUTION,
-                  "portfolio": W.PORTFOLIO},
+                  "portfolio": W.PORTFOLIO, "profile_shape_title": W.PROFILE_SHAPE_TITLE,
+                  "profile_shape_note": W.PROFILE_SHAPE_NOTE, "neighbours_title": W.NEIGHBOURS_TITLE,
+                  "around_average": W.AROUND_AVERAGE,
+                  "most_alike": W.MOST_ALIKE, "most_different": W.MOST_DIFFERENT,
+                  "signature_title": W.SIGNATURE_TITLE, "signature_note": W.SIGNATURE_NOTE,
+                  **{f"chip_{k}": v for k, v in W.CHIPS.items()},
+                  **{f"column_{k}": v for k, v in W.COLUMNS.items()}},
         "metric_order": [s.column for s in SPECS_IN_ORDER],
     }
 

@@ -128,6 +128,23 @@ NOT_ASSESSED = "not assessed: {reason}"
 NEIGHBOURS_LABEL = ("Statistically similar: DNA distance within position group (provisional "
                     "until the M5 similarity engine)")
 ATTRIBUTION = "Data: StatsBomb Open Data"
+# Player page and chips (plan 006 W3; DESIGN.md §6 chip set; the Profile shape note is the user's
+# W4 leaning, checked by the stats-reviewer in the final text pass).
+PROFILE_SHAPE_TITLE = "Profile shape"
+PROFILE_SHAPE_NOTE = ("How strongly the player stands out in each family, compared with players "
+                      "in the same position and league.")
+CHIPS = {"withheld": "Withheld", "same_team": "Same team", "provisional": "Provisional",
+         "style": "Style", "basis": "basis"}
+COLUMNS = {"value": "Value", "local": "League percentile", "global": "All-leagues percentile",
+           "minutes": "min"}
+# The 50 ring of the Profile shape: the dimension score is a mean of direction-adjusted local
+# percentiles, so 50 sits in pct_words' "around average" band (a test ties the two).
+AROUND_AVERAGE = "around average"
+NEIGHBOURS_TITLE = "Similar players"
+MOST_ALIKE, MOST_DIFFERENT = "Most alike", "Most different"
+SIGNATURE_TITLE = "Signature traits"
+SIGNATURE_NOTE = ("A holder / non-holder flag, not a percentile: most players in the group record "
+                  "none, so a rank would mostly compare zeros.")
 PORTFOLIO = "A non-commercial portfolio project."
 
 

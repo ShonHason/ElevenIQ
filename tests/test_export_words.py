@@ -255,3 +255,21 @@ def test_near_gate_chip_only_cb_fbwb_900_1350(group, minutes):
     from eleveniq.export import display as X
     want = group in ("CB", "FB-WB") and 900.0 - 1e-6 <= minutes < 1350.0
     assert X.near_gate(group, minutes) is want
+
+
+def test_w3_player_page_words_are_the_approved_wording():
+    """Plan 006 W3 (user's W4 leaning for the note; final stats-reviewer text pass at the end)."""
+    assert W.PROFILE_SHAPE_TITLE == "Profile shape"
+    assert W.PROFILE_SHAPE_NOTE == ("How strongly the player stands out in each family, compared "
+                                    "with players in the same position and league.")
+    assert W.CHIPS["withheld"] == "Withheld" and W.CHIPS["same_team"] == "Same team"
+    assert W.COLUMNS == {"value": "Value", "local": "League percentile",
+                         "global": "All-leagues percentile", "minutes": "min"}
+    for t in (W.PROFILE_SHAPE_NOTE, W.SIGNATURE_NOTE):
+        for word in CAUSAL:
+            assert word not in t.lower()
+        assert "quality" not in t.lower() and "style" not in t.lower()     # user, W4 leaning 2
+
+
+def test_around_average_is_the_percentile_band_at_50():
+    assert W.AROUND_AVERAGE == "around average" == W.pct_words(50.0)[1]

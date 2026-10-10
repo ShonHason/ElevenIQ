@@ -161,3 +161,37 @@ def test_full_export_every_metric_cell_has_a_number_or_a_status_text(full):
         for c in cells:
             for scope in ("local", "global"):
                 assert (c[scope]["pct_text"] is None) != (c[scope]["status_text"] is None), (p, c)
+
+
+def test_fixed_display_reasons_are_not_page_text():
+    """W3: a fixed_display spec reason is ADR shorthand ("D12: raw volume"); it is not exported.
+    The approved reason texts still are."""
+    from eleveniq.analytics import dna as D
+    fixed = next((m, g) for (m, g), c in R.REGISTRY.cells.items()
+                 if g in B.GROUPS and R.R_FIXED in c.reasons)
+    assert B.metric_meta(fixed[0], fixed[1], D.withheld_for(fixed[1]))["reasons"] is None
+    d17 = next((m, g) for (m, g), c in R.REGISTRY.cells.items()
+               if g in B.GROUPS and c.reasons == (R.R_D17,))
+    assert B.metric_meta(d17[0], d17[1], D.withheld_for(d17[1]))["reasons"] == R.REASON_TEXT[R.R_D17]
+
+
+def test_labels_carry_the_player_page_words_and_the_metric_order():
+    stamps = {"contract_version": "1.0.0", "registry_version": "0" * 64,
+              "measurement_source": "statsbomb", "source": "statsbomb", "season_ids": [27],
+              **{f"{n}_sha256": "0" * 64 for n in ("season_parquet", "percentiles_parquet",
+                                                  "dna_parquet", "positions_parquet", "match_parquet")}}
+    w = B.labels_doc(stamps)["words"]
+    for k in ("profile_shape_title", "profile_shape_note", "around_average", "chip_withheld",
+              "chip_same_team", "chip_provisional", "column_value", "column_local",
+              "column_global", "column_minutes", "neighbours_title", "most_alike", "most_different"):
+        assert w[k], k
+    assert B.labels_doc(stamps)["metric_order"] == [s.column for s in R.SPECS]
+
+
+def test_group_metadata_follows_the_metric_order():
+    """Player rows and group metadata are paired by index: both follow registry metric order."""
+    from eleveniq.analytics import dna as D
+    order = [s.column for s in R.SPECS]
+    for g in B.GROUPS:
+        held = D.withheld_for(g)
+        assert [B.metric_meta(m, g, held)["metric"] for m in order] == order
