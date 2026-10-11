@@ -142,7 +142,7 @@ export function Compare({ a: ka, b: kb }: { a: string; b: string }) {
                    onPick={(e) => { window.location.hash = href.compare(ia.key, e.key); }} />
       </div>
 
-      <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <ProfileShape series={[{ key: ia.key, name: ia.display_name, dims: a.dna.dimensions },
                                { key: ib.key, name: ib.display_name, dims: b.dna.dimensions }]}
                       labels={{ title: w.profile_shape_title, note: w.profile_shape_note,
@@ -153,7 +153,7 @@ export function Compare({ a: ka, b: kb }: { a: string; b: string }) {
           <p className="mt-0.5 text-[12px] leading-4 text-ink-3">{w.compare_top_note}</p>
           <p className="mt-0.5 text-[12px] leading-4 text-ink-3" data-note="league">{w.compare_league_note}</p>
           <div className="mt-1.5"><HollowLegend text={w.hollow_legend} /></div>
-          <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={w.compare_top_title}>
+          <div className="relative mt-3 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={w.compare_top_title}>
             <table className="w-full border-collapse text-[13px] leading-[18px]" data-table="top">
               <Head a={a} b={b} labels={labels} />
               <tbody><Rows metrics={top} a={a} b={b} group={group} labels={labels} /></tbody>
@@ -164,7 +164,7 @@ export function Compare({ a: ka, b: kb }: { a: string; b: string }) {
 
       <section className="mt-10">
         <h2 className="text-[17px] font-semibold leading-6">{w.compare_all_title}</h2>
-        <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={w.compare_all_title}>
+        <div className="relative mt-3 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={w.compare_all_title}>
           <table className="w-full border-collapse text-[13px] leading-[18px]" data-table="all">
             <Head a={a} b={b} labels={labels} />
             {families.map((fam) => (
@@ -174,6 +174,22 @@ export function Compare({ a: ka, b: kb }: { a: string; b: string }) {
                   {familyTag(group, fam) && <span className="ml-2 font-normal text-ink-3">{familyTag(group, fam)}</span>}
                 </th></tr>
                 <Rows metrics={group.metrics.filter((m) => m.family === fam).map((m) => m.metric)} a={a} b={b} group={group} labels={labels} />
+                {fam === "Passing" && group.completion_vs_expected && a.completion_vs_expected && b.completion_vs_expected && (
+                  <tr className="border-b border-line last:border-b-0" data-metric={group.completion_vs_expected.metric}>
+                    <th scope="row" className="sticky left-0 bg-surface-1 px-2.5 py-1.5 text-left font-normal">
+                      <MetricName meta={group.completion_vs_expected} />
+                      <div className="text-[12px] leading-4 text-ink-3">{group.completion_vs_expected.direction_text}</div>
+                    </th>
+                    {[a, b].map((d) => (
+                      [<td key={`v${d.identity.key}`} className="px-2.5 py-1.5 text-right">
+                         <ValueText row={d.completion_vs_expected!} meta={group.completion_vs_expected!} src={`players/${d.identity.key}.json#completion_vs_expected.value_text`} />
+                       </td>,
+                       <td key={`l${d.identity.key}`} className="px-2.5 py-1.5">
+                         <BandCell row={d.completion_vs_expected!} src={`players/${d.identity.key}.json#completion_vs_expected.local.band`} hint={labels.words.exact_hint} />
+                       </td>]
+                    ))}
+                  </tr>
+                )}
               </tbody>
             ))}
           </table>

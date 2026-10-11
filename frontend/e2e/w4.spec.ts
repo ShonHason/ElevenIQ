@@ -114,3 +114,13 @@ test("compare: the league note and the hollow-bar legend", async ({ page }) => {
   await expect(page.locator('[data-note="league"]')).toHaveText(labels.words.compare_league_note);
   await expect(page.locator('[data-legend="hollow"]').first()).toHaveText(labels.words.hollow_legend);
 });
+
+test("compare: completion vs expected in the Passing family, for both players", async ({ page }) => {
+  await page.goto(`/#/compare/${A}/${B}`);
+  const row = page.locator('table[data-table="all"] tr[data-metric="completion_vs_expected"]');
+  await expect(row).toBeVisible();
+  for (const key of [A, B]) {
+    const doc = await fx(page, `players/${key}.json`);
+    await expect(row.locator(`[data-src="players/${key}.json#completion_vs_expected.value_text"]`)).toHaveText(doc.completion_vs_expected.value_text);
+  }
+});

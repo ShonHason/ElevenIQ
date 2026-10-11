@@ -193,7 +193,7 @@ def _cells(docs):
 
 
 # The user's bands (literals: the spec, not read from the code).
-BANDS = [(99, "Top 1%"), (95, "Top 5%"), (90, "Top 10%"), (75, "Top 25%"), (60, "Above average"),
+BANDS = [(95, "Top 5%"), (90, "Top 10%"), (75, "Top 25%"), (60, "Above average"),
          (40, "Around average"), (25, "Below average"), (10, "Bottom 25%"), (5, "Bottom 10%"),
          (0, "Bottom 5%")]
 
@@ -207,11 +207,23 @@ def test_every_cell_band_agrees_with_its_number(docs):
                 assert s["band"] is None and s["note"] is None, p
                 continue
             n += 1
-            if meta["uncoloured"]:            # hollow bar = neutral words (user, 2026-10-10)
-                want = ("Around average" if 40 <= s["pct"] <= 60
-                        else "Higher than most" if s["pct"] > 60 else "Lower than most")
+            # The band reads the number the popover shows (final text pass).
+            shown = {"<1": 0, ">99": 100}.get(s["pct_text"]) if s["pct_text"] in ("<1", ">99") \
+                else int(s["pct_text"])
+            n_ = s["n"]
+            ends = ("Highest in league", "Lowest in league")
+            if meta["direction"] == "lower_better":
+                ends = ends[::-1]
+            member = 0 < s["pct"] < 100           # outsider rows (0 / 100) take no end label
+            if scope == "local" and n_ and member and s["pct"] >= 100 * (n_ - 0.5) / n_ - 1e-6:
+                want = ends[0]            # the single highest shown row (user, 2026-10-10)
+            elif scope == "local" and n_ and member and s["pct"] <= 100 * 0.5 / n_ + 1e-6:
+                want = ends[1]
+            elif meta["uncoloured"]:            # hollow bar = neutral words (user, 2026-10-10)
+                want = ("Around average" if 40 <= shown <= 60
+                        else "Higher than most" if shown > 60 else "Lower than most")
             else:
-                want = next(label for lo, label in BANDS if s["pct"] >= lo)
+                want = next(label for lo, label in BANDS if shown >= lo)
             assert s["band"] == want, (p, meta["metric"], s["pct"], s["band"])
             assert "percentile among" in s["note"], p                      # the number, in the popover
     assert n > 1000
@@ -377,3 +389,39 @@ def test_methodology_sections_present(docs):
     text = " ".join(p for s in m["sections"] for p in s["paragraphs"]).lower()
     for word in ("adjusted rate", "corrected", "overall rating of"):
         assert word not in text
+
+
+def test_completion_vs_expected_row_and_passing_score(docs):
+    """Completion above expected (plan 006 pre-registration): every outfield row has the table
+    row; the Passing vertex is its league percentile in a group whose spec passed the check
+    (the Methodology says strikers), withheld for that reason elsewhere, where the row is
+    hollow with neutral words. Value text = signed points; band agrees with the number."""
+    passed = {g for g in ("CB", "FB-WB", "DM-CM", "AM-Winger", "ST")
+              if "Passing" in docs[f"groups/{g}.json"]["family_definitions"]}
+    assert passed == {"ST"}                         # the Methodology's claim
+    n = 0
+    for p, d in docs.items():
+        if not p.startswith("players/"):
+            continue
+        g = d["identity"]["group"]
+        c = d["completion_vs_expected"]
+        if g == "GK":
+            assert c is None
+            continue
+        meta = docs[f"groups/{g}.json"]["completion_vs_expected"]
+        assert meta["uncoloured"] == (g not in passed) and meta["family"] == "Passing"
+        if c["value"] is not None:
+            assert c["value_text"] == f"{c['value']:+.1f}", p
+        loc = c["local"]
+        if loc["pct"] is not None:
+            assert (loc["bin"] == "uncoloured") == (g not in passed), p
+            if g not in passed:
+                assert not loc["band"].lower().startswith(("top", "bottom")), p
+        if d["dna"]:
+            dim = next(x for x in d["dna"]["dimensions"] if x["family"] == "Passing")
+            if g in passed:
+                n += 1
+                assert dim["members"] == ["completion_vs_expected"] and dim["score"] == loc["pct"], p
+            else:
+                assert dim["score"] is None and dim["status"] == "pass_mix_possession_failed", p
+    assert n >= 2                                   # the fixture's profiled strikers

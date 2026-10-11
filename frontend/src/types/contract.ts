@@ -59,6 +59,7 @@ export interface Stamps {
   season_parquet_sha256: Sha256;
   percentiles_parquet_sha256: Sha256;
   dna_parquet_sha256: Sha256;
+  pass_mix_parquet_sha256: Sha256;
   positions_parquet_sha256: Sha256;
   match_parquet_sha256: Sha256;
 }
@@ -231,44 +232,52 @@ export interface GroupsGroupJson {
    */
   defending_note: string | null;
   /**
+   * The "Completion vs expected" row's metadata (plan 006 pre-registration; display only, not a registry metric); null for goalkeepers.
+   */
+  completion_vs_expected: null | MetricMeta;
+  /**
    * Family -> one plain line on what the family score measures (scored families only; withheld families show their reason). Checked against the score's members at export.
    */
   family_definitions: {
     [k: string]: string;
   };
-  metrics: {
-    metric: string;
-    label: string;
-    family: string;
-    order: number;
-    direction: "higher_better" | "lower_better" | "style";
-    direction_text: string;
-    /**
-     * Shown next to the value: "per 90", "per shot", or empty when the value text carries it (%).
-     */
-    unit: string;
-    /**
-     * One plain sentence from the metric's implementation (checked by the stats-reviewer).
-     */
-    definition: string;
-    registry_status: string | null;
-    uncoloured: boolean;
-    /**
-     * May headline compare mode's top-6 gap list (user, 2026-10-09, option c): not a signature trait, not associated with team possession, not long pass completion. The site also needs a percentile on both rows.
-     */
-    gap_eligible: boolean;
-    /**
-     * Notes and display reasons, each short text once; full texts joined for the popover.
-     */
-    notes: NoteText[];
-    /**
-     * "(<Family> score withheld: <reason>)" when the metric's family score is withheld in this group.
-     */
-    withheld_tag: string | null;
-  }[];
+  metrics: MetricMeta[];
 }
 /**
  * The provenance of the export, repeated in every file. No wall-clock time: two exports of the same data are byte-identical.
+ */
+export interface MetricMeta {
+  metric: string;
+  label: string;
+  family: string;
+  order: number;
+  direction: "higher_better" | "lower_better" | "style";
+  direction_text: string;
+  /**
+   * Shown next to the value: "per 90", "per shot", or empty when the value text carries it (%).
+   */
+  unit: string;
+  /**
+   * One plain sentence from the metric's implementation (checked by the stats-reviewer).
+   */
+  definition: string;
+  registry_status: string | null;
+  uncoloured: boolean;
+  /**
+   * May headline compare mode's top-6 gap list (user, 2026-10-09, option c): not a signature trait, not associated with team possession, not long pass completion. The site also needs a percentile on both rows.
+   */
+  gap_eligible: boolean;
+  /**
+   * Notes and display reasons, each short text once; full texts joined for the popover.
+   */
+  notes: NoteText[];
+  /**
+   * "(<Family> score withheld: <reason>)" when the metric's family score is withheld in this group.
+   */
+  withheld_tag: string | null;
+}
+/**
+ * short: for a table cell; full: for its popover (DESIGN decision 7).
  */
 /**
  * One season row. metrics are in registry metric order; their shared facts are in groups/<identity.group>.json.
@@ -629,6 +638,51 @@ export interface PlayersKeyJson {
   }[];
   metrics: MetricRow[];
   /**
+   * Completion above expected (plan 006 pre-registration; display only): value in percentage points, league percentile only; metadata in groups/<group>.json completion_vs_expected. Null for goalkeepers.
+   */
+  completion_vs_expected: null | MetricRow;
+  /**
+   * @maxItems 3
+   */
+  style_tags:
+    | []
+    | [
+        {
+          tag: string;
+          metric: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          tag: string;
+          metric: string;
+          note: string;
+        },
+        {
+          tag: string;
+          metric: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          tag: string;
+          metric: string;
+          note: string;
+        },
+        {
+          tag: string;
+          metric: string;
+          note: string;
+        },
+        {
+          tag: string;
+          metric: string;
+          note: string;
+        }
+      ];
+  /**
    * Display only (ADR 004 D5): scored against a population that does not contain the player.
    */
   second_group: null | {
@@ -670,6 +724,10 @@ export interface PlayersKeyJson {
       withheld_short: string | null;
       withheld_full: string | null;
       defending_note: string | null;
+      /**
+       * true: the display-only Passing score (config.PASSING_SCORE_MEMBERS), not a DNA dimension score; members are the passing metrics used.
+       */
+      display_score: boolean;
     }[];
   };
   neighbours: null | {
@@ -1823,6 +1881,10 @@ export interface GemsGroupJson {
   order: {
     [k: string]: number[];
   };
+  /**
+   * The scored family the page opens on.
+   */
+  default_order: string;
   leagues: {
     competition_id: number;
     league: string;

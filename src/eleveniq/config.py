@@ -289,3 +289,8 @@ LEAN_STRONG: float = 1.5
 # where it was measured: no other group, no other minutes.
 NEAR_GATE_GROUPS: tuple[str, ...] = ("CB", "FB-WB")
 NEAR_GATE_MAX_MINUTES: float = 1350.0
+
+# Completion above expected (plan 006 pre-registration, user 2026-10-10; display only): a spec
+# passes a group when |mean within-league Spearman ρ| with the team's open-play pass share while
+# on is below this. Spec 1 (length buckets) first, spec 2 (length × direction) only on failure.
+PASS_MIX_MAX_RHO: float = 0.4

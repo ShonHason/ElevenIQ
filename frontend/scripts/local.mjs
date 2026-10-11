@@ -18,6 +18,7 @@ const parquets = {
   dna_parquet_sha256: "data/processed/player_dna.parquet",
   positions_parquet_sha256: "data/processed/player_season_positions.parquet",
   match_parquet_sha256: "data/interim/player_match_stats.parquet",
+  pass_mix_parquet_sha256: "data/processed/player_season_pass_mix.parquet",
 };
 
 const sha = (f) => createHash("sha256").update(readFileSync(f)).digest("hex");

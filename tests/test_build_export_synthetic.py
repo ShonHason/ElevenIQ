@@ -23,6 +23,7 @@ import pytest
 
 from eleveniq.analytics import dna as D
 from eleveniq.analytics import registry as R
+from eleveniq.export import words as W_
 from eleveniq.analytics.dna import dna_specs, split_weights
 from eleveniq.export import build_export as B
 from eleveniq.export import display as X
@@ -38,7 +39,8 @@ COUNTS = SIG | {t for s in R.SPECS if s.ratio for t in s.ratio.terms} | {
 STAMPS = {"contract_version": "1.0.0", "registry_version": R.REGISTRY_VERSION,
           "measurement_source": "statsbomb", "source": "statsbomb", "season_ids": [27],
           **{f"{n}_sha256": "0" * 64 for n in ("season_parquet", "percentiles_parquet",
-                                              "dna_parquet", "positions_parquet", "match_parquet")}}
+                                              "dna_parquet", "positions_parquet", "match_parquet",
+                                              "pass_mix_parquet")}}
 
 
 def _key(pid: int, tid: int) -> tuple:
@@ -61,7 +63,8 @@ def _world():
                        "team_name": f"Team {k[1]}", "position_group": group,
                        "second_position_group": "CB" if k[0] == 101 else None,
                        "minutes_played": minutes, "minutes_nominal_equiv": minutes * 0.95,
-                       "meets_min_minutes": kind != "below",
+                       "meets_min_minutes": kind != "below", "in_percentile_pool": True,
+                       "team_open_play_passes_while_on": 1000 if kind != "below" else 0,
                        **{c: 3 for c in COUNTS},
                        # the compare-mode defensive rate's season counts and exposure
                        "opponent_open_play_passes_while_on": 900 if kind != "below" else 0,
@@ -172,7 +175,12 @@ def test_signature_traits_and_withheld_texts(docs):
     assert [t["holder_text"] for t in d["signature_traits"]] and all(
         t["holder_text"] in ("holder", "non-holder") for t in d["signature_traits"])
     dims = {x["family"]: x for x in d["dna"]["dimensions"]}
-    assert dims["Passing"]["withheld_short"] == "rests on long pass completion alone"
+    # Passing follows completion above expected (plan 006 pre-registration): no pass data in
+    # this world, so the check fails and Passing stays withheld for that reason.
+    p = dims["Passing"]
+    assert p["display_score"] is True and p["score"] is None and p["status"] == W_.PASS_MIX_FAILED
+    assert p["withheld_short"] == W_.PASS_MIX_FAILED_TEXT.short
+    assert not any(x["display_score"] for f, x in dims.items() if f != "Passing")
     assert dims["Defending"]["withheld_full"].endswith("; underpowered")
     assert dims["Defending"]["defending_note"].startswith("Defending scores are withheld")
 

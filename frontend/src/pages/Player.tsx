@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { getGroup, getLabels, getPlayer } from "../api";
 import { Chip } from "../components/Chip";
+import { Details } from "../components/Details";
 import { StandOut } from "../components/StandOut";
 import { NotePopover } from "../components/NotePopover";
 import { MetricTable } from "../components/MetricTable";
@@ -44,6 +45,16 @@ export function Player({ playerKey }: { playerKey: string }) {
           {i.role_text && <span>{i.role_text}</span>}
           {i.near_gate && <Chip kind="caution">{w.near_gate_chip}</Chip>}
         </div>
+        {doc.style_tags.length > 0 && (
+          <ul className="mt-2 flex flex-wrap items-center gap-2" aria-label={w.style_tags_title}>
+            {doc.style_tags.map((t) => (
+              <li key={t.metric} data-tag={t.metric}>
+                <Details trigger={<span className="inline-flex h-[22px] items-center rounded-full border border-line bg-surface-2 px-2 text-[12px] leading-4 text-ink-2">{t.tag}</span>}
+                         lines={[t.note]} className="no-underline" />
+              </li>
+            ))}
+          </ul>
+        )}
         <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-2 text-[13px]" aria-label={UI.season}>
           {i.summary.map((s) => (
             <li key={s.key} data-summary={s.key}><span className="num font-semibold text-ink">{s.text}</span> <span className="text-ink-3">{s.label}</span></li>
@@ -55,7 +66,7 @@ export function Player({ playerKey }: { playerKey: string }) {
         <p className="mt-6 text-ink-2">{noProfile}</p>
       ) : (
         <>
-          <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="mt-6 grid grid-cols-[minmax(0,1fr)] items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div>
               <ProfileShape series={[{ key: i.key, name: i.display_name, dims: doc.dna!.dimensions }]}
                             labels={{ title: w.profile_shape_title, note: w.profile_shape_note,

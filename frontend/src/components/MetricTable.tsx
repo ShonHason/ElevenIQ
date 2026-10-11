@@ -28,6 +28,32 @@ export function familyTag(group: GroupsGroupJson, family: string): string | unde
   return group.metrics.find((m) => m.family === family && m.withheld_tag)?.withheld_tag ?? undefined;
 }
 
+type Meta = GroupsGroupJson["metrics"][number];
+type MetricRow = PlayersKeyJson["metrics"][number];
+
+function Row({ meta, row, src, labels }: { meta: Meta; row: MetricRow; src: string; labels: LabelsJson }) {
+  const w = labels.words;
+  return (
+    <tr className="border-b border-line last:border-b-0" data-metric={meta.metric}>
+      <th scope="row" className="sticky left-0 bg-surface-1 px-2.5 py-1.5 text-left font-normal">
+        <MetricName meta={meta} />
+        <div className="text-[12px] leading-4 text-ink-3">{meta.direction === "style" ? w.chip_style : meta.direction_text}</div>
+      </th>
+      <td className="px-2.5 py-1.5 text-right">
+        <ValueText row={row} meta={meta} src={`${src}.value_text`} />
+      </td>
+      <td className="px-2.5 py-1.5">
+        <BandCell row={row} src={`${src}.local.band`} hint={w.exact_hint} />
+      </td>
+      <td className="min-w-[180px] px-2.5 py-1.5 text-[12px] leading-4">
+        <div className="flex flex-col gap-1">
+          {meta.notes.map((n) => <NotePopover key={n.full} short={n.short} full={n.full} />)}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export function MetricTable({ doc, group, labels }: { doc: PlayersKeyJson; group: GroupsGroupJson; labels: LabelsJson }) {
   const w = labels.words;
   // Rows pair with the group metadata by index: both follow labels.metric_order. Refuse a
@@ -41,7 +67,7 @@ export function MetricTable({ doc, group, labels }: { doc: PlayersKeyJson; group
   return (
     <>
     <div className="mb-2"><HollowLegend text={w.hollow_legend} /></div>
-    <div className="overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={UI.table.metrics}>
+    <div className="relative overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={UI.table.metrics}>
       <table className="w-full border-collapse text-[13px] leading-[18px]">
         <thead className="text-[12px] text-ink-2">
           <tr className="border-b border-line">
@@ -60,24 +86,13 @@ export function MetricTable({ doc, group, labels }: { doc: PlayersKeyJson; group
                 {tag && <span className="ml-2 font-normal text-ink-3">{tag}</span>}
               </th></tr>
               {group.metrics.map((meta, i) => meta.family !== fam ? null : (
-                <tr key={meta.metric} className="border-b border-line last:border-b-0" data-metric={meta.metric}>
-                  <th scope="row" className="sticky left-0 bg-surface-1 px-2.5 py-1.5 text-left font-normal">
-                    <MetricName meta={meta} />
-                    <div className="text-[12px] leading-4 text-ink-3">{meta.direction === "style" ? w.chip_style : meta.direction_text}</div>
-                  </th>
-                  <td className="px-2.5 py-1.5 text-right">
-                    <ValueText row={doc.metrics[i]} meta={meta} src={`players/${key}.json#metrics.${i}.value_text`} />
-                  </td>
-                  <td className="px-2.5 py-1.5">
-                    <BandCell row={doc.metrics[i]} src={`players/${key}.json#metrics.${i}.local.band`} hint={w.exact_hint} />
-                  </td>
-                  <td className="min-w-[180px] px-2.5 py-1.5 text-[12px] leading-4">
-                    <div className="flex flex-col gap-1">
-                      {meta.notes.map((n) => <NotePopover key={n.full} short={n.short} full={n.full} />)}
-                    </div>
-                  </td>
-                </tr>
+                <Row key={meta.metric} meta={meta} row={doc.metrics[i]} src={`players/${key}.json#metrics.${i}`} labels={labels} />
               ))}
+              {/* Completion vs expected (display only, not a registry metric): after Passing's rows. */}
+              {fam === "Passing" && group.completion_vs_expected && doc.completion_vs_expected && (
+                <Row meta={group.completion_vs_expected} row={doc.completion_vs_expected}
+                     src={`players/${key}.json#completion_vs_expected`} labels={labels} />
+              )}
             </tbody>
           );
         })}

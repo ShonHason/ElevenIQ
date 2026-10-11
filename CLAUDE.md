@@ -209,6 +209,11 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # player_dna_dimensions.parquet. Refuses percentiles from another registry version or season parquet
 .venv/bin/python -m eleveniq.pipeline.build_player_dna
 
+# Pass mix (plan 006 pre-registration; display only): raw events → data/processed/
+# player_season_pass_mix.parquet (open-play passes by length × direction). Refuses to write
+# unless its open-play counts reconcile with the season parquet. The exporter reads it.
+.venv/bin/python -m eleveniq.pipeline.build_pass_mix
+
 # Independent check of the DNA output (no eleveniq imports; reads the dimensions file alongside)
 .venv/bin/python spikes/m4f_dna_reference.py --check-output data/processed/player_dna.parquet
 

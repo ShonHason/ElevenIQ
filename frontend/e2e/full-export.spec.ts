@@ -24,7 +24,6 @@ test("full export: Gem Finder pages 50 rows at a time, in the exporter's order",
   await expect(rows).toHaveCount(50);
   await page.locator("[data-more]").click();
   await expect(rows).toHaveCount(100);
-  const first = (gems.families as { family: string; definition: string | null }[]).find((f) => f.definition)!.family;
-  const want = (gems.order[first] as number[]).slice(0, 100).map((i) => gems.rows[i].key);
+  const want = (gems.order[gems.default_order] as number[]).slice(0, 100).map((i) => gems.rows[i].key);
   expect(await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-key")))).toEqual(want);
 });

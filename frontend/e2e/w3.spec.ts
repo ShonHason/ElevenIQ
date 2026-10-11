@@ -12,6 +12,8 @@ test("Profile shape: vertices trace to the fixture; withheld families are dashed
     await expect(v).toHaveAttribute("data-value", String(d.score));
   }
   const withheld = dims.filter((x) => x.score === null).map((x) => x.family).sort();
+  // Kanté is a DM-CM: completion above expected failed the possession check there, so Passing
+  // stays withheld (plan 006 pre-registration).
   expect(withheld).toEqual(["Defending", "Passing"]);
   for (const f of withheld) {
     const m = page.locator(`[data-withheld="${f}"]`);
@@ -119,7 +121,11 @@ test("lower-better rows: band, bar and the popover's number read the shown perce
     await expect(row.locator("[data-bar]").first()).toHaveAttribute("data-bar", String(local.pct));
     const width = await row.locator("[data-bar] > span").first().evaluate((e) => (e as HTMLElement).style.width);
     expect(parseFloat(width)).toBeCloseTo(local.pct, 3);
-    await band.click();
+    // Phone: the table scrolls sideways under a sticky first column; bring the cell to the
+    // visible (right) edge before tapping, as a reader would scroll.
+    const trigger = band.locator("xpath=ancestor::button[1]");
+    await trigger.evaluate((e) => e.scrollIntoView({ inline: "end", block: "center" }));
+    await trigger.click();
     await expect(page.getByText(local.note)).toBeVisible();
     await page.keyboard.press("Escape");
   }
@@ -202,7 +208,7 @@ test("hollow bars read neutral words, with one legend line", async ({ page }) =>
     if (!meta.uncoloured || band === null) continue;
     const cell = page.locator(`tr[data-metric="${meta.metric}"] [data-src$="#metrics.${i}.local.band"]`);
     await expect(cell).toHaveText(band);
-    expect(band).toMatch(/^(Higher than most|Around average|Lower than most)$/);
+    expect(band).toMatch(/^(Higher than most|Around average|Lower than most|Highest in league|Lowest in league)$/);
   }
 });
 
@@ -229,4 +235,28 @@ test("Profile shape: each scored family name opens its definition", async ({ pag
   await page.locator('[data-family-def="Passing"]').focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toContainText(defs.Passing);
+});
+
+test("completion vs expected: a row in Passing with its value, unit, total and band", async ({ page }) => {
+  for (const key of [BENZEMA, "3961-22-2-27"]) {
+    await page.goto(`/#/player/${key}`);
+    const doc = await fx(page, `players/${key}.json`);
+    const c = doc.completion_vs_expected;
+    const row = page.locator('tr[data-metric="completion_vs_expected"]');
+    await expect(row).toContainText("Completion vs expected");
+    await expect(row.locator(`[data-src$="completion_vs_expected.value_text"]`)).toHaveText(c.value_text);
+    await expect(row).toContainText("pts");
+    await expect(row).toContainText(c.total_text);
+    await expect(row.locator(`[data-src$="completion_vs_expected.local.band"]`)).toHaveText(c.local.band);
+  }
+});
+
+test("style tags: chips with the style-not-quality note", async ({ page }) => {
+  await page.goto("/#/player/3961-22-2-27");
+  const doc = await fx(page, "players/3961-22-2-27.json");
+  expect(doc.style_tags.length).toBeGreaterThan(0);
+  const first = doc.style_tags[0];
+  await page.locator(`[data-tag="${first.metric}"] button`).click();
+  await expect(page.getByRole("dialog")).toContainText(first.note);
+  expect(first.note.startsWith("Style, not quality")).toBe(true);
 });

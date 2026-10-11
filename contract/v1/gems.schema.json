@@ -4,7 +4,7 @@
   "title": "gems/<group>.json",
   "description": "Gem Finder for one position group: profiled rows with their family scores (the exported dimension scores). Every order is computed by the exporter (ADR 005 §1); the page filters by league, team and minutes tier and never sorts by a statistic.",
   "type": "object", "additionalProperties": false,
-  "required": ["stamps", "group", "families", "rows", "order", "leagues", "teams", "minutes_tiers"],
+  "required": ["stamps", "group", "families", "rows", "order", "default_order", "leagues", "teams", "minutes_tiers"],
   "properties": {
     "stamps": {"$ref": "common.schema.json#/$defs/stamps"},
     "group": {"type": "string"},
@@ -30,6 +30,7 @@
           "properties": {"score": {"type": ["number", "null"]}, "score_text": {"type": ["string", "null"]}}}}}}},
     "order": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "integer", "minimum": 0}},
               "description": "Scored family -> row indices, highest score first; equal scores by name, then key; unscored rows last."},
+    "default_order": {"type": "string", "description": "The scored family the page opens on."},
     "leagues": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["competition_id", "league"],
       "properties": {"competition_id": {"type": "integer"}, "league": {"type": "string"}}}},
     "teams": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["team_id", "team", "competition_id"],

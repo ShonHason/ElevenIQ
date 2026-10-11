@@ -56,7 +56,7 @@ DIMS = ROOT / "data" / "processed" / "player_dna_dimensions.parquet"
 # difference, reached exactly on binary fractions such as 0.3828125 (= 49/128).
 TOL = 5e-7 + 1e-12
 NEAR_GATE = (("CB", "FB-WB"), 900.0 - 1e-6, 1350.0)    # user, 2026-10-09 (written out)
-RESTARTS = "(corners, free kicks, throw-ins)"
+RESTARTS = "(corners, free kicks, throw-ins and other restarts)"
 LABEL_OVERRIDES = {"restart_key_passes_p90": f"Restart key passes {RESTARTS}",
                    "restart_xg_assisted_p90": f"Restart xG assisted {RESTARTS}",
                    "restart_assists_p90": f"Restart assists {RESTARTS}"}
@@ -112,15 +112,151 @@ def style_words(p: float) -> str:
 
 
 # The display round's bands (user, 2026-10-10), written out (no eleveniq).
-BANDS = ((99.0, "Top 1%"), (95.0, "Top 5%"), (90.0, "Top 10%"), (75.0, "Top 25%"),
+BANDS = ((95.0, "Top 5%"), (90.0, "Top 10%"), (75.0, "Top 25%"),
          (60.0, "Above average"), (40.0, "Around average"), (25.0, "Below average"),
          (10.0, "Bottom 25%"), (5.0, "Bottom 10%"), (0.0, "Bottom 5%"))
 
 
-def band(shown: float, style: bool) -> str:
-    if style:
-        return style_words(shown).capitalize()
-    return next(label for lo, label in BANDS if shown >= lo)
+def whole(p: float) -> int:
+    """The whole number a percentile is shown as (final text pass: the band reads it)."""
+    return int(p) if p in (0, 100) else min(99, max(1, math.floor(p + 0.5)))
+
+
+def band(shown: float, neutral: bool, n_pop: int | None = None, flipped: bool = False) -> str:
+    """No Top 1% (user, 2026-10-10): the single highest / lowest of the league population reads
+    Highest / Lowest in league, naming the raw value (flipped for lower-better)."""
+    if n_pop and 0 < shown < 100:          # ranked members only (outsider rows: 0 / 100)
+        top, bottom = ("Lowest in league", "Highest in league") if flipped else \
+            ("Highest in league", "Lowest in league")
+        if shown >= 100.0 * (n_pop - 0.5) / n_pop - 1e-6:
+            return top
+        if shown <= 100.0 * 0.5 / n_pop + 1e-6:
+            return bottom
+    n = whole(shown)
+    if neutral:
+        return style_words(n).capitalize()
+    return next(label for lo, label in BANDS if n >= lo)
+
+
+# Hollow bar = neutral words (user, 2026-10-10). Which cells are hollow is registry-derived
+# (style, long pass completion, team_style_biased): read from the export's group files, the
+# input this check takes as given (see "Not re-derived" above).
+def hollow_of(out: Path) -> dict[tuple[str, str], bool]:
+    return {(g.stem, m["metric"]): m["uncoloured"] for g in (out / "groups").glob("*.json")
+            for m in json.loads(g.read_text())["metrics"]}
+
+
+def words(p: float, neutral: bool) -> str:
+    return style_words(p) if neutral else page_mod.pct_words(p)[1]
+
+
+# Completion above expected (plan 006 pre-registration), written out (no eleveniq): buckets,
+# cohort, rates, Hazen league percentile, the possession check, the spec choice.
+PASS_MIX = ROOT / "data" / "processed" / "player_season_pass_mix.parquet"
+CVE_MIN = {"CB": 57, "FB-WB": 84, "DM-CM": 68, "AM-Winger": 66, "ST": 93}   # pre-registered
+CVE_GROUPS = tuple(CVE_MIN)
+LENS, DIRS = ("short", "medium", "long"), ("forward", "sideways", "backward")
+
+
+def cve_reference(season: dict) -> dict:
+    mix = {tuple(r[c] for c in KEY): r for r in pl.read_parquet(PASS_MIX).iter_rows(named=True)}
+
+    def cells(spec: int) -> dict[str, list[str]]:
+        if spec == 1:
+            return {ln: [f"{ln}_{d}" for d in DIRS] for ln in LENS}
+        return {f"{ln}_{d}": [f"{ln}_{d}"] for ln in LENS for d in DIRS}
+
+    def run(spec: int) -> tuple[dict, dict]:
+        bk = cells(spec)
+        cnt = {}
+        for k in season:
+            m = mix.get(k)
+            cnt[k] = {b: ((sum(m[f"pm_{c}_att"] for c in cs), sum(m[f"pm_{c}_cmp"] for c in cs))
+                          if m else (0, 0)) for b, cs in bk.items()}
+        tot = {k: sum(a for a, _ in v.values()) for k, v in cnt.items()}
+
+        def cohort(k):
+            r = season[k]
+            g = r["position_group"]
+            return (g in CVE_MIN and r["in_percentile_pool"] and r["meets_min_minutes"]
+                    and tot[k] >= CVE_MIN[g])
+        pool: dict = {}
+        for k in season:
+            if cohort(k):
+                lg = (season[k]["competition_id"], season[k]["position_group"])
+                acc = pool.setdefault(lg, {b: [0, 0] for b in bk})
+                for b, (a, c) in cnt[k].items():
+                    acc[b][0] += a
+                    acc[b][1] += c
+        val = {}
+        for k, r in season.items():
+            lg = (r["competition_id"], r["position_group"])
+            if lg not in pool or not r["in_percentile_pool"] or tot[k] == 0:
+                continue
+            rate = {b: (c / a if a else None) for b, (a, c) in pool[lg].items()}
+            if any(a and rate[b] is None for b, (a, _) in cnt[k].items()):
+                continue
+            act = 100.0 * sum(c for _, c in cnt[k].values()) / tot[k]
+            exp = 100.0 * sum(a / tot[k] * rate[b] for b, (a, _) in cnt[k].items() if a)
+            val[k] = act - exp
+        # Every row with a value shows it; only the cohort is ranked (pre-registration).
+        rows: dict = {k: {"value": v, "pct": None} for k, v in val.items()}
+        rhos: dict = {g: [] for g in CVE_GROUPS}
+        for lg in pool:
+            ks = [k for k in season if cohort(k) and k in val
+                  and (season[k]["competition_id"], season[k]["position_group"]) == lg]
+            n = len(ks)
+            vs = sorted(val[k] for k in ks)
+            for k in ks:
+                lo = sum(1 for v in vs if v < val[k])
+                eq = sum(1 for v in vs if v == val[k])
+                rows[k] = {"value": val[k], "pct": round((lo + 0.5 * eq) / n * 100, 6)
+                           if n >= 30 else None}
+            pairs = []
+            for k in ks:
+                r = season[k]
+                t, o = r["team_open_play_passes_while_on"], r["opponent_open_play_passes_while_on"]
+                if t is not None and o is not None and t + o:
+                    pairs.append((val[k], t / (t + o)))
+            rhos[lg[1]].append(spearman(pairs))
+        mean = {g: (sum(x) / len(x) if x and None not in x else None) for g, x in rhos.items()}
+        return rows, mean
+
+    rows1, mean1 = run(1)
+    rows2, mean2 = run(2)
+    spec = {}
+    for g in CVE_GROUPS:
+        if mean1[g] is not None and abs(mean1[g]) < 0.4:
+            spec[g] = 1
+        elif mean2[g] is not None and abs(mean2[g]) < 0.4:
+            spec[g] = 2
+        else:
+            spec[g] = None
+    return {"rows": {1: rows1, 2: rows2}, "spec": spec, "mean": {1: mean1, 2: mean2}}
+
+
+def spearman(pairs: list[tuple[float, float]]) -> float | None:
+    if len(pairs) < 3:
+        return None
+
+    def ranks(xs):
+        order = sorted(range(len(xs)), key=lambda i: xs[i])
+        r = [0.0] * len(xs)
+        i = 0
+        while i < len(order):
+            j = i
+            while j + 1 < len(order) and xs[order[j + 1]] == xs[order[i]]:
+                j += 1
+            for t in range(i, j + 1):
+                r[order[t]] = (i + j) / 2 + 1
+            i = j + 1
+        return r
+    a, b = ranks([p[0] for p in pairs]), ranks([p[1] for p in pairs])
+    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    va = sum((x - ma) ** 2 for x in a) ** 0.5
+    vb = sum((y - mb) ** 2 for y in b) ** 0.5
+    return cov / (va * vb) if va and vb else None
 
 
 def at6(p: float | None) -> float | None:
@@ -226,13 +362,20 @@ def check_players(out: Path, mm: Mismatch, ctx: dict) -> int:
                         p = 100.0 - p
                     mm.eq(f"{w} {role} {m} {scope} pct", e["pct"], p)
                     mm.eq(f"{w} {role} {m} {scope} pct_text", e["pct_text"], format_pct(at6(p)))
-                    mm.eq(f"{w} {role} {m} {scope} phrase", e["phrase"],
-                          style_words(at6(p)) if DIRECTION[m] == "style"
-                          else page_mod.pct_words(at6(p))[1])
+                    neutral = ctx["hollow"][(i["group"] if role == "primary" else
+                                             d["second_group"]["group"], m)]
+                    mm.eq(f"{w} {role} {m} {scope} phrase", e["phrase"], words(at6(p), neutral))
                     mm.eq(f"{w} {role} {m} {scope} band", e["band"],
-                          band(at6(p), DIRECTION[m] == "style"))
+                          band(at6(p), neutral, r["n_local"] if scope == "local" else None,
+                               DIRECTION[m] == "lower_better"))
                     mm.eq(f"{w} {role} {m} {scope} text or number",
                           (e["pct_text"] is None) != (e["status_text"] is None), True)
+        cv = ctx["cve"]
+        if s["position_group"] in CVE_MIN:
+            res = cv["rows"][cv["spec"][s["position_group"]] or 1].get(k)
+            c = d["completion_vs_expected"]
+            mm.eq(f"{w} cve value", c["value"], None if res is None else round(res["value"], 6))
+            mm.eq(f"{w} cve pct", c["local"]["pct"], None if res is None else res["pct"])
         dna = ctx["dna_rows"].get(k)
         mm.eq(f"{w} has dna", d["dna"] is not None, dna is not None)
         if dna is not None and d["dna"] is not None:
@@ -243,6 +386,17 @@ def check_players(out: Path, mm: Mismatch, ctx: dict) -> int:
             mm.eq(f"{w} dna metrics", sorted(v["metric"] for v in d["dna"]["vector"]),
                   list(ref.DNA[dna["group"]]))
             for x in d["dna"]["dimensions"]:
+                if x["family"] == "Passing" and i["group"] != "GK":
+                    cv = ctx["cve"]
+                    g = i["group"]
+                    res = cv["rows"][cv["spec"][g] or 1].get(k)
+                    if cv["spec"][g] is not None:
+                        want = (res["pct"], ["completion_vs_expected"])
+                        mm.eq(f"{w} dim Passing (cve)", (x["score"], x["members"]), want)
+                    else:
+                        mm.eq(f"{w} dim Passing withheld", (x["score"], x["status"]),
+                              (None, "pass_mix_possession_failed"))
+                    continue
                 r = ctx["dims"][(k, x["family"])]
                 mm.eq(f"{w} dim {x['family']} score", x["score"], r["score"])
                 mm.eq(f"{w} dim {x['family']} status", x["status"], r["score_status"])
@@ -278,9 +432,14 @@ def check_neighbours(w: str, k: tuple, a: dict, nb: dict, mm: Mismatch, ctx: dic
         for field, ms in (("most_different", pk[:2]), ("most_alike", pk[cmpm.N_DIFF:])):
             mm.eq(f"{w} → {n['key']} {field}", [x["metric"] for x in n[field]], ms)
             for x in n[field]:
-                mm.eq(f"{w} → {n['key']} {x['metric']} phrases", (x["a_phrase"], x["b_phrase"]),
-                      (page_mod.pct_words(at6(a["cells"][x["metric"]]["pct_local"]))[1],
-                       page_mod.pct_words(at6(by_key[b]["cells"][x["metric"]]["pct_local"]))[1]))
+                m = x["metric"]
+                neutral = ctx["hollow"][(g, m)]
+
+                def shown(row: dict) -> float:
+                    p = row["cells"][m]["pct_local"]
+                    return at6(100.0 - p if DIRECTION[m] == "lower_better" else p)
+                mm.eq(f"{w} → {n['key']} {m} phrases", (x["a_phrase"], x["b_phrase"]),
+                      (words(shown(a), neutral), words(shown(by_key[b]), neutral)))
 
 
 # ── Style maps ───────────────────────────────────────────────────────────────────
@@ -409,7 +568,9 @@ def main() -> None:
            "labels": cm.registry_labels(),
            "dna_rows": {r["key"]: r for rs in by_group.values() for r in rs},
            "dmcm": smod.dmcm_labels(by_group["DM-CM"], mins),
-           "multi": mv.build_facts(SEASON, mv.MATCH_PARQUET)}
+           "multi": mv.build_facts(SEASON, mv.MATCH_PARQUET),
+           "hollow": hollow_of(out),
+           "cve": cve_reference(season)}
     mm = Mismatch()
     n_p = check_players(out, mm, ctx)
     n_s = check_style_maps(out, mm, ctx)
@@ -417,6 +578,10 @@ def main() -> None:
     if mm.errors:
         print("\n".join(mm.errors[:40]), file=sys.stderr)
         fail(f"{len(mm.errors)} of {mm.n} values differ from the reference")
+    cv = ctx["cve"]
+    print("completion above expected, mean within-league ρ (spec 1 / spec 2) and spec used: " +
+          "; ".join(f"{g} {cv['mean'][1][g]:.3f} / {cv['mean'][2][g]:.3f} → {cv['spec'][g]}"
+                    for g in CVE_GROUPS))
     print(f"OK: the export at {out} equals the reference: {mm.n:,} values over {n_p} player "
           f"files, {n_s} map points and {n_i} search entries (registry {meta['registry_version'][:12]}…)")
 

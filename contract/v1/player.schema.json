@@ -4,7 +4,7 @@
   "title": "players/<key>.json",
   "description": "One season row. metrics are in registry metric order; their shared facts are in groups/<identity.group>.json.",
   "type": "object", "additionalProperties": false,
-  "required": ["stamps", "identity", "stand_out", "defensive_rates", "metrics", "second_group", "signature_traits", "dna", "neighbours", "style_map"],
+  "required": ["stamps", "identity", "stand_out", "defensive_rates", "metrics", "second_group", "signature_traits", "dna", "neighbours", "style_map", "completion_vs_expected", "style_tags"],
   "$defs": {
     "phrasePair": {
       "type": "object", "additionalProperties": false, "required": ["metric", "label", "a_phrase", "b_phrase"],
@@ -69,6 +69,11 @@
                        "rate_text": {"type": ["string", "null"]}}}
     },
     "metrics": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/metricRow"}},
+    "completion_vs_expected": {"oneOf": [{"type": "null"}, {"$ref": "common.schema.json#/$defs/metricRow"}],
+      "description": "Completion above expected (plan 006 pre-registration; display only): value in percentage points, league percentile only; metadata in groups/<group>.json completion_vs_expected. Null for goalkeepers."},
+    "style_tags": {"type": "array", "maxItems": 3, "items": {
+      "type": "object", "additionalProperties": false, "required": ["tag", "metric", "note"],
+      "properties": {"tag": {"type": "string"}, "metric": {"type": "string"}, "note": {"type": "string"}}}},
     "second_group": {
       "description": "Display only (ADR 004 D5): scored against a population that does not contain the player.",
       "oneOf": [{"type": "null"}, {
@@ -105,13 +110,14 @@
                            "weight": {"type": ["number", "null"]}}}},
           "dimensions": {"type": "array", "items": {
             "type": "object", "additionalProperties": false,
-            "required": ["family", "label", "score", "score_text", "members", "status", "withheld_short", "withheld_full", "defending_note"],
+            "required": ["family", "label", "score", "score_text", "members", "status", "withheld_short", "withheld_full", "defending_note", "display_score"],
             "properties": {"family": {"type": "string"}, "label": {"type": "string"},
                            "score": {"type": ["number", "null"]}, "score_text": {"type": ["string", "null"]},
                            "members": {"type": "array", "items": {"type": "string"}},
                            "status": {"type": "string"},
                            "withheld_short": {"type": ["string", "null"]}, "withheld_full": {"type": ["string", "null"]},
-                           "defending_note": {"type": ["string", "null"]}}}}
+                           "defending_note": {"type": ["string", "null"]},
+                           "display_score": {"type": "boolean", "description": "true: the display-only Passing score (config.PASSING_SCORE_MEMBERS), not a DNA dimension score; members are the passing metrics used."}}}}
         }}]
     },
     "neighbours": {

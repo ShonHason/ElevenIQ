@@ -61,10 +61,10 @@ STATUS_TEXT: dict[str, str] = {
     "goalkeeper": "goalkeeper: no outfield percentiles",
     "below_gate": "below the minutes gate",
     "no_signal": "no reliable signal for this ratio in this group",
-    "no_min_attempts": "no minimum attempts measured (display only)",
+    "no_min_attempts": "not ranked: no reliable attempt minimum for this group",
     "below_min_attempts": "below the minimum attempts",
     "null_value": "no value",
-    "cohort_too_small": "population below the minimum size",
+    "cohort_too_small": "too few players in this group reach the attempt minimum to rank",
     "d9_undefined": "not testable (league populations too small or unmeasured)",
     "league_inconsistent": "not ranked across leagues",       # W3 polish (user): plain wording
 }
@@ -78,7 +78,7 @@ def format_pct(p: float) -> str:
         return ">99"
     if not 0 < p < 100:
         raise DisplayError(f"percentile out of range: {p}")
-    return str(min(99, max(1, math.floor(p + 0.5))))
+    return str(W.shown_integer(p))
 
 
 def format_value(metric: str, v: float | None) -> str:

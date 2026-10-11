@@ -7,8 +7,8 @@ so the comparison page, the web export and the spike checks read one source. Unk
 raise. Texts carry no causal claim; the "influenced" wordings were replaced (user decision C,
 corrected by the stats-reviewer and approved by the user, 2026-10-09):
 - long pass completion has no good / poor direction; its note gives the evidence;
-- a withheld family score names its reason; Passing's reason is that it rests on long pass
-  completion alone (ST keeps its Passing score: it has a second member);
+- a withheld family score names its reason (the DNA's Passing reason: it rests on long pass
+  completion alone); the page shows the display-only Passing score instead (user, 2026-10-10);
 - a tag on a metric of a withheld family speaks about the family score, never the metric.
 
 `short` texts are for table cells, `full` texts for their popovers (DESIGN decision 7); the
@@ -62,6 +62,14 @@ WITHHELD_TEXT: dict[str, str] = {
 }
 # Cell labels for the long ones (the full text goes in the popover).
 WITHHELD_SHORT: dict[str, str] = {D.PENDING_XPASS_DEFERRED: PASSING_REASON}
+# The page's Passing status where completion above expected failed the pre-registered possession
+# check (plan 006): a display status, not a DNA one, so it stays out of the tables above (the
+# spikes mirror those).
+PASS_MIX_FAILED = "pass_mix_possession_failed"
+PASS_MIX_FAILED_TEXT = NoteText(
+    "associated with team possession",
+    "completion vs expected still rises with the team's share of the ball for this position "
+    "(checked before launch), so no Passing score is shown")
 
 # The reason in a metric's tag when its family score is withheld: "(<Family> score withheld:
 # <reason>)". It describes the family score, not the metric on the line.
@@ -75,6 +83,8 @@ TAG_REASON: dict[str, str] = {
 def withheld_text(status: str) -> NoteText:
     """(short, full) text of a withheld or unscored dimension score. Raises KeyError on an
     unknown status."""
+    if status == PASS_MIX_FAILED:
+        return PASS_MIX_FAILED_TEXT
     try:
         full = WITHHELD_TEXT[status]
     except KeyError:
@@ -85,7 +95,7 @@ def withheld_text(status: str) -> NoteText:
 def withheld_tag(family: str, status: str) -> str:
     """The tag after a metric of a withheld family: "(Passing score withheld: …)"."""
     try:
-        reason = TAG_REASON[status]
+        reason = PASS_MIX_FAILED_TEXT.short if status == PASS_MIX_FAILED else TAG_REASON[status]
     except KeyError:
         raise KeyError(f"no tag reason for withheld status {status!r}") from None
     return f"({family} score withheld: {reason})"
@@ -168,8 +178,9 @@ ATTRIBUTION = "Data: StatsBomb Open Data"
 # Player page and chips (plan 006 W3; DESIGN.md §6 chip set; the Profile shape note is the user's
 # W4 leaning, checked by the stats-reviewer in the final text pass).
 PROFILE_SHAPE_TITLE = "Profile shape"
-PROFILE_SHAPE_NOTE = ("How strongly the player stands out in each family, compared with players "
-                      "in the same position and league.")
+PROFILE_SHAPE_NOTE = ("Each family's score: the average of the player's league percentiles for "
+                      "that family's scored metrics, against players in the same position and "
+                      "league (50 is around average).")
 CHIPS = {"withheld": "Withheld", "same_team": "Same team", "provisional": "Provisional",
          "style": "Style", "basis": "basis"}
 COLUMNS = {"value": "Value", "local": "League percentile", "global": "All-leagues percentile",
@@ -195,16 +206,16 @@ RATE_LABEL = "per 100 opponent open-play passes (while on the pitch)"
 COMPARE_TOP_TITLE = "Where they differ most"
 COMPARE_TOP_NOTE = ("The six metrics with the largest gap between the two players' league "
                     "percentiles. Long pass completion, signature traits and metrics associated "
-                    "with team possession are left out, so team differences are not shown as "
-                    "player differences.")
+                    "with team possession are left out, so the clearest team differences are not "
+                    "headlined as player differences.")
 COMPARE_ALL_TITLE = "All metrics"
 COMPARE_SAME_GROUP = "Only players in the same position group can be compared."
 RATE_METRICS = ("tackles_attempted", "interceptions", "ball_recoveries", "pressures", "blocks",
                 "clearances")
 LOWER_BETTER = "lower better"
 BASIS_MARKER = "used for the profile"      # screen-reader text of the bold (basis) percentile
-SIGNATURE_NOTE = ("A holder / non-holder flag, not a percentile: most players in the group record "
-                  "none, so a rank would mostly compare zeros.")
+SIGNATURE_NOTE = ("A holder / non-holder flag, not a percentile: many players in the group record "
+                  "none, so a rank would compare many tied values.")
 PORTFOLIO = "A non-commercial portfolio project."
 
 
@@ -216,7 +227,7 @@ GROUP_ONE = {"CB": "centre-back", "FB-WB": "full-back or wing-back",
              "DM-CM": "central midfielder", "AM-Winger": "attacking midfielder or winger",
              "ST": "striker"}
 # Restart deliveries include throw-ins (ADR 004 §10.6): no "set-piece" label.
-_RESTARTS = "(corners, free kicks, throw-ins)"
+_RESTARTS = "(corners, free kicks, throw-ins and other restarts)"
 METRIC_LABELS: dict[str, str] = {
     "restart_key_passes_p90": f"Restart key passes {_RESTARTS}",
     "restart_xg_assisted_p90": f"Restart xG assisted {_RESTARTS}",
@@ -408,22 +419,47 @@ def defending_note(group: str, derivation: R.Derivation | None = None) -> str | 
 # A fixed band on the shown (direction-adjusted) league percentile replaces the number in every
 # cell; the number moves to the popover. Lower bounds, compared with the shown 6-decimal value
 # (the tolerance of the other display rules). Style metrics keep their neutral phrase.
+# The band reads the shown whole number (band(); final text pass), so it agrees with the popover.
 BANDS: tuple[tuple[float, str], ...] = (
-    (99.0, "Top 1%"), (95.0, "Top 5%"), (90.0, "Top 10%"), (75.0, "Top 25%"),
+    (95.0, "Top 5%"), (90.0, "Top 10%"), (75.0, "Top 25%"),
     (60.0, "Above average"), (40.0, "Around average"), (25.0, "Below average"),
     (10.0, "Bottom 25%"), (5.0, "Bottom 10%"), (0.0, "Bottom 5%"),
 )
+# The single highest / lowest row of its population (user, 2026-10-10: "Top 1%" dropped; league
+# groups hold 35–84 players, so Top 1% meant the highest anyway and strikers could never get it).
+HIGHEST, LOWEST = "Highest in league", "Lowest in league"
 STYLE_BANDS = {"higher than most": "Higher than most", "around average": "Around average",
                "lower than most": "Lower than most"}
 
 
-def band(shown: float, style: bool) -> str:
-    """The band label of a shown percentile (style metrics: the neutral phrase)."""
-    if not 0 <= shown <= 100:
-        raise ValueError(f"percentile out of range: {shown}")
+def shown_integer(p: float) -> int:
+    """The whole number a percentile is shown as (display.format_pct): 0 and 100 stay, interior
+    values round half up into 1–99."""
+    if not 0 <= p <= 100:
+        raise ValueError(f"percentile out of range: {p}")
+    if p in (0, 100):
+        return int(p)
+    return min(99, max(1, math.floor(p + 0.5)))
+
+
+def band(shown: float, style: bool, n: int | None = None, flipped: bool = False) -> str:
+    """The band label of a shown percentile (style metrics: the neutral phrase), read from the
+    whole number the popover shows (stats-reviewer, final text pass), except at the ends: with
+    the population size n, the single highest row (Hazen (n − 0.5) / n, or 100 for a row
+    ranked against a population it is not in) is HIGHEST and the single lowest LOWEST (user,
+    2026-10-10), whatever the metric's reading. Highest / lowest name the raw value: for a
+    lower-better metric (`flipped`, shown as 100 − p) the top shown row has the lowest value."""
+    whole = shown_integer(shown)
+    if n and 0 < shown < 100:          # ranked members only: an outsider row (0 / 100) is not
+        eps = 1e-6                     # the league group's highest- or lowest-ranked player
+        top, bottom = (LOWEST, HIGHEST) if flipped else (HIGHEST, LOWEST)
+        if shown >= 100.0 * (n - 0.5) / n - eps:
+            return top
+        if shown <= 100.0 * 0.5 / n + eps:
+            return bottom
     if style:
-        return STYLE_BANDS[style_words(shown)]
-    return next(label for lo, label in BANDS if shown >= lo)
+        return STYLE_BANDS[style_words(whole)]
+    return next(label for lo, label in BANDS if whole >= lo)
 
 
 def ordinal_percentile(pct_text: str) -> str:
@@ -440,7 +476,8 @@ def ordinal_percentile(pct_text: str) -> str:
 
 PCT_NOTE_LOCAL = "{ordinal} among {league} {group}"
 PCT_NOTE_GLOBAL = "{ordinal} among {group} in all leagues"
-LOWER_BETTER_NOTE = "lower is better, so it is counted from the better end"
+LOWER_BETTER_NOTE = ("lower is better, so it is counted from the better end: 90 means the "
+                     "player's rate is lower than about 90% of the group's")
 
 # Units of a value, from the metric definition (MetricSpec.unit; the xG ratios are per shot).
 UNIT_TEXT = {"per90": "per 90", "share": "", "ratio": ""}
@@ -469,7 +506,7 @@ def unit_text(column: str, unit: str) -> str:
 
 # One plain sentence per metric, written from the implementation (src/eleveniq/metrics/ and
 # pipeline/build_player_match._aggregate_events; thresholds in StatsBomb pitch units, the
-# pitch being 120 × 80). Per-90 values divide the season count by minutes played × 90.
+# pitch being 120 × 80). Per-90 values are the season count / minutes played × 90.
 # Restarts are corners, free kicks, goal kicks, kick-offs and throw-ins. Checked by the
 # stats-reviewer against the code.
 _RESTART = "corners, free kicks, goal kicks, kick-offs and throw-ins"
@@ -496,7 +533,7 @@ METRIC_DEFINITIONS: dict[str, str] = {
     "op_xg_assisted_p90": "The xG of the shots the player's open-play passes set up (not from a restart).",
     "key_passes_p90": "Passes that led directly to a shot or assisted a goal, restarts included.",
     "xg_assisted_p90": "The xG of the shots the player's passes set up, restarts included.",
-    "xg_assisted_direct_p90": "The xG of the shots the player's passes set up, leaving out shots where the shooter dribbled or carried the ball more than 10 units first, or where that could not be checked.",
+    "xg_assisted_direct_p90": "The xG of the shots the player's passes set up, leaving out shots where the shooter attempted a take-on, or carried the ball more than 10 units in total, after receiving it, or where that could not be checked.",
     "crosses_attempted_p90": "Passes StatsBomb marks as crosses, restarts included.",
     "cross_completion_pct": "Completed crosses as a share of crosses, leaving out crosses with an unknown outcome.",
     "op_assists_p90": "Passes, from open play (not from a restart), that StatsBomb records as a goal assist.",
@@ -506,8 +543,8 @@ METRIC_DEFINITIONS: dict[str, str] = {
     "restart_assists_p90": "Goal assists from corners, free kicks, goal kicks, kick-offs and throw-ins.",
     "np_shots_p90": "Shots, leaving out penalties.",
     "np_xg_p90": "The StatsBomb xG of the player's shots, leaving out penalties.",
-    "np_shots_on_target_p90": "Shots that scored or were saved by the goalkeeper (including onto the post), leaving out penalties.",
-    "shots_on_target_p90": "Shots that scored or were saved by the goalkeeper (including onto the post), penalties included.",
+    "np_shots_on_target_p90": "Shots that scored or that the goalkeeper saved on target (including saves pushed onto the post); shots that hit the woodwork unsaved are not counted. Penalties left out.",
+    "shots_on_target_p90": "Shots that scored or that the goalkeeper saved on target (including saves pushed onto the post); shots that hit the woodwork unsaved are not counted. Penalties included.",
     "np_xg_per_shot": "The average StatsBomb xG of the player's non-penalty shots.",
     "shots_p90": "Every shot, penalties included.",
     "xg_p90": "The StatsBomb xG of the player's shots, penalties included.",
@@ -535,8 +572,8 @@ METRIC_DEFINITIONS: dict[str, str] = {
 # ── Hollow bars and family definitions (user, 2026-10-10) ──────────────────────────────
 # One legend line for the hollow (uncoloured) bar; its cells read the neutral words
 # (higher than most / around average / lower than most), never top / bottom N%.
-HOLLOW_LEGEND = ("Hollow bar: not read as good or poor (style, or associated with team "
-                 "possession).")
+HOLLOW_LEGEND = ("Hollow bar: not read as good or poor (style, long pass completion, or "
+                 "associated with team possession).")
 # Compare mode: percentiles of two players from different leagues (user, 2026-10-10).
 COMPARE_LEAGUE_NOTE = "Each percentile ranks the player within their own league and position."
 
@@ -553,15 +590,16 @@ class FamilyDefinition:
 
 _AERIAL = FamilyDefinition(
     ("aerials_won_p90",),
-    "How many aerial duels the player wins per 90: involvement in the air, not the share won.")
+    "How many aerial duels the player wins per 90: more duels contested and more won both "
+    "raise it; not the share won.")
 _PROG_3 = FamilyDefinition(
     ("box_entries_pass_p90", "final_third_entries_pass_p90", "progressive_passes_p90"),
-    "How often the player passes the ball forward, into the final third and into the box, per "
-    "90: volume, not pass accuracy.")
+    "How often the player completes passes forward, into the final third and into the box, "
+    "per 90: counts of completed passes, not the share completed.")
 _PROG_2 = FamilyDefinition(
     ("box_entries_pass_p90", "progressive_passes_p90"),
-    "How often the player passes the ball forward and into the box, per 90: volume, not pass "
-    "accuracy.")
+    "How often the player completes passes forward and into the box, per 90: counts of "
+    "completed passes, not the share completed.")
 _CARRY_BOX = FamilyDefinition(
     ("box_entries_carry_p90", "progressive_carries_p90"),
     "How often the player carries the ball forward and into the box, per 90: volume, not "
@@ -569,6 +607,26 @@ _CARRY_BOX = FamilyDefinition(
 _KEY_PASSES = FamilyDefinition(
     ("op_key_passes_p90",),
     "How many open-play passes per 90 lead to a shot: volume of chances made, not their quality.")
+
+# Completion above expected (plan 006 pre-registration, user 2026-10-10; display only). The
+# Passing score of a group whose spec passed the possession check; elsewhere Passing stays
+# withheld with PASS_MIX_FAILED_TEXT. Added by the exporter (family_definitions), not listed per
+# group below, because the check decides where it applies.
+PASSING_CVE = FamilyDefinition(
+    ("completion_vs_expected",),
+    "The player's open-play pass completion compared with what their mix of short, medium and "
+    "long passes would predict: accuracy for the length of pass, not difficulty, direction or "
+    "pressure.")
+CVE_LABEL = "Completion vs expected"
+CVE_UNIT = "pts"
+CVE_DEFINITION = ("Open-play pass completion minus the completion expected for the player's mix "
+                  "of short (under 15 yards), medium (15 to 30) and long (30 and over) passes, "
+                  "at the completion rates of ranked players in the same league and position, "
+                  "in percentage points. Lengths are in StatsBomb pitch units (about yards). "
+                  "Restarts, and passes with an unknown outcome or kicked out for an injury, are "
+                  "left out.")
+CVE_TOTAL = "{actual} completed vs {expected} expected ({n} passes)"
+CVE_POPULATION = "n {n} {abbr} with 900+ minutes and ≥ {min} open-play passes"
 
 FAMILY_DEFINITIONS: dict[str, dict[str, FamilyDefinition]] = {
     "CB": {
@@ -594,8 +652,8 @@ FAMILY_DEFINITIONS: dict[str, dict[str, FamilyDefinition]] = {
             "box, per 90: volume, not dribbling success."),
         "Creation": FamilyDefinition(
             ("op_key_passes_p90", "op_xg_assisted_p90"),
-            "How many open-play passes per 90 lead to a shot, and the expected goals of those "
-            "shots: chances made, weighted by their quality."),
+            "How many open-play passes per 90 lead to a shot, and the total expected goals of "
+            "those shots: how many chances, and how good they were in total."),
         "Goal threat": FamilyDefinition(
             ("np_shots_on_target_p90", "np_shots_p90", "np_xg_p90"),
             "How many non-penalty shots the player takes and puts on target per 90, and their "
@@ -613,16 +671,13 @@ FAMILY_DEFINITIONS: dict[str, dict[str, FamilyDefinition]] = {
     "ST": {
         "Aerial": FamilyDefinition(
             ("aerial_win_pct", "aerials_won_p90"),
-            "How many aerial duels the player wins per 90, and the share of aerial duels won "
-            "(counted only for players with enough aerial duels): involvement and success in "
-            "the air."),
+            "Mixes two things: how many aerial duels the player wins per 90, and the share of "
+            "aerial duels won (counted only for players with enough duels). A striker who "
+            "rarely wins headers scores low even with an average win rate."),
         "Carrying": _CARRY_BOX,
         "Goal threat": FamilyDefinition(
             ("np_shots_p90",), "How many non-penalty shots the player takes per 90: volume, "
                                "not finishing."),
-        "Passing": FamilyDefinition(
-            ("pass_completion_pct",), "The share of the player's passes that are completed: "
-                                      "accuracy, not difficulty or ambition."),
         "Progression": _PROG_3,
     },
 }
@@ -642,6 +697,9 @@ GEMS_LIKE_NOTE = ("The players whose profiles are most like this one, in the sam
 # Minutes tiers for the filter: minutes played, at least (the profile gate is 900).
 GEMS_MINUTES_TIERS: tuple[int, ...] = (1350, 1800, 2250, 2700)
 GEMS_MINUTES_ANY = "Any (at least 900)"
+# The family Gem Finder opens on, per group (user, 2026-10-10).
+GEMS_DEFAULT_ORDER = {"ST": "Goal threat", "AM-Winger": "Creation", "DM-CM": "Progression",
+                      "FB-WB": "Progression", "CB": "Aerial"}
 
 
 # ── Methodology page (plan 006 simple mode, W5; final stats-reviewer pass) ──────────────
@@ -649,30 +707,37 @@ GEMS_MINUTES_ANY = "Any (at least 900)"
 METHODOLOGY_TITLE = "Methodology"
 METHODOLOGY: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Data", (
-        "Event data from StatsBomb Open Data for the 2015/16 season: La Liga, the Premier League, "
-        "Serie A and Ligue 1 in full, and part of the 1. Bundesliga. The 1. Bundesliga is not "
-        "fully covered, so its players have no percentiles or profiles.",
+        "Event data from StatsBomb Open Data for the 2015/16 season: La Liga, the Premier League "
+        "and Serie A in full, Ligue 1 nearly in full (377 of 380 matches), and part of the 1. "
+        "Bundesliga. The 1. Bundesliga is not fully covered, so its players have no percentiles "
+        "or profiles.",
         "A player who moved clubs during the season has one row per club. Careers are never "
         "merged.",
     )),
     ("Per 90 and minimum minutes", (
         "Counts are shown per 90 minutes played, next to the season total. Only players with at "
-        "least 900 minutes are ranked, so a short run of games cannot make a player look elite. "
+        "least 900 minutes are ranked, counted as full-match equivalents (stoppage time does not "
+        "add to them), so a player shown with slightly more than 900 minutes may still be "
+        "unranked. A short run of games cannot make a player look elite. "
         "A rate such as pass completion is ranked only for players with enough attempts.",
     )),
     ("Position groups", (
         "Each player is placed in one of six position groups by where they played most: "
-        "goalkeepers, centre-backs, full-backs and wing-backs, central and defensive "
-        "midfielders, attacking midfielders and wingers, and strikers. Players are only ever "
+        "goalkeepers, centre-backs, full-backs and wing-backs, central midfielders (defensive "
+        "midfielders included), attacking midfielders and wingers, and strikers. Players are only ever "
         "compared with their own group. Goalkeepers have no profile.",
     )),
     ("Percentiles and bands", (
         "A percentile ranks a player within their own league and position group: 90 means they "
-        "are ahead of about 90% of that group. Tables show it as a band (Top 1%, Top 5%, …, "
-        "Bottom 5%); the exact number and the rank across all four full leagues are one tap "
-        "away. Leagues are not adjusted for strength.",
+        "are ahead of about 90% of that group. Leagues are not adjusted for strength.",
+        "Tables show the percentile as a band: Top 5% (95 and above), Top 10% (90–94), Top 25% "
+        "(75–89), Above average (60–74), Around average (40–59), Below average (25–39), Bottom "
+        "25% (10–24), Bottom 10% (5–9) and Bottom 5% (below 5). The highest-ranked player in the "
+        "league group reads \"Highest in league\" and the lowest-ranked \"Lowest in league\". A "
+        "league group has about 35 to 85 players, so a top 1% band would hold one player at "
+        "most, and often none. The exact number and the rank across all four full leagues are one tap away.",
         "For a lower-is-better metric, such as times dispossessed, the percentile is counted "
-        "from the better end, so a high number is always good.",
+        "from the better end, so on a coloured bar a higher number is always better.",
     )),
     ("Hollow bars", (
         "Some metrics have no good or poor end. Style metrics describe how a player plays, not "
@@ -686,8 +751,19 @@ METHODOLOGY: tuple[tuple[str, tuple[str, ...]], ...] = (
         "metrics; style metrics are not scored. Tap a family name to see what it measures: "
         "most families count how often a player does something, not how well.",
         "A family is withheld for a position when its metrics are not shown to describe the "
-        "player rather than the team. Defending is withheld for every position in this season, "
-        "and Passing for all but strikers. There is no overall rating.",
+        "player rather than the team. Defending is withheld for every position in this season. "
+        "There is no overall rating.",
+    )),
+    ("Passing", (
+        "\"Completion vs expected\" compares a player's open-play pass completion with what "
+        "is expected for their mix of short (under 15 yards), medium (15–30) and long (30 and "
+        "over) passes, using the completion rates of their league and position. +3.2 pts means a "
+        "completion rate 3.2 percentage points above what that mix would predict.",
+        "Before launch, we checked how closely it follows how much the team has the ball, "
+        "against a limit set in advance. Strikers came in under the limit, though the link is "
+        "not zero, so for them it is the Passing score. For the other outfield positions it did "
+        "not, so Passing stays withheld there and the row is shown with a hollow bar, as "
+        "context only. It is not used to find similar players.",
     )),
     ("Similar players", (
         "Similar players are found by comparing league percentiles on the profile's metrics "
@@ -707,3 +783,24 @@ METHODOLOGY: tuple[tuple[str, tuple[str, ...]], ...] = (
         "and are not adjusted for league strength.",
     )),
 )
+
+
+# ── Style tags (user-approved proposal, 2026-10-10) ────────────────────────────────────
+# One tag per style metric; shown when the player's league percentile (the shown whole number)
+# is at least STYLE_TAG_MIN in the position group; at most STYLE_TAG_MAX per player, highest
+# percentile first (ties by this order). Tags describe style, never quality.
+STYLE_TAGS: tuple[tuple[str, str], ...] = (
+    ("long_passes_attempted_p90", "Long-range passer"),
+    ("switches_p90", "Switches play"),
+    ("team_pass_share", "Build-up hub"),
+    ("dribbles_attempted_p90", "Takes players on"),
+    ("carries_p90", "Ball carrier"),
+    ("crosses_attempted_p90", "Frequent crosser"),
+    ("fouls_won_p90", "Draws fouls"),
+    ("pressures_p90", "High presser"),
+)
+STYLE_TAG_MIN = 90
+STYLE_TAG_MAX = 3
+STYLE_TAG_NOTE = "Style, not quality: in the top 10% of {group} in {league} for {metric}."
+STYLE_TAG_EXTRA = {"pressures_p90": "Pressing counts also rise with how much the team defends."}
+STYLE_TAGS_TITLE = "Style"

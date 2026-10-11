@@ -47,6 +47,7 @@ from eleveniq.analytics import cohorts as C
 from eleveniq.analytics import dna as D
 from eleveniq.analytics import movers as M
 from eleveniq.analytics import pairs as P
+from eleveniq.analytics import pass_mix as PM
 from eleveniq.analytics import registry as R
 from eleveniq.analytics import style_map as S
 from eleveniq.analytics.dna import RowDna, dna_specs
@@ -65,6 +66,7 @@ DNA_PATH = PROCESSED / "player_dna.parquet"
 DIMENSIONS_PATH = PROCESSED / "player_dna_dimensions.parquet"
 POSITIONS_PATH = PROCESSED / "player_season_positions.parquet"
 MATCH_PATH = ROOT / "data" / "interim" / "player_match_stats.parquet"
+PASS_MIX_PATH = PROCESSED / "player_season_pass_mix.parquet"
 OUT_DIR = ROOT / "export" / "v1"
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "web"
 # The committed fixture (plan 006 W1 item 5; ADR 005 §7): (player_id, team_id, competition_id)
@@ -161,11 +163,15 @@ class Inputs:
     positions: pl.DataFrame
     match: pl.DataFrame
     stamps: Mapping[str, Any]
+    # Completion above expected's pass counts (pipeline.build_pass_mix); None = no pass data,
+    # so the check fails everywhere and Passing stays withheld.
+    pass_mix: pl.DataFrame | None = None
 
 
 def load_inputs(season_path: Path = SEASON_PATH, percentiles_path: Path = PERCENTILES_PATH,
                 dna_path: Path = DNA_PATH, dimensions_path: Path = DIMENSIONS_PATH,
-                positions_path: Path = POSITIONS_PATH, match_path: Path = MATCH_PATH) -> Inputs:
+                positions_path: Path = POSITIONS_PATH, match_path: Path = MATCH_PATH,
+                pass_mix_path: Path = PASS_MIX_PATH) -> Inputs:
     """Read the parquets and refuse any that were not built from each other with this
     registry, source and DNA basis (ADR 004 §12.7; ADR 005 §2)."""
     season = pl.read_parquet(season_path)
@@ -203,12 +209,18 @@ def load_inputs(season_path: Path = SEASON_PATH, percentiles_path: Path = PERCEN
         "dna_parquet_sha256": file_sha256(dna_path),
         "positions_parquet_sha256": file_sha256(positions_path),
         "match_parquet_sha256": file_sha256(match_path),
+        "pass_mix_parquet_sha256": file_sha256(pass_mix_path),
     }
-    return Inputs(season, pct, dna, dims, positions, match, stamps)
+    from eleveniq.pipeline.build_pass_mix import reconcile
+    pass_mix = pl.read_parquet(pass_mix_path)
+    reconcile(pass_mix, season)          # built from this season parquet, or refuse
+    return Inputs(season, pct, dna, dims, positions, match, stamps, pass_mix)
 
 
 # ── Metrics ──────────────────────────────────────────────────────────────────────
 
+PASSING = "Passing"
+CVE = "completion_vs_expected"
 SPECS_IN_ORDER = list(SPECS)                    # registry metric order (the gap tie-break)
 ORDER = {s.column: i for i, s in enumerate(SPECS_IN_ORDER)}
 
@@ -255,7 +267,9 @@ def _scope(rows: Mapping[str, Mapping[str, Any]], row: Mapping[str, Any], scope:
         "phrase": _phrase(spec, biased, p) if shown else None,
         # The band replaces the number in every cell (display round, user 2026-10-10); the
         # number is in `note`, for the popover. A hollow-bar cell takes the neutral band.
-        "band": W.band(p, _neutral(spec, biased)) if shown else None,
+        # Highest / lowest in league: the league scope only (the band the page shows).
+        "band": W.band(p, _neutral(spec, biased), row["n_local"] if scope == "local" else None,
+                       spec.direction == "lower_better") if shown else None,
         "note": (((W.PCT_NOTE_LOCAL if scope == "local" else W.PCT_NOTE_GLOBAL).format(
             ordinal=W.ordinal_percentile(X.format_pct(p)), **where))
             + (f" ({W.LOWER_BETTER_NOTE})" if spec.direction == "lower_better" else ""))
@@ -505,7 +519,130 @@ def _signature(ident: Mapping[str, Any], rows: Mapping[str, Mapping[str, Any]]) 
     return sorted(out, key=lambda e: e["order"])
 
 
-def _dna(k: tuple, group: str, dna_rows: list[dict], dim_rows: list[dict]) -> dict | None:
+@dataclass(frozen=True)
+class PassMix:
+    """Completion above expected for one export (analytics.pass_mix): the spec each group's
+    Passing score uses (None: withheld) and every row's result per computed spec."""
+    choice: Mapping[str, PM.Choice]
+    results: Mapping[int, Mapping[tuple, PM.RowResult]]
+    min_attempts: Mapping[str, int]
+
+    def spec(self, group: str) -> int | None:
+        return self.choice[group].spec if group in self.choice else None
+
+    def row(self, group: str, k: tuple) -> PM.RowResult | None:
+        """The row's result under the spec its group uses, or spec 1 (shown as context)."""
+        res = self.results.get(self.spec(group) or 1, {})
+        return res.get(k)
+
+
+def pass_mix_of(inp: Inputs) -> PassMix:
+    mins = {g: REGISTRY.cell("pass_completion_pct", g).min_attempts for g in GROUPS}
+    if any(v is None for v in mins.values()):
+        raise ExportError(f"pass_completion_pct has no min_attempts in some group: {mins}")
+    mix = inp.pass_mix
+    if mix is None:                      # no pass data: an empty frame (every check fails)
+        logger.warning("no pass-mix data: completion above expected fails everywhere, Passing "
+                    "stays withheld (tests only; load_inputs requires the parquet)")
+        from eleveniq.pipeline.build_pass_mix import COLUMNS
+        mix = pl.DataFrame(schema={**{c: inp.season.schema[c] for c in KEY},
+                                   **{c: pl.Int32 for c in COLUMNS}})
+    choice, results = PM.choose(inp.season, mix, mins)
+    return PassMix(choice, results, mins)
+
+
+def display_held(group: str, pm: PassMix) -> dict[str, str]:
+    """The withheld families on the page: the DNA's (D.withheld_for) with Passing decided by
+    completion above expected instead (plan 006 pre-registration): shown where the group's spec
+    passed the possession check, else withheld for that reason. DNA and similarity keep the
+    DNA's statuses."""
+    held = {f: s for f, s in D.withheld_for(group).items() if f != PASSING}
+    if pm.spec(group) is None:
+        held[PASSING] = W.PASS_MIX_FAILED
+    return held
+
+
+def cve_row(group: str, k: tuple, pm: PassMix, ident: Mapping[str, Any]) -> dict | None:
+    """The "Completion vs expected" table row, shaped like a metric row (value, total, local and
+    global scopes), or None for a goalkeeper. League percentile only; a group whose spec failed
+    the check shows it hollow, with neutral words."""
+    if group not in GROUPS:
+        return None
+    r = pm.row(group, k)
+    if r is None:
+        raise ExportError(f"{k}: no completion-above-expected result")
+    neutral = pm.spec(group) is None
+    p = rnd(r.pct_local) if r.pct_local is not None else None
+    where = _where(ident)
+    local = {
+        "pct": p, "pct_text": X.format_pct(p) if p is not None else None,
+        "phrase": (W.style_words(p) if neutral else W.pct_words(p)[1]) if p is not None else None,
+        "band": W.band(p, neutral, r.n_local) if p is not None else None,
+        "note": W.PCT_NOTE_LOCAL.format(ordinal=W.ordinal_percentile(X.format_pct(p)), **where)
+                if p is not None else None,
+        "bin": ("uncoloured" if neutral else X._band(p)) if p is not None else None,
+        "n": r.n_local,
+        "population_text": (W.CVE_POPULATION.format(
+            n=r.n_local, abbr=X.GROUP_ABBR_PLURAL[group],
+            min=pm.min_attempts[group]) if r.n_local is not None else None),
+        "status": r.status,
+        "status_text": None if p is not None else X.status_text(r.status),
+    }
+    blank = {key: None for key in local}
+    blank.update({"status": "league_only", "status_text": None})
+    return {
+        "value": rnd(r.value) if r.value is not None else None,
+        "value_text": f"{r.value:+.1f}" if r.value is not None else "—",
+        "total_text": (W.CVE_TOTAL.format(actual=f"{r.actual:.1f}%", expected=f"{r.expected:.1f}%",
+                                          n=X.format_count(r.counted))
+                       if r.value is not None else None),
+        "local": local, "global": blank, "basis": "local", "zero_tie": False,
+    }
+
+
+def style_tags(group: str, rows_m: list[dict], ident: Mapping[str, Any]) -> list[dict]:
+    """The style tags (W.STYLE_TAGS; user-approved): each tag's style metric at or above
+    STYLE_TAG_MIN as the shown league percentile, at most STYLE_TAG_MAX, highest first (ties by
+    the tag order). Style, never quality: every tag metric must be a style metric."""
+    if group not in GROUPS:
+        return []
+    by = {s.column: row for s, row in zip(SPECS_IN_ORDER, rows_m)}
+    where = _where(ident)
+    hits = []
+    for i, (metric, tag) in enumerate(W.STYLE_TAGS):
+        if X.SPECS_BY_COLUMN[metric].direction != "style":
+            raise ExportError(f"style tag {tag!r}: {metric} is not a style metric")
+        loc = by[metric]["local"]
+        p = loc["pct"]
+        # Ranked members only: an outsider row (status not ok) was not ranked in this group.
+        if p is not None and loc["status"] == "ok" and W.shown_integer(p) >= W.STYLE_TAG_MIN:
+            hits.append((-p, i, metric, tag))
+    out = []
+    for _, _, metric, tag in sorted(hits)[:W.STYLE_TAG_MAX]:
+        note = W.STYLE_TAG_NOTE.format(group=where["group"], league=where["league"],
+                                       metric=W.metric_label(metric, group).lower())
+        extra = W.STYLE_TAG_EXTRA.get(metric)
+        out.append({"tag": tag, "metric": metric, "note": f"{note} {extra}" if extra else note})
+    return out
+
+
+def cve_meta(group: str, pm: PassMix) -> dict:
+    """The row's metadata (groups/<group>.json), like metric_meta."""
+    neutral = pm.spec(group) is None
+    return {
+        "metric": CVE, "label": W.CVE_LABEL, "family": PASSING,
+        "order": len(SPECS_IN_ORDER), "direction": "higher_better",   # after the registry order
+        "direction_text": W.NO_READING if neutral else "higher better",
+        "registry_status": None, "unit": W.CVE_UNIT, "definition": W.CVE_DEFINITION,
+        "uncoloured": neutral, "gap_eligible": False,
+        "notes": ([{"short": W.POSSESSION_SHORT, "full": W.withheld_text(W.PASS_MIX_FAILED).full}]
+                  if neutral else []),
+        "withheld_tag": None,
+    }
+
+
+def _dna(k: tuple, group: str, dna_rows: list[dict], dim_rows: list[dict],
+         pm: PassMix | None = None) -> dict | None:
     if not dna_rows:
         return None
     status = dna_rows[0]["dna_status"]
@@ -531,6 +668,24 @@ def _dna(k: tuple, group: str, dna_rows: list[dict], dim_rows: list[dict]) -> di
                 entry["defending_note"] = W.defending_note(group)
         elif st != D.OK:
             entry["withheld_short"] = entry["withheld_full"] = X.dim_status_text(st)
+        entry["display_score"] = False
+        if r["family"] == PASSING and pm is not None and group in GROUPS:
+            cve = pm.row(group, k)
+            if cve is None:
+                raise ExportError(f"{k}: no completion-above-expected result")
+            if pm.spec(group) is not None:
+                p = cve.pct_local
+                entry.update({"score": rnd(p) if p is not None else None,
+                              "score_text": X.format_number(p) if p is not None else None,
+                              "members": [CVE], "status": D.OK if p is not None else cve.status,
+                              "withheld_short": None if p is not None else X.status_text(cve.status),
+                              "withheld_full": None if p is not None else X.status_text(cve.status),
+                              "display_score": True})
+            else:
+                t = W.withheld_text(W.PASS_MIX_FAILED)
+                entry.update({"score": None, "score_text": None, "members": [],
+                              "status": W.PASS_MIX_FAILED, "withheld_short": t.short,
+                              "withheld_full": t.full, "display_score": True})
         dims.append(entry)
     return {"status": status, "vector": vector, "dimensions": dims}
 
@@ -690,6 +845,7 @@ def build(inp: Inputs, keys: Iterable[tuple] | None = None,
     dna_group = {k: g for g, rs in rows.items() for k in rs}
     dna_status = {k: r.dna_status for rs in rows.values() for k, r in rs.items()}
     multi = M.stints(season, inp.match, pos)
+    pm = pass_mix_of(inp)
     stamps = dict(inp.stamps)
     docs: dict[str, Any] = {}
     search = []
@@ -711,7 +867,9 @@ def build(inp: Inputs, keys: Iterable[tuple] | None = None,
                               "metrics": [metric_row(second, s.column) for s in SPECS_IN_ORDER]}
                              if second else None),
             "signature_traits": _signature(ident, prim),
-            "dna": _dna(k, group, dna_by.get(k, []), dim_by.get(k, [])),
+            "dna": _dna(k, group, dna_by.get(k, []), dim_by.get(k, []), pm),
+            "completion_vs_expected": cve_row(group, k, pm, ident),
+            "style_tags": style_tags(group, rows_m, ident),
             "neighbours": (_neighbours(k, group, nbrs[group][k], rows[group], ident_of)
                            if k in nbrs.get(group, {}) else None),
             "style_map": (f"style-maps/{group}.json" if group in GROUPS
@@ -731,30 +889,31 @@ def build(inp: Inputs, keys: Iterable[tuple] | None = None,
         })
     docs["search-index.json"] = {"stamps": stamps, "entries": search}
     for g in GROUPS:
-        docs[f"gems/{g}.json"] = {"stamps": stamps, **gems_doc(g, docs)}
+        docs[f"gems/{g}.json"] = {"stamps": stamps, **gems_doc(g, docs, display_held(g, pm))}
     for g in style_groups:
         sm = S.fit(g, dna_specs(REGISTRY, SPECS, g), rows[g])
         docs[f"style-maps/{g}.json"] = {"stamps": stamps, **style_map_doc(
             g, sm, rows[g], ident_of, pos, multi, dna_group, dna_status)}
     for g in (*GROUPS, "GK"):
-        held = D.withheld_for(g) if g in GROUPS else {}
+        held = display_held(g, pm) if g in GROUPS else {}
         docs[f"groups/{g}.json"] = {
             "stamps": stamps, "group": g,
             "metrics": [metric_meta(s.column, g, held) for s in SPECS_IN_ORDER],
             "defending_note": W.defending_note(g) if g in GROUPS else None,
             "family_definitions": family_definitions(g, held) if g in GROUPS else {},
+            "completion_vs_expected": cve_meta(g, pm) if g in GROUPS else None,
         }
     docs["labels.json"] = labels_doc(stamps)
     return docs
 
 
-def gems_doc(group: str, docs: Mapping[str, Any]) -> dict:
+def gems_doc(group: str, docs: Mapping[str, Any], held: Mapping[str, str] | None = None) -> dict:
     """Gem Finder (plan 006 simple mode, W5): the group's profiled rows with their family scores
     (the exported dimension scores, no new statistic). Every order is computed here (ADR 005 §1:
     the page never sorts by a statistic): per scored family, row indices by score, highest
     first, equal scores (at the exported precision) by display name then key, unscored rows
     last. The page filters by league, team and minutes tier, all exported keys."""
-    held = D.withheld_for(group)
+    held = dict(held) if held is not None else D.withheld_for(group)
     defs = family_definitions(group, held)
     if not defs:
         raise ExportError(f"{group}: no scored family to order Gem Finder by")
@@ -793,6 +952,7 @@ def gems_doc(group: str, docs: Mapping[str, Any]) -> dict:
                      for f in families],
         "rows": rows,
         "order": order,
+        "default_order": _default_order(group, defs),
         "leagues": [{"competition_id": c, "league": lg} for c, lg in sorted(
             {(r["competition_id"], r["league"]) for r in rows}, key=lambda t: t[1])],
         "teams": [{"team_id": t, "team": n, "competition_id": c} for t, n, c in sorted(
@@ -801,6 +961,14 @@ def gems_doc(group: str, docs: Mapping[str, Any]) -> dict:
         "minutes_tiers": [{"value": str(t), "text": f"{X.format_number(t)}+"}
                           for t in W.GEMS_MINUTES_TIERS],
     }
+
+
+def _default_order(group: str, defs: Mapping[str, Any]) -> str:
+    """The family Gem Finder opens on (user, 2026-10-10); it must be a scored family."""
+    f = W.GEMS_DEFAULT_ORDER[group]
+    if f not in defs:
+        raise ExportError(f"{group}: Gem Finder default order {f!r} is not a scored family")
+    return f
 
 
 def scored_members(group: str, family: str) -> tuple[str, ...]:
@@ -813,12 +981,18 @@ def scored_members(group: str, family: str) -> tuple[str, ...]:
 def family_definitions(group: str, held: Mapping[str, str]) -> dict[str, str]:
     """What each scored family measures (W.FAMILY_DEFINITIONS), checked against the members the
     scores use: a stale text fails the export. Withheld families show their reason instead."""
-    defs = W.FAMILY_DEFINITIONS[group]
+    defs = dict(W.FAMILY_DEFINITIONS[group])
+    if PASSING not in held:              # completion above expected passed the check here
+        defs[PASSING] = W.PASSING_CVE
     scored = sorted(f for f in dict.fromkeys(s.family for s in SPECS)
-                    if f not in held and scored_members(group, f))
+                    if f not in held and (f == PASSING or scored_members(group, f)))
     if sorted(defs) != scored:
         raise ExportError(f"{group}: family definitions {sorted(defs)} ≠ scored families {scored}")
     for fam, d in defs.items():
+        if fam == PASSING:          # the display score (completion above expected), not the DNA's
+            if tuple(d.members) != (CVE,):
+                raise ExportError(f"{group} Passing: definition members {d.members} ≠ ({CVE},)")
+            continue
         if tuple(sorted(d.members)) != scored_members(group, fam):
             raise ExportError(f"{group} {fam}: definition members {d.members} ≠ "
                               f"{scored_members(group, fam)}")
@@ -846,7 +1020,7 @@ def labels_doc(stamps: Mapping[str, Any]) -> dict:
                   "stand_out_title": W.STAND_OUT_TITLE, "stand_out_note": W.STAND_OUT_NOTE,
                   "lower_better": W.LOWER_BETTER, "basis_marker": W.BASIS_MARKER,
                   "rate_label": W.RATE_LABEL, "hollow_legend": W.HOLLOW_LEGEND,
-                  "compare_league_note": W.COMPARE_LEAGUE_NOTE,
+                  "compare_league_note": W.COMPARE_LEAGUE_NOTE, "cve_label": W.CVE_LABEL, "style_tags_title": W.STYLE_TAGS_TITLE,
                   "gems_title": W.GEMS_TITLE, "gems_lead": W.GEMS_LEAD,
                   "gems_sort_note": W.GEMS_SORT_NOTE, "gems_like_title": W.GEMS_LIKE_TITLE,
                   "gems_like_note": W.GEMS_LIKE_NOTE, "gems_minutes_any": W.GEMS_MINUTES_ANY, "exact_hint": W.EXACT_HINT, "compare_top_title": W.COMPARE_TOP_TITLE,

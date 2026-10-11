@@ -54,7 +54,7 @@ def test_validate_rejects_a_bad_document():
                         "measurement_source": "statsbomb", "source": "statsbomb", "season_ids": [27],
                         "season_parquet_sha256": "0" * 64, "percentiles_parquet_sha256": "0" * 64,
                         "dna_parquet_sha256": "0" * 64, "positions_parquet_sha256": "0" * 64,
-                        "match_parquet_sha256": "0" * 64})
+                        "match_parquet_sha256": "0" * 64, "pass_mix_parquet_sha256": "0" * 64})
     B.validate({"labels.json": doc})
     doc["extra"] = 1
     with pytest.raises(B.ExportError, match="labels.json"):

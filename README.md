@@ -21,6 +21,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m eleveniq.pipeline.build_percentiles   # refuses unless the season parquet is the one
                                                           # the committed measurements were made on
 .venv/bin/python -m eleveniq.pipeline.build_player_dna
+.venv/bin/python -m eleveniq.pipeline.build_pass_mix      # completion vs expected (display only)
 
 # the site: builds the web export if it is missing or stale, then starts the dev server
 cd frontend && npm run local

@@ -11,6 +11,7 @@ export type Series = { key: string; name: string; dims: Dim[] };
 
 // Room around the circle for the family labels (up to ~20 characters at the sides).
 const SIZE = 780, C = SIZE / 2, R = 180;
+const LABEL_FONT_MAX = 24;               // .shape-label on phones (styles.css), in user units
 // The two series' styles, shared with the compare page (solid ink, dashed orange).
 export const STROKES = ["var(--ink)", "var(--p0)"];
 export const DASHES = [undefined, "6 4"];
@@ -105,12 +106,14 @@ export function ProfileShape({ series, labels, definitions = {} }: {
           );
           if (!def) return <g key={d.family}>{text}</g>;
           // A transparent hit area over the label's two lines (a tap between glyphs still opens
-          // the definition; a larger target on phones). Sized in em of the label font.
-          const shift = anchor === "end" ? "-100%" : anchor === "middle" ? "-50%" : "0";
+          // the definition; a larger target on phones). In user units, sized for the largest
+          // label font (24 on phones; no CSS transform, which widened the page on phones).
+          const w = Math.max(d.label.length, 4) * 0.6 * LABEL_FONT_MAX;
+          const h = 2.4 * LABEL_FONT_MAX;
+          const rx = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
           const label = (
-            <g className="shape-label cursor-pointer">
-              <rect x={x} y={y} width={`${Math.max(d.label.length, 4) * 0.6}em`} height="2.4em" fill="transparent"
-                    style={{ transformBox: "fill-box", transform: `translate(${shift}, -40%)` }} />
+            <g className="cursor-pointer">
+              <rect x={Math.max(0, rx)} y={y - 0.4 * h} width={Math.min(w, SIZE - Math.max(0, rx))} height={h} fill="transparent" />
               {text}
             </g>
           );

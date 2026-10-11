@@ -16,7 +16,7 @@
       "description": "The provenance of the export, repeated in every file. No wall-clock time: two exports of the same data are byte-identical.",
       "required": ["contract_version", "registry_version", "measurement_source", "source", "season_ids",
                    "season_parquet_sha256", "percentiles_parquet_sha256", "dna_parquet_sha256",
-                   "positions_parquet_sha256", "match_parquet_sha256"],
+                   "positions_parquet_sha256", "match_parquet_sha256", "pass_mix_parquet_sha256"],
       "properties": {
         "contract_version": {"const": "1.0.0"},
         "registry_version": {"$ref": "#/$defs/sha256"},
@@ -26,6 +26,7 @@
         "season_parquet_sha256": {"$ref": "#/$defs/sha256"},
         "percentiles_parquet_sha256": {"$ref": "#/$defs/sha256"},
         "dna_parquet_sha256": {"$ref": "#/$defs/sha256"},
+        "pass_mix_parquet_sha256": {"$ref": "#/$defs/sha256"},
         "positions_parquet_sha256": {"$ref": "#/$defs/sha256"},
         "match_parquet_sha256": {"$ref": "#/$defs/sha256"}
       }

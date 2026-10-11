@@ -58,7 +58,7 @@ function Like({ gems, likeKey, labels, scored, onClear }: {
         <button type="button" onClick={onClear} className="text-ink-2 underline underline-offset-2 hover:text-ink">{UI.gems.clearLike}</button>
       </div>
       <p className="mt-0.5 text-[12px] leading-4 text-ink-3">{labels.words.gems_like_note}</p>
-      <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={labels.words.gems_like_title}>
+      <div className="relative mt-3 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={labels.words.gems_like_title}>
         <table className="w-full border-collapse text-[13px] leading-[18px]" data-table="like">
           <thead className="text-[12px] text-ink-2">
             <tr className="border-b border-line">
@@ -111,7 +111,7 @@ export function Gems({ group: routeGroup }: { group: string | null }) {
   const w = labels.words;
   const scored = gems.families.filter((f) => f.definition !== null);
   const withheld = gems.families.filter((f) => f.definition === null);
-  const by = family && gems.order[family] ? family : scored[0].family;
+  const by = family && gems.order[family] ? family : gems.default_order;
   // Filters by exported keys only; the order is the exporter's.
   const shown = gems.order[by].map((i) => gems.rows[i]).filter((r) =>
     (!league || String(r.competition_id) === league) && (!team || String(r.team_id) === team)
@@ -178,7 +178,7 @@ export function Gems({ group: routeGroup }: { group: string | null }) {
       <p className="mt-4 text-[12px] leading-4 text-ink-3" aria-live="polite">
         {UI.gems.count(shown.length, gems.rows.length)}. {w.gems_sort_note}
       </p>
-      <div className="mt-2 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={w.gems_title}>
+      <div className="relative mt-2 overflow-x-auto rounded-lg border border-line bg-surface-1" tabIndex={0} role="region" aria-label={w.gems_title}>
         <table className="w-full border-collapse text-[13px] leading-[18px]" data-table="gems">
           <thead className="text-[12px] text-ink-2">
             <tr className="border-b border-line">

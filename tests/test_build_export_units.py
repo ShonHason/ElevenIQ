@@ -15,7 +15,8 @@ from eleveniq.export import words as W
 STAMPS = {"contract_version": "1.0.0", "registry_version": "0" * 64, "measurement_source": "statsbomb",
           "source": "statsbomb", "season_ids": [27], "season_parquet_sha256": "0" * 64,
           "percentiles_parquet_sha256": "0" * 64, "dna_parquet_sha256": "0" * 64,
-          "positions_parquet_sha256": "0" * 64, "match_parquet_sha256": "0" * 64}
+          "positions_parquet_sha256": "0" * 64, "match_parquet_sha256": "0" * 64,
+          "pass_mix_parquet_sha256": "0" * 64}
 
 
 def _row(metric, group, value, pct, n=100, status="ok", reg="signature"):

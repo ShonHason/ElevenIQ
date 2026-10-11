@@ -159,7 +159,9 @@ def test_role_and_position_words():
 def test_metric_labels_with_group_wording():
     assert W.metric_label("dribbled_past_p90", "ST") == "Dribbled past while pressing"
     assert W.metric_label("dribbled_past_p90", "CB") == next(s.display_name for s in R.SPECS if s.column == "dribbled_past_p90")
-    assert W.metric_label("restart_assists_p90") == "Restart assists (corners, free kicks, throw-ins)"
+    # final text pass (stats-reviewer, 2026-10-10): the label names every restart type
+    assert W.metric_label("restart_assists_p90") == ("Restart assists (corners, free kicks, "
+                                                    "throw-ins and other restarts)")
 
 
 def test_lean_words():
@@ -260,8 +262,11 @@ def test_near_gate_chip_only_cb_fbwb_900_1350(group, minutes):
 def test_w3_player_page_words_are_the_approved_wording():
     """Plan 006 W3 (user's W4 leaning for the note; final stats-reviewer text pass at the end)."""
     assert W.PROFILE_SHAPE_TITLE == "Profile shape"
-    assert W.PROFILE_SHAPE_NOTE == ("How strongly the player stands out in each family, compared "
-                                    "with players in the same position and league.")
+    # final text pass (stats-reviewer, 2026-10-10): a level, not "stands out"
+    assert W.PROFILE_SHAPE_NOTE == ("Each family's score: the average of the player's league "
+                                    "percentiles for that family's scored metrics, against "
+                                    "players in the same position and league (50 is around "
+                                    "average).")
     assert W.CHIPS["withheld"] == "Withheld" and W.CHIPS["same_team"] == "Same team"
     assert W.COLUMNS == {"value": "Value", "local": "League percentile",
                          "global": "All-leagues percentile", "minutes": "min"}
@@ -280,22 +285,25 @@ def test_summary_labels_singular_for_one():
     assert W.summary_label("xg", 1) == "xG"
 
 
-# 60.0 is "Above average" here while pct_words(60) says "around average": the bands are
+# 60 is "Above average" here while pct_words(60) says "around average": the bands are
 # lower-inclusive by spec (display round), the phrases inclusive at both 40 and 60.
+# The band reads the shown whole number (final text pass, stats-reviewer 2026-10-10): 94.6 shows
+# "95", so Top 5%. No "Top 1%" (user, 2026-10-10): the single highest / lowest of a population
+# reads Highest / Lowest in league (tested below with n). Boundaries sit at x.5.
 @pytest.mark.parametrize("p,want", [
-    (100, "Top 1%"), (99.0, "Top 1%"), (98.999999, "Top 5%"), (95.0, "Top 5%"), (90.0, "Top 10%"),
-    (75.0, "Top 25%"), (74.9, "Above average"), (60.0, "Above average"), (59.9, "Around average"),
-    (40.0, "Around average"), (39.9, "Below average"), (25.0, "Below average"),
-    (24.9, "Bottom 25%"), (10.0, "Bottom 25%"), (9.9, "Bottom 10%"), (5.0, "Bottom 10%"),
-    (4.9, "Bottom 5%"), (0.0, "Bottom 5%")])
+    (100, "Top 5%"), (99.0, "Top 5%"), (94.5, "Top 5%"), (94.4, "Top 10%"), (89.5, "Top 10%"),
+    (89.4, "Top 25%"), (75.0, "Top 25%"), (74.4, "Above average"), (59.5, "Above average"),
+    (59.4, "Around average"), (39.5, "Around average"), (39.4, "Below average"),
+    (25.0, "Below average"), (24.4, "Bottom 25%"), (9.5, "Bottom 25%"), (9.4, "Bottom 10%"),
+    (4.5, "Bottom 10%"), (4.4, "Bottom 5%"), (0.0, "Bottom 5%")])
 def test_band_boundaries_are_lower_inclusive_and_cover_the_range(p, want):
     assert W.band(p, False) == want
 
 
 def test_style_band_is_neutral_and_out_of_range_refused():
-    assert {W.band(p, True) for p in (0, 30, 39.9)} == {"Lower than most"}
-    assert {W.band(p, True) for p in (40.0, 50, 60.0)} == {"Around average"}
-    assert W.band(60.1, True) == "Higher than most"
+    assert {W.band(p, True) for p in (0, 30, 39.4)} == {"Lower than most"}    # shown 39
+    assert {W.band(p, True) for p in (39.5, 50, 60.4)} == {"Around average"}  # shown 40 / 60
+    assert W.band(60.5, True) == "Higher than most"
     assert W.band(100, True) == "Higher than most"
     for bad in (-0.1, 100.1):
         with pytest.raises(ValueError):
@@ -337,8 +345,27 @@ def test_methodology_and_gems_claims_match_the_registry_and_config():
     text = " ".join(p for _, ps in W.METHODOLOGY for p in ps)
     assert "Defending is withheld for every position" in text
     assert all("Defending" in D.withheld_for(g) for g in groups)
-    assert "Passing for all but strikers" in text
-    assert {g for g in groups if "Passing" in D.withheld_for(g)} == set(groups) - {"ST"}
+    # Passing: completion above expected, shown where it passed the possession check; the
+    # groups it passed in are checked against the export in test_web_fixture.
+    assert "Strikers came in under the limit" in text and config.PASS_MIX_MAX_RHO == 0.4
     assert config.MIN_MINUTES_THRESHOLD == 900
     assert "900 minutes" in text and "900" in W.GEMS_MINUTES_ANY
     assert min(W.GEMS_MINUTES_TIERS) > config.MIN_MINUTES_THRESHOLD
+
+
+def test_highest_and_lowest_in_league_name_the_single_end_rows():
+    """User, 2026-10-10: the single highest row of a league group (Hazen (n − 0.5) / n) reads
+    Highest in league, the single lowest Lowest in league, coloured or neutral; a lower-better
+    metric (shown flipped) names the raw value, so its top shown row is the lowest."""
+    n = 42
+    top, second, bottom = 100 * 41.5 / 42, 100 * 40.5 / 42, 100 * 0.5 / 42
+    assert W.band(top, False, n) == "Highest in league" == W.band(top, True, n)
+    assert W.band(bottom, False, n) == "Lowest in league"
+    assert W.band(second, False, n) == "Top 5%"
+    assert W.band(top, False, n, flipped=True) == "Lowest in league"
+    assert W.band(bottom, False, n, flipped=True) == "Highest in league"
+    # an outsider row (ranked against a population it is not in) can sit at 100 / 0: it is not
+    # the group's highest- or lowest-ranked player (stats-reviewer fix round)
+    assert W.band(100.0, False, n) == "Top 5%" and W.band(0.0, False, n) == "Bottom 5%"
+    assert W.band(top, False) == "Top 5%"                         # no n: no end label
+    assert "Top 1%" not in {label for _, label in W.BANDS}
