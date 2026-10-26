@@ -194,6 +194,15 @@ Requirements the choice must meet:
   - **Until StatsBomb's (Hudl's) written answer:** the site deploys only as a private preview on Cloudflare Pages behind Cloudflare Access (invite-only).
   - The repository stays private, and no public-repo steps are planned.
   - The user is asking Hudl / StatsBomb for written consent.
+- **Public repository (user, 2026-10-26):** this replaces the "repository stays private" line above.
+  - The repository becomes public as a non-commercial portfolio project that shows the work done on the data, not a way to distribute it.
+  - `data/` and `export/` stay git-ignored, so no full dataset or full export is ever published.
+  - The committed test fixtures stay in the repository: the small web fixture (29 players), the
+    few StatsBomb event and lineup samples, and the committed measurements.
+  - Note: anyone can download files in a public repository. The fixtures are kept small for this reason.
+  - The README names StatsBomb Open Data as the source, links the agreement (`docs/legal/`) and
+    states that the project is non-commercial.
+  - The site deploy itself is unchanged: it stays a private preview until Hudl's written answer arrives.
 
 ## 9. Fit with the remaining M4 chunks
 - **M4g3–M4g6 change data, not the contract.**
